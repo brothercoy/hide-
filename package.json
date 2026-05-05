@@ -1,0 +1,17 @@
+{
+  "name": "ascii-game",
+  "version": "1.0.0",
+  "description": "",
+  "main": "game.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "dependencies": {
+    "colyseus": "^0.15.0",
+    "express": "^5.2.1"
+  }
+}
