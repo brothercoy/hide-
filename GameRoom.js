@@ -9,6 +9,7 @@ class GameRoom extends Room {
     onCreate() {
         console.log('Room created');
 
+        this.roomCode = this.generateRoomCode();
         this.timeLeft = 30;
         this.round = 1;
         this.players = {};
@@ -17,6 +18,7 @@ class GameRoom extends Room {
         this.lastTick = Date.now();
         this.timeUpHandled = false;
         this.gameOver = false;
+        this.gameStarted = false;
 
         this.onMessage('tap', (client, message) => {
             if (!this.players[client.sessionId].alive) return;
@@ -28,7 +30,6 @@ class GameRoom extends Room {
             });
 
             const totalPlayers = Object.keys(this.players).filter(id => this.players[id].alive).length;
-    
 
             this.broadcast('playerTapped', {
                 id: client.sessionId,
@@ -58,8 +59,17 @@ class GameRoom extends Room {
             });
         });
 
+        this.onMessage('startGame', (client) => {
+            if (client.sessionId !== Object.keys(this.players)[0]) return;
+            this.gameStarted = true;
+            this.lastTick = Date.now();
+            this.broadcast('gameStarted');
+        });
+
         this.setSimulationInterval(() => {
+            if (!this.gameStarted) return;
             if (this.gameOver) return;
+
             const now = Date.now();
             const delta = (now - this.lastTick) / 1000;
             this.lastTick = now;
@@ -80,12 +90,24 @@ class GameRoom extends Room {
         }, TICK_RATE);
     }
 
+    generateRoomCode() {
+        const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
+        let code = '';
+        for (let i = 0; i < 6; i++) {
+            code += chars[Math.floor(Math.random() * chars.length)];
+        }
+        return code;
+    }
+
     handleTimeUp() {
         const tappedIds = this.taps.map(t => t.id);
         const alivePlayers = Object.keys(this.players).filter(id => this.players[id].alive);
         const untappedPlayers = alivePlayers.filter(id => !tappedIds.includes(id));
         
-        if (untappedPlayers.length === 0) return;
+        if (untappedPlayers.length === 0) {
+            this.startNextRound();
+            return;
+        }
 
         untappedPlayers.forEach(id => {
             this.players[id].alive = false;
@@ -98,7 +120,6 @@ class GameRoom extends Room {
 
         this.startNextRound();
     }
-
 
     generateChars() {
         const chars = [];
@@ -152,7 +173,11 @@ class GameRoom extends Room {
         
         if (alivePlayers.length <= 1) {
             this.gameOver = true;
-            this.broadcast('gameOver', { winnerId: alivePlayers[0] || null });
+            const winner = alivePlayers[0] ? this.players[alivePlayers[0]] : null;
+            this.broadcast('gameOver', { 
+                winnerId: alivePlayers[0] || null,
+                winnerName: winner ? winner.name : 'Nobody'
+            });
             return;
         }
 
@@ -168,10 +193,19 @@ class GameRoom extends Room {
         });
     }
 
-    onJoin(client) {
-        console.log(client.sessionId, 'joined');
-        this.players[client.sessionId] = { id: client.sessionId, alive: true };
-        this.broadcast('playerJoined', { id: client.sessionId });
+    onJoin(client, options) {
+        console.log(client.sessionId, 'joined as', options.playerName);
+        this.players[client.sessionId] = {
+            id: client.sessionId,
+            name: options.playerName || 'Anonymous',
+            alive: true
+        };
+        client.send('roomCode', { code: this.roomCode });
+        client.send('existingPlayers', { players: Object.values(this.players) });
+        this.broadcast('playerJoined', {
+            id: client.sessionId,
+            name: options.playerName || 'Anonymous'
+        });
     }
 
     onLeave(client) {

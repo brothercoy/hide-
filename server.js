@@ -5,13 +5,29 @@ const GameRoom = require('./GameRoom');
 
 const app = express();
 app.use(express.json());
-app.use(express.static('.'));
 
 const gameServer = new Server({
     server: createServer(app)
 });
 
-gameServer.define('game_room', GameRoom);
+const roomCodes = {};
+
+gameServer.define('game_room', GameRoom).on('create', (room) => {
+    roomCodes[room.roomCode] = room.roomId;
+}).on('dispose', (room) => {
+    delete roomCodes[room.roomCode];
+});
+
+app.get('/join/:code', (req, res) => {
+    const roomId = roomCodes[req.params.code.toUpperCase()];
+    if (roomId) {
+        res.json({ roomId });
+    } else {
+        res.status(404).json({ error: 'Room not found' });
+    }
+});
+
+app.use(express.static('.'));
 
 const PORT = process.env.PORT || 3000;
 gameServer.listen(PORT, () => {

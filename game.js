@@ -1,8 +1,9 @@
-const client = new Colyseus.Client(
-    window.location.hostname === 'localhost' 
-    ? 'ws://localhost:3000' 
+const colyseusClient = new Colyseus.Client(
+    window.location.hostname === 'localhost'
+    ? 'ws://localhost:3000'
     : 'wss://' + window.location.hostname
 );
+
 let room;
 let targetChar = null;
 let chars = [];
@@ -14,17 +15,97 @@ let eliminatedId = null;
 let winnerId = null;
 let tappedPlayers = [];
 let showRoundOver = false;
+let playerName = '';
+let timeLeft = 30;
 
-client.joinOrCreate('game_room').then(r => {
+document.getElementById('create-btn').addEventListener('click', () => {
+    playerName = document.getElementById('name-input').value.trim();
+    if (!playerName) { alert('Please enter your name'); return; }
+    joinGame('create');
+});
+
+document.getElementById('join-btn').addEventListener('click', () => {
+    playerName = document.getElementById('name-input').value.trim();
+    const code = document.getElementById('code-input').value.trim().toUpperCase();
+    if (!playerName) { alert('Please enter your name'); return; }
+    if (!code) { alert('Please enter a room code'); return; }
+    joinGame('join', code);
+});
+
+document.getElementById('start-btn').addEventListener('click', () => {
+    room.send('startGame');
+});
+
+function joinGame(type, code) {
+    const options = { playerName };
+    if (type === 'create') {
+        colyseusClient.create('game_room', options).then(onRoomJoined);
+    } else {
+        fetch('/join/' + code)
+            .then(r => r.json())
+            .then(data => {
+                if (data.roomId) {
+                    colyseusClient.joinById(data.roomId, options).then(onRoomJoined);
+                } else {
+                    alert('Room not found. Check the code and try again.');
+                }
+            })
+            .catch(() => {
+                alert('Room not found. Check the code and try again.');
+            });
+    }
+}
+
+function onRoomJoined(r) {
     room = r;
-    console.log('Joined room:', room.sessionId);
+    document.getElementById('menu').style.display = 'none';
+    document.getElementById('lobby').style.display = 'flex';
+    setupRoomMessages();
+}
 
+const canvas = document.getElementById('gameCanvas');
+const ctx = canvas.getContext('2d');
+
+function resizeCanvas() {
+    canvas.width = window.innerWidth;
+    canvas.height = window.innerHeight;
+}
+
+resizeCanvas();
+window.addEventListener('resize', resizeCanvas);
+
+const boxW = canvas.width - 192;
+const boxH = canvas.height - 192;
+
+ctx.font = '24px monospace';
+
+function setupRoomMessages() {
     room.onMessage('gameState', (data) => {
         chars = data.chars;
         prevChars = data.chars.map(c => ({ ...c }));
         targetChar = data.targetChar;
         timeLeft = data.timeLeft;
         lastUpdateTime = Date.now();
+    });
+
+    room.onMessage('existingPlayers', (data) => {
+        const playerList = document.getElementById('player-list');
+        data.players.forEach(p => {
+            if (document.getElementById('player-' + p.id)) return;
+            const entry = document.createElement('p');
+            entry.id = 'player-' + p.id;
+            entry.textContent = p.name;
+            playerList.appendChild(entry);
+        });
+    });
+
+    room.onMessage('roomCode', (data) => {
+        document.getElementById('room-code-display').textContent = data.code;
+        const playerList = document.getElementById('player-list');
+        const entry = document.createElement('p');
+        entry.id = 'player-' + room.sessionId;
+        entry.textContent = playerName;
+        playerList.appendChild(entry);
     });
 
     room.onMessage('charUpdate', (data) => {
@@ -40,11 +121,23 @@ client.joinOrCreate('game_room').then(r => {
     });
 
     room.onMessage('playerJoined', (data) => {
-        console.log('Player joined:', data.id);
+        if (data.id === room.sessionId) return;
+        const playerList = document.getElementById('player-list');
+        const entry = document.createElement('p');
+        entry.id = 'player-' + data.id;
+        entry.textContent = data.name;
+        playerList.appendChild(entry);
     });
 
     room.onMessage('playerLeft', (data) => {
-        console.log('Player left:', data.id);
+        const entry = document.getElementById('player-' + data.id);
+        if (entry) entry.remove();
+    });
+
+    room.onMessage('gameStarted', () => {
+        document.getElementById('lobby').style.display = 'none';
+        document.getElementById('game').style.display = 'block';
+        resizeCanvas();
     });
 
     room.onMessage('playerTapped', (data) => {
@@ -68,29 +161,11 @@ client.joinOrCreate('game_room').then(r => {
     });
 
     room.onMessage('gameOver', (data) => {
-        winnerId = data.winnerId || 'Nobody';
+        winnerId = data.winnerName || 'Nobody';
     });
 
     room.send('clientReady');
-});
-
-const canvas = document.getElementById('gameCanvas');
-const ctx = canvas.getContext('2d');
-
-function resizeCanvas() {
-    canvas.width = window.innerWidth;
-    canvas.height = window.innerHeight;
 }
-
-resizeCanvas();
-window.addEventListener('resize', resizeCanvas);
-
-const boxW = canvas.width - 192;
-const boxH = canvas.height - 192;
-
-let timeLeft = 30;
-
-ctx.font = '24px monospace';
 
 function getMetrics(char) {
     const metrics = ctx.measureText(char);
@@ -178,17 +253,6 @@ function draw() {
     ctx.restore();
 }
 
-function getInterpolatedPos(index) {
-    const now = Date.now();
-    const t =  0;
-    const c = chars[index];
-    const prev = prevChars[index] || c;
-    return {
-        x: prev.x + (c.x - prev.x) * t,
-        y: prev.y + (c.y - prev.y) * t
-    };
-}
-
 canvas.addEventListener('click', (e) => {
     const rect = canvas.getBoundingClientRect();
     const clickX = e.clientX - rect.left - canvas.width / 2;
@@ -198,8 +262,7 @@ canvas.addEventListener('click', (e) => {
 
     chars.forEach((c, i) => {
         if (!c.isTarget) return;
-        const pos = getInterpolatedPos(i);
-        const { px, py } = toPixels(pos.x, pos.y);
+        const { px, py } = toPixels(c.x, c.y);
         const m = getMetrics(c.char);
         const centerY = py - m.ascent + m.height / 2;
         const dist = Math.sqrt((clickX - px) ** 2 + (clickY - centerY) ** 2);
