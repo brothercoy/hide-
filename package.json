@@ -4,7 +4,7 @@
   "description": "",
   "main": "server.js",
   "scripts": {
-    "start": "vite build && node server/server.js",
+    "start": "node server/server.js",
     "dev": "concurrently \"node server/server.js\" \"vite\"",
     "build": "vite build",
     "test": "echo \"Error: no test specified\" && exit 1"
