@@ -1,10 +1,19 @@
 import express from 'express';
 import { createServer } from 'http';
 import { Server } from '@colyseus/core';
+import { fileURLToPath } from 'url';
+import { dirname, join } from 'path';
 import { GameRoom } from './GameRoom.js';
+
+const __dirname = dirname(fileURLToPath(import.meta.url));
+const clientDir = process.env.NODE_ENV === 'production' 
+    ? join(__dirname, '../dist')
+    : join(__dirname, '../client');
 
 const app = express();
 app.use(express.json());
+app.use('/colyseus', express.static(join(__dirname, '../node_modules/@colyseus/sdk/dist')));
+app.use(express.static(clientDir));
 
 const gameServer = new Server({
     server: createServer(app)
@@ -26,17 +35,6 @@ app.get('/join/:code', (req, res) => {
         res.status(404).json({ error: 'Room not found' });
     }
 });
-
-import { fileURLToPath } from 'url';
-import { dirname, join } from 'path';
-
-const __dirname = dirname(fileURLToPath(import.meta.url));
-const clientDir = process.env.NODE_ENV === 'production' 
-    ? join(__dirname, '../dist')
-    : join(__dirname, '../client');
-
-app.use('/colyseus', express.static(join(__dirname, '../node_modules/@colyseus/sdk/dist')));
-app.use(express.static(clientDir));
 
 const PORT = process.env.PORT || 3000;
 gameServer.listen(PORT, () => {

@@ -2,7 +2,7 @@
   "name": "ascii-game",
   "version": "1.0.0",
   "description": "",
-  "main": "server.js",
+  "main": "server/server.js",
   "scripts": {
     "start": "node server/server.js",
     "dev": "concurrently \"node server/server.js\" \"vite\"",
@@ -16,10 +16,10 @@
   "dependencies": {
     "@colyseus/sdk": "^0.17.42",
     "colyseus": "^0.17.10",
-    "express": "^5.2.1"
+    "express": "^5.2.1",
+    "vite": "^8.0.11"
   },
   "devDependencies": {
-    "concurrently": "^9.2.1",
-    "vite": "^8.0.11"
+    "concurrently": "^9.2.1"
   }
 }
