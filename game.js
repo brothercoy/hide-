@@ -4,19 +4,40 @@ const colyseusClient = new Colyseus.Client(
     : 'wss://' + window.location.hostname
 );
 
+const TICK_RATE = 50;
+
 let room;
 let targetChar = null;
 let chars = [];
 let prevChars = [];
 let lastUpdateTime = null;
-const TICK_RATE = 50;
 let currentRound = 1;
-let eliminatedId = null;
+let eliminatedName = null;
 let winnerId = null;
-let tappedPlayers = [];
+let playerList = [];
 let showRoundOver = false;
 let playerName = '';
 let timeLeft = 30;
+
+async function tryReconnect() {
+    const token = localStorage.getItem('reconnectionToken');
+    if (!token) return;
+    try {
+        console.log('trying to reconnect with token:', token);
+        const r = await colyseusClient.reconnect(token);
+        console.log('reconnect success');
+        room = r;
+        localStorage.setItem('reconnectionToken', room.reconnectionToken);
+        document.getElementById('menu').style.display = 'none';
+        document.getElementById('lobby').style.display = 'flex';
+        setupRoomMessages(true);
+    } catch (e) {
+        console.log('reconnect failed:', e.message);
+        localStorage.removeItem('reconnectionToken');
+    }
+}
+
+window.addEventListener('load', tryReconnect);
 
 document.getElementById('create-btn').addEventListener('click', () => {
     playerName = document.getElementById('name-input').value.trim();
@@ -58,9 +79,31 @@ function joinGame(type, code) {
 
 function onRoomJoined(r) {
     room = r;
+    localStorage.setItem('reconnectionToken', room.reconnectionToken);
+
+    room.onLeave(() => {
+        localStorage.removeItem('reconnectionToken');
+        document.getElementById('lobby').style.display = 'none';
+        document.getElementById('game').style.display = 'none';
+        document.getElementById('menu').style.display = 'flex';
+        resetGameState();
+    });
+
     document.getElementById('menu').style.display = 'none';
     document.getElementById('lobby').style.display = 'flex';
     setupRoomMessages();
+}
+
+function resetGameState() {
+    chars = [];
+    prevChars = [];
+    targetChar = null;
+    winnerId = null;
+    eliminatedName = null;
+    showRoundOver = false;
+    playerList = [];
+    currentRound = 1;
+    timeLeft = 30;
 }
 
 const canvas = document.getElementById('gameCanvas');
@@ -79,33 +122,48 @@ const boxH = canvas.height - 192;
 
 ctx.font = '24px monospace';
 
-function setupRoomMessages() {
+function renderLobbyPlayerList() {
+    const list = document.getElementById('player-list');
+    list.innerHTML = '';
+    playerList.forEach(p => {
+        const entry = document.createElement('p');
+        entry.id = 'player-' + p.id;
+        entry.textContent = p.name;
+        entry.style.opacity = p.connected ? '1' : '0.4';
+        list.appendChild(entry);
+    });
+}
+
+function setupRoomMessages(isReconnecting = false) {
+    if (!isReconnecting) {
+        room.send('clientReady');
+    }
+
+    room.onMessage('roomCode', (data) => {
+        document.getElementById('room-code-display').textContent = data.code;
+    });
+
+    room.onMessage('playerList', (data) => {
+        playerList = data.players;
+        renderLobbyPlayerList();
+    });
+
+    room.onMessage('startError', (data) => {
+        alert(data.message);
+    });
+
+    room.onMessage('gameStarted', () => {
+        document.getElementById('lobby').style.display = 'none';
+        document.getElementById('game').style.display = 'block';
+        resizeCanvas();
+    });
+
     room.onMessage('gameState', (data) => {
         chars = data.chars;
         prevChars = data.chars.map(c => ({ ...c }));
         targetChar = data.targetChar;
         timeLeft = data.timeLeft;
         lastUpdateTime = Date.now();
-    });
-
-    room.onMessage('existingPlayers', (data) => {
-        const playerList = document.getElementById('player-list');
-        data.players.forEach(p => {
-            if (document.getElementById('player-' + p.id)) return;
-            const entry = document.createElement('p');
-            entry.id = 'player-' + p.id;
-            entry.textContent = p.name;
-            playerList.appendChild(entry);
-        });
-    });
-
-    room.onMessage('roomCode', (data) => {
-        document.getElementById('room-code-display').textContent = data.code;
-        const playerList = document.getElementById('player-list');
-        const entry = document.createElement('p');
-        entry.id = 'player-' + room.sessionId;
-        entry.textContent = playerName;
-        playerList.appendChild(entry);
     });
 
     room.onMessage('charUpdate', (data) => {
@@ -115,37 +173,13 @@ function setupRoomMessages() {
         lastUpdateTime = Date.now();
     });
 
-    room.onMessage('timeUp', (data) => {
-        eliminatedId = data.eliminatedIds.join(', ');
+    room.onMessage('roundOver', (data) => {
+        eliminatedName = data.eliminatedName;
         showRoundOver = true;
     });
 
-    room.onMessage('playerJoined', (data) => {
-        if (data.id === room.sessionId) return;
-        const playerList = document.getElementById('player-list');
-        const entry = document.createElement('p');
-        entry.id = 'player-' + data.id;
-        entry.textContent = data.name;
-        playerList.appendChild(entry);
-    });
-
-    room.onMessage('playerLeft', (data) => {
-        const entry = document.getElementById('player-' + data.id);
-        if (entry) entry.remove();
-    });
-
-    room.onMessage('gameStarted', () => {
-        document.getElementById('lobby').style.display = 'none';
-        document.getElementById('game').style.display = 'block';
-        resizeCanvas();
-    });
-
-    room.onMessage('playerTapped', (data) => {
-        tappedPlayers.push(data.id);
-    });
-
-    room.onMessage('roundOver', (data) => {
-        eliminatedId = data.eliminatedId;
+    room.onMessage('timeUp', (data) => {
+        eliminatedName = data.eliminatedNames.join(', ');
         showRoundOver = true;
     });
 
@@ -155,9 +189,22 @@ function setupRoomMessages() {
         prevChars = data.chars.map(c => ({ ...c }));
         lastUpdateTime = Date.now();
         currentRound = data.round;
-        tappedPlayers = [];
         showRoundOver = false;
-        eliminatedId = null;
+        eliminatedName = null;
+    });
+
+    room.onMessage('reconnected', (data) => {
+        chars = data.chars;
+        prevChars = data.chars.map(c => ({ ...c }));
+        targetChar = data.targetChar;
+        timeLeft = data.timeLeft;
+        currentRound = data.round;
+        lastUpdateTime = Date.now();
+        if (data.gameStarted) {
+            document.getElementById('lobby').style.display = 'none';
+            document.getElementById('game').style.display = 'block';
+            resizeCanvas();
+        }
     });
 
     room.onMessage('gameOver', (data) => {
@@ -212,17 +259,29 @@ function draw() {
         const prev = prevChars[i] || c;
         const ix = prev.x + (c.x - prev.x) * t;
         const iy = prev.y + (c.y - prev.y) * t;
-        const ir = c.rotation;
-
         const { px, py } = toPixels(ix, iy);
         const m = getMetrics(c.char);
 
         ctx.save();
         ctx.translate(px, py);
-        ctx.rotate(ir);
+        ctx.rotate(c.rotation);
         ctx.fillText(c.char, -m.width / 2, m.ascent - m.height / 2);
         ctx.restore();
     });
+
+    // draw player list top right
+    ctx.textAlign = 'right';
+    ctx.font = '18px monospace';
+    const listX = boxW / 2 - 10;
+    let listY = -boxH / 2 + 30;
+    playerList.forEach(p => {
+        ctx.globalAlpha = p.tapped ? 1 : 0.3;
+        if (!p.alive) ctx.globalAlpha = 0.1;
+        ctx.fillStyle = 'black';
+        ctx.fillText(p.name, listX, listY);
+        listY += 24;
+    });
+    ctx.globalAlpha = 1;
 
     ctx.font = '32px monospace';
     ctx.fillStyle = 'black';
@@ -230,7 +289,6 @@ function draw() {
     ctx.fillText('Round ' + currentRound, 0, -boxH / 2 - 50);
     ctx.fillText(Math.ceil(timeLeft) + 's', 0, -boxH / 2 - 20);
     ctx.fillText('Find: ' + targetChar, 0, boxH / 2 + 40);
-    ctx.fillText('Found: ' + tappedPlayers.length, 0, boxH / 2 + 80);
 
     if (winnerId) {
         ctx.fillStyle = 'rgba(255,255,255,0.85)';
@@ -247,7 +305,7 @@ function draw() {
         ctx.font = '28px monospace';
         ctx.fillText('Eliminated!', 0, -20);
         ctx.font = '18px monospace';
-        ctx.fillText(eliminatedId, 0, 20);
+        ctx.fillText(eliminatedName, 0, 20);
     }
 
     ctx.restore();
@@ -257,26 +315,19 @@ canvas.addEventListener('click', (e) => {
     const rect = canvas.getBoundingClientRect();
     const clickX = e.clientX - rect.left - canvas.width / 2;
     const clickY = e.clientY - rect.top - canvas.height / 2;
-
     const { nx, ny } = toNormalized(clickX, clickY);
 
-    chars.forEach((c, i) => {
+    chars.forEach(c => {
         if (!c.isTarget) return;
         const { px, py } = toPixels(c.x, c.y);
         const m = getMetrics(c.char);
         const centerY = py - m.ascent + m.height / 2;
         const dist = Math.sqrt((clickX - px) ** 2 + (clickY - centerY) ** 2);
         if (dist < m.radius + 20) {
-            console.log('Found the target!');
             room.send('tap', { nx, ny, time: Date.now() });
         }
     });
 });
-
-function loop() {
-    draw();
-    requestAnimationFrame(loop);
-}
 
 document.addEventListener('keydown', (e) => {
     if (e.key === 'f' || e.key === 'F') {
@@ -289,3 +340,8 @@ document.addEventListener('keydown', (e) => {
 });
 
 requestAnimationFrame(loop);
+
+function loop() {
+    draw();
+    requestAnimationFrame(loop);
+}

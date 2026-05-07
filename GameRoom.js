@@ -1,18 +1,27 @@
-const { Room } = require('colyseus');
+const { Room } = require('@colyseus/core');
 
 const LETTERS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789!@#$%^&*';
 const TOTAL_CHARS = 80;
 const TICK_RATE = 50;
-const SPEED_SCALE = 0.2;
+const LOBBY_TIMEOUT = 1000 * 60 * 10;
+
+const DEFAULT_SETTINGS = {
+    roundTime: 30,
+    speedScale: 0.2,
+    minPlayers: 2
+};
 
 class GameRoom extends Room {
     onCreate() {
         console.log('Room created');
 
+        this.autoDispose = false;
         this.roomCode = this.generateRoomCode();
-        this.timeLeft = 30;
+        this.settings = { ...DEFAULT_SETTINGS };
         this.round = 1;
+        this.timeLeft = this.settings.roundTime;
         this.players = {};
+        this.activePlayers = {};
         this.taps = [];
         this.chars = this.generateChars();
         this.lastTick = Date.now();
@@ -20,32 +29,26 @@ class GameRoom extends Room {
         this.gameOver = false;
         this.gameStarted = false;
 
-        this.onMessage('tap', (client, message) => {
-            if (!this.players[client.sessionId].alive) return;
+        this.clock.setTimeout(() => {
+            if (!this.gameStarted) this.disconnect();
+        }, LOBBY_TIMEOUT);
+
+        this.onMessage('tap', (client) => {
+            const player = this.activePlayers[client.sessionId];
+            if (!player || !player.alive) return;
             if (this.taps.find(t => t.id === client.sessionId)) return;
-        
-            this.taps.push({
-                id: client.sessionId,
-                time: Date.now()
-            });
 
-            const totalPlayers = Object.keys(this.players).filter(id => this.players[id].alive).length;
+            this.taps.push({ id: client.sessionId, time: Date.now() });
+            this.broadcastPlayerList();
 
-            this.broadcast('playerTapped', {
-                id: client.sessionId,
-                tapNumber: this.taps.length
-            });
-
-            if (totalPlayers >= 2 && this.taps.length === totalPlayers - 1) {
+            const totalAlive = this.getAlivePlayers().length;
+            if (totalAlive >= this.settings.minPlayers && this.taps.length === totalAlive - 1) {
                 const tappedIds = this.taps.map(t => t.id);
-                const eliminatedId = Object.keys(this.players).find(id => this.players[id].alive && !tappedIds.includes(id));
-
+                const eliminatedId = this.getAlivePlayers().find(id => !tappedIds.includes(id));
+                this.activePlayers[eliminatedId].alive = false;
                 this.broadcast('roundOver', {
-                    eliminatedId: eliminatedId,
-                    taps: this.taps
+                    eliminatedName: this.activePlayers[eliminatedId].name
                 });
-
-                this.players[eliminatedId].alive = false;
                 this.startNextRound();
             }
         });
@@ -61,22 +64,33 @@ class GameRoom extends Room {
 
         this.onMessage('startGame', (client) => {
             if (client.sessionId !== Object.keys(this.players)[0]) return;
+            const connected = this.getConnectedPlayers();
+            if (connected.length < this.settings.minPlayers) {
+                client.send('startError', { message: `Need at least ${this.settings.minPlayers} players to start.` });
+                return;
+            }
+
+            this.activePlayers = {};
+            connected.forEach(id => {
+                this.activePlayers[id] = { ...this.players[id], tapped: false };
+            });
+
             this.gameStarted = true;
             this.lastTick = Date.now();
             this.broadcast('gameStarted');
+            this.broadcastPlayerList();
         });
 
         this.setSimulationInterval(() => {
-            if (!this.gameStarted) return;
-            if (this.gameOver) return;
+            if (!this.gameStarted || this.gameOver) return;
 
             const now = Date.now();
             const delta = (now - this.lastTick) / 1000;
             this.lastTick = now;
 
             this.updateChars(delta);
-
             this.timeLeft -= delta;
+
             if (this.timeLeft <= 0 && !this.timeUpHandled) {
                 this.timeLeft = 0;
                 this.timeUpHandled = true;
@@ -90,6 +104,41 @@ class GameRoom extends Room {
         }, TICK_RATE);
     }
 
+    getAlivePlayers() {
+        return Object.keys(this.activePlayers).filter(id => this.activePlayers[id].alive);
+    }
+
+    getConnectedPlayers() {
+        return Object.keys(this.players).filter(id => this.players[id].connected);
+    }
+
+    broadcastPlayerList() {
+        const tappedIds = this.taps.map(t => t.id);
+        this.broadcast('playerList', {
+            players: Object.values(this.players).map(p => ({
+                id: p.id,
+                name: p.name,
+                connected: p.connected,
+                alive: this.activePlayers[p.id] ? this.activePlayers[p.id].alive : true,
+                tapped: tappedIds.includes(p.id)
+            }))
+        });
+    }
+
+    sendPlayerState(client) {
+        client.send('roomCode', { code: this.roomCode });
+        this.broadcastPlayerList();
+        if (this.gameStarted) {
+            client.send('reconnected', {
+                chars: this.chars,
+                targetChar: this.targetChar,
+                timeLeft: this.timeLeft,
+                round: this.round,
+                gameStarted: true
+            });
+        }
+    }
+
     generateRoomCode() {
         const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
         let code = '';
@@ -101,21 +150,14 @@ class GameRoom extends Room {
 
     handleTimeUp() {
         const tappedIds = this.taps.map(t => t.id);
-        const alivePlayers = Object.keys(this.players).filter(id => this.players[id].alive);
-        const untappedPlayers = alivePlayers.filter(id => !tappedIds.includes(id));
-        
-        if (untappedPlayers.length === 0) {
-            this.startNextRound();
-            return;
-        }
+        const untapped = this.getAlivePlayers().filter(id => !tappedIds.includes(id));
 
-        untappedPlayers.forEach(id => {
-            this.players[id].alive = false;
+        untapped.forEach(id => {
+            this.activePlayers[id].alive = false;
         });
 
         this.broadcast('timeUp', {
-            eliminatedIds: untappedPlayers,
-            round: this.round
+            eliminatedNames: untapped.map(id => this.activePlayers[id].name)
         });
 
         this.startNextRound();
@@ -145,20 +187,20 @@ class GameRoom extends Room {
             isTarget: isTarget,
             x: (Math.random() - 0.5) * 1.8,
             y: (Math.random() - 0.5) * 1.8,
-            speedX: (Math.random() - 0.5) * SPEED_SCALE,
-            speedY: (Math.random() - 0.5) * SPEED_SCALE,
+            speedX: (Math.random() - 0.5) * this.settings.speedScale,
+            speedY: (Math.random() - 0.5) * this.settings.speedScale,
             rotation: Math.random() * Math.PI * 2,
             rotationSpeed: Math.random() < 0.05 ? 0 : (Math.random() - 0.5) * 2
         };
     }
 
     updateChars(delta) {
+        const r = 0.012;
         this.chars.forEach(c => {
             c.x += c.speedX * delta;
             c.y += c.speedY * delta;
             c.rotation += c.rotationSpeed * delta;
 
-            const r = 0.012;
             if (c.x < -0.995 + r) { c.speedX = Math.abs(c.speedX); c.x = -0.995 + r; }
             if (c.x > 0.995 - r) { c.speedX = -Math.abs(c.speedX); c.x = 0.995 - r; }
             if (c.y < -0.98 + r) { c.speedY = Math.abs(c.speedY); c.y = -0.98 + r; }
@@ -167,15 +209,13 @@ class GameRoom extends Room {
     }
 
     startNextRound() {
-        const alivePlayers = Object.keys(this.players).filter(id => this.players[id].alive);
-
         this.timeUpHandled = false;
-        
+        const alivePlayers = this.getAlivePlayers();
+
         if (alivePlayers.length <= 1) {
             this.gameOver = true;
-            const winner = alivePlayers[0] ? this.players[alivePlayers[0]] : null;
-            this.broadcast('gameOver', { 
-                winnerId: alivePlayers[0] || null,
+            const winner = alivePlayers[0] ? this.activePlayers[alivePlayers[0]] : null;
+            this.broadcast('gameOver', {
                 winnerName: winner ? winner.name : 'Nobody'
             });
             return;
@@ -183,7 +223,7 @@ class GameRoom extends Room {
 
         this.round += 1;
         this.taps = [];
-        this.timeLeft = 30;
+        this.timeLeft = this.settings.roundTime;
         this.chars = this.generateChars();
 
         this.broadcast('newRound', {
@@ -191,6 +231,8 @@ class GameRoom extends Room {
             targetChar: this.targetChar,
             chars: this.chars
         });
+
+        this.broadcastPlayerList();
     }
 
     onJoin(client, options) {
@@ -198,20 +240,29 @@ class GameRoom extends Room {
         this.players[client.sessionId] = {
             id: client.sessionId,
             name: options.playerName || 'Anonymous',
-            alive: true
+            alive: true,
+            connected: true
         };
-        client.send('roomCode', { code: this.roomCode });
-        client.send('existingPlayers', { players: Object.values(this.players) });
-        this.broadcast('playerJoined', {
-            id: client.sessionId,
-            name: options.playerName || 'Anonymous'
-        });
+        this.sendPlayerState(client);
     }
 
-    onLeave(client) {
-        console.log(client.sessionId, 'left');
+    onDrop(client) {
+        console.log(client.sessionId, 'dropped');
+        this.players[client.sessionId].connected = false;
+        this.broadcastPlayerList();
+        this.allowReconnection(client, 60);
+    }
+
+    onReconnect(client) {
+        console.log(client.sessionId, 'reconnected');
+        this.players[client.sessionId].connected = true;
+        this.sendPlayerState(client);
+    }
+
+    onLeave(client, code) {
+        console.log(client.sessionId, 'left. code:', code);
         delete this.players[client.sessionId];
-        this.broadcast('playerLeft', { id: client.sessionId });
+        this.broadcastPlayerList();
     }
 }
 

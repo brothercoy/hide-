@@ -1,6 +1,6 @@
 const express = require('express');
 const { createServer } = require('http');
-const { Server } = require('colyseus');
+const { Server } = require('@colyseus/core');
 const GameRoom = require('./GameRoom');
 
 const app = express();
@@ -27,6 +27,7 @@ app.get('/join/:code', (req, res) => {
     }
 });
 
+app.use('/colyseus', express.static('node_modules/@colyseus/sdk/dist'));
 app.use(express.static('.'));
 
 const PORT = process.env.PORT || 3000;
