@@ -27,8 +27,16 @@ app.get('/join/:code', (req, res) => {
     }
 });
 
-app.use('/colyseus', express.static('node_modules/@colyseus/sdk/dist'));
-app.use(express.static('client'));
+import { fileURLToPath } from 'url';
+import { dirname, join } from 'path';
+
+const __dirname = dirname(fileURLToPath(import.meta.url));
+const clientDir = process.env.NODE_ENV === 'production' 
+    ? join(__dirname, '../dist')
+    : join(__dirname, '../client');
+
+app.use('/colyseus', express.static(join(__dirname, '../node_modules/@colyseus/sdk/dist')));
+app.use(express.static(clientDir));
 
 const PORT = process.env.PORT || 3000;
 gameServer.listen(PORT, () => {

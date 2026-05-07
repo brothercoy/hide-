@@ -4,8 +4,8 @@
   "description": "",
   "main": "server.js",
   "scripts": {
-    "start": "node server.js",
-    "dev": "vite",
+    "start": "vite build && node server/server.js",
+    "dev": "concurrently \"node server/server.js\" \"vite\"",
     "build": "vite build",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
@@ -19,6 +19,7 @@
     "express": "^5.2.1"
   },
   "devDependencies": {
+    "concurrently": "^9.2.1",
     "vite": "^8.0.11"
   }
 }
