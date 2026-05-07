@@ -5,15 +5,20 @@
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
+    "dev": "vite",
+    "build": "vite build",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "keywords": [],
   "author": "",
   "license": "ISC",
-  "type": "commonjs",
+  "type": "module",
   "dependencies": {
     "@colyseus/sdk": "^0.17.42",
     "colyseus": "^0.17.10",
     "express": "^5.2.1"
+  },
+  "devDependencies": {
+    "vite": "^8.0.11"
   }
 }

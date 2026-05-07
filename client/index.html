@@ -1,0 +1,228 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>hide @$©!!</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            background: white;
+            overflow: hidden;
+            font-family: monospace;
+        }
+
+        #menu {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            height: 100vh;
+            gap: 16px;
+        }
+
+        #game {
+            display: none;
+        }
+
+        h1 {
+            font-size: 48px;
+            letter-spacing: 4px;
+        }
+
+        input {
+            font-family: monospace;
+            font-size: 20px;
+            padding: 10px 16px;
+            border: 3px solid black;
+            outline: none;
+            width: 300px;
+            text-align: center;
+        }
+
+        button {
+            font-family: monospace;
+            font-size: 20px;
+            padding: 10px 24px;
+            border: 3px solid black;
+            background: white;
+            cursor: pointer;
+            width: 300px;
+        }
+
+        button:hover {
+            background: black;
+            color: white;
+        }
+
+        #join-section {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .divider {
+            font-size: 14px;
+            color: #999;
+        }
+
+        #lobby {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            height: 100vh;
+            gap: 16px;
+            font-family: monospace;
+        }
+
+        #lobby-inner {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 16px;
+            width: 400px;
+        }
+
+        #room-code-display {
+            font-size: 32px;
+            font-weight: bold;
+            letter-spacing: 8px;
+        }
+
+        #player-list {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 8px;
+            min-width: 300px;
+        }
+
+        #lobby-settings {
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+            width: 100%;
+        }
+
+        #mode-select {
+            display: flex;
+            gap: 8px;
+        }
+
+        .mode-btn {
+            font-family: monospace;
+            font-size: 16px;
+            padding: 8px 16px;
+            border: 2px solid black;
+            background: white;
+            cursor: pointer;
+            flex: 1;
+            width: auto;
+        }
+
+        .mode-btn.active {
+            background: black;
+            color: white;
+        }
+
+        .mode-btn:hover {
+            background: black;
+            color: white;
+        }
+
+        #mode-description {
+            font-size: 13px;
+            color: #555;
+            text-align: center;
+            min-height: 40px;
+        }
+
+        .setting-row {
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+        }
+
+        .setting-label {
+            font-size: 14px;
+            display: flex;
+            justify-content: space-between;
+        }
+
+        .setting-slider {
+            width: 100%;
+            cursor: pointer;
+        }
+
+        .speed-options {
+            display: flex;
+            gap: 8px;
+        }
+
+        .speed-btn {
+            font-family: monospace;
+            font-size: 14px;
+            padding: 6px 0;
+            border: 2px solid black;
+            background: white;
+            cursor: pointer;
+            flex: 1;
+            width: auto;
+        }
+
+        .speed-btn.active {
+            background: black;
+            color: white;
+        }
+
+        .speed-btn:hover {
+            background: black;
+            color: white;
+        }
+
+    </style>
+</head>
+<body>
+    <div id="menu">
+        <h1>HIDE</h1>
+        <input id="name-input" type="text" placeholder="Enter your name" maxlength="16" />
+        <button id="create-btn">Create Room</button>
+        <span class="divider">— or —</span>
+        <div id="join-section">
+            <input id="code-input" type="text" placeholder="Room code" maxlength="6" />
+            <button id="join-btn">Join Room</button>
+        </div>
+    </div>
+
+    <div id="lobby" style="display:none;">
+        <div id="lobby-inner">
+            <h1>HIDE</h1>
+            <p>Room Code: <span id="room-code-display"></span></p>
+            <div id="player-list"></div>
+
+            <div id="lobby-settings">
+                <div id="mode-select">
+                    <button class="mode-btn" data-mode="redacted">Redacted</button>
+                    <button class="mode-btn" data-mode="frequency">Frequency</button>
+                </div>
+                <p id="mode-description"></p>
+                <div id="settings-panel"></div>
+            </div>
+
+            <button id="start-btn">Start Game</button>
+        </div>
+    </div>
+
+    <div id="game">
+        <canvas id="gameCanvas"></canvas>
+    </div>
+
+    <script type="module" src="game.js"></script>
+</body>
+</html>
