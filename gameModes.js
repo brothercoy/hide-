@@ -8,6 +8,7 @@ export const GAME_MODES = {
         defaultSettings: {
             matches: 1,
             roundTime: 30,
+            charCount: 80,
             speedScale: 0.2,
             minPlayers: 2
         },
@@ -20,10 +21,17 @@ export const GAME_MODES = {
             },
             roundTime: {
                 label: 'Round Time',
-                min: 10,
+                min: 1,
                 max: 60,
                 default: 30,
                 unit: 's'
+            },
+            charCount: {
+                label: 'Characters',
+                min: 30,
+                max: 150,
+                default: 80,
+                unit: ''
             },
             speedScale: {
                 label: 'Speed',
@@ -55,7 +63,7 @@ export const GAME_MODES = {
             },
             roundTime: {
                 label: 'Round Time',
-                min: 10,
+                min: 1,
                 max: 60,
                 default: 30,
                 unit: 's'

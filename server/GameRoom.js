@@ -2,7 +2,6 @@ import { Room } from '@colyseus/core';
 import { GAME_MODES } from '../gameModes.js';
 
 const LETTERS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789!@#$%^&*';
-const TOTAL_CHARS = 80;
 const TICK_RATE = 50;
 const LOBBY_TIMEOUT = 1000 * 60 * 10;
 
@@ -60,7 +59,7 @@ class GameRoom extends Room {
             });
         });
 
-        this.onMessage('startGame', (client) => {
+        this.onMessage('startGame', (client, data) => {
             if (client.sessionId !== Object.keys(this.players)[0]) return;
             const connected = this.getConnectedPlayers();
             if (connected.length < this.settings.minPlayers) {
@@ -73,9 +72,23 @@ class GameRoom extends Room {
                 this.activePlayers[id] = { ...this.players[id], tapped: false };
             });
 
+            this.settings = {
+                ...this.gameMode.defaultSettings,
+                roundTime: data.settings.roundTime || this.gameMode.defaultSettings.roundTime,
+                speedScale: data.settings.speedScale || this.gameMode.defaultSettings.speedScale,
+                charCount: data.settings.charCount || this.gameMode.defaultSettings.charCount,
+                minPlayers: this.gameMode.defaultSettings.minPlayers
+            };
+            this.timeLeft = this.settings.roundTime;
+            this.chars = this.generateChars();
             this.gameStarted = true;
             this.lastTick = Date.now();
-            this.broadcast('gameStarted');
+            this.broadcast('gameStarted', {
+                chars: this.chars,
+                targetChar: this.targetChar,
+                timeLeft: this.timeLeft,
+                round: this.round
+            });
             this.broadcastPlayerList();
         });
 
@@ -165,7 +178,7 @@ class GameRoom extends Room {
         const chars = [];
         this.targetChar = LETTERS[Math.floor(Math.random() * LETTERS.length)];
 
-        for (let i = 0; i < TOTAL_CHARS - 1; i++) {
+        for (let i = 0; i < this.settings.charCount - 1; i++) {
             let char;
             do {
                 char = LETTERS[Math.floor(Math.random() * LETTERS.length)];
@@ -173,7 +186,7 @@ class GameRoom extends Room {
             chars.push(this.createChar(char, false));
         }
 
-        const targetIndex = Math.floor(Math.random() * TOTAL_CHARS);
+        const targetIndex = Math.floor(Math.random() * this.settings.charCount);
         chars.splice(targetIndex, 0, this.createChar(this.targetChar, true));
 
         return chars;

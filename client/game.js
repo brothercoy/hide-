@@ -237,7 +237,13 @@ function setupRoomMessages(isReconnecting = false) {
         alert(data.message);
     });
 
-    room.onMessage('gameStarted', () => {
+    room.onMessage('gameStarted', (data) => {
+        chars = data.chars;
+        prevChars = data.chars.map(c => ({ ...c }));
+        targetChar = data.targetChar;
+        timeLeft = data.timeLeft;
+        currentRound = data.round;
+        lastUpdateTime = Date.now();
         document.getElementById('lobby').style.display = 'none';
         document.getElementById('game').style.display = 'block';
         resizeCanvas();
