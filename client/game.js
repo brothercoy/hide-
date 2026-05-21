@@ -17,10 +17,14 @@ let chars = [];
 let prevChars = [];
 let lastUpdateTime = null;
 let currentRound = 1;
+let currentMatch = 1;
+let totalMatches = 1;
 let eliminatedName = null;
 let winnerId = null;
 let playerList = [];
 let showRoundOver = false;
+let showMatchOver = false;
+let matchOverData = null;
 let playerName = '';
 let timeLeft = 30;
 
@@ -98,16 +102,13 @@ async function tryReconnect() {
     const token = localStorage.getItem('reconnectionToken');
     if (!token) return;
     try {
-        console.log('trying to reconnect with token:', token);
         const r = await colyseusClient.reconnect(token);
-        console.log('reconnect success');
         room = r;
         localStorage.setItem('reconnectionToken', room.reconnectionToken);
         document.getElementById('menu').style.display = 'none';
         document.getElementById('lobby').style.display = 'flex';
         setupRoomMessages(true);
     } catch (e) {
-        console.log('reconnect failed:', e.message);
         localStorage.removeItem('reconnectionToken');
     }
 }
@@ -186,8 +187,12 @@ function resetGameState() {
     winnerId = null;
     eliminatedName = null;
     showRoundOver = false;
+    showMatchOver = false;
+    matchOverData = null;
     playerList = [];
     currentRound = 1;
+    currentMatch = 1;
+    totalMatches = 1;
     timeLeft = 30;
 }
 
@@ -243,6 +248,8 @@ function setupRoomMessages(isReconnecting = false) {
         targetChar = data.targetChar;
         timeLeft = data.timeLeft;
         currentRound = data.round;
+        currentMatch = data.match;
+        totalMatches = data.totalMatches;
         lastUpdateTime = Date.now();
         document.getElementById('lobby').style.display = 'none';
         document.getElementById('game').style.display = 'block';
@@ -254,6 +261,8 @@ function setupRoomMessages(isReconnecting = false) {
         prevChars = data.chars.map(c => ({ ...c }));
         targetChar = data.targetChar;
         timeLeft = data.timeLeft;
+        currentRound = data.round;
+        currentMatch = data.match;
         lastUpdateTime = Date.now();
     });
 
@@ -280,8 +289,29 @@ function setupRoomMessages(isReconnecting = false) {
         prevChars = data.chars.map(c => ({ ...c }));
         lastUpdateTime = Date.now();
         currentRound = data.round;
+        currentMatch = data.match;
         showRoundOver = false;
         eliminatedName = null;
+    });
+
+    room.onMessage('matchOver', (data) => {
+        showMatchOver = true;
+        matchOverData = data;
+        showRoundOver = false;
+        eliminatedName = null;
+    });
+
+    room.onMessage('newMatch', (data) => {
+        targetChar = data.targetChar;
+        chars = data.chars;
+        prevChars = data.chars.map(c => ({ ...c }));
+        lastUpdateTime = Date.now();
+        currentRound = data.round;
+        currentMatch = data.match;
+        showMatchOver = false;
+        showRoundOver = false;
+        eliminatedName = null;
+        matchOverData = null;
     });
 
     room.onMessage('reconnected', (data) => {
@@ -290,6 +320,8 @@ function setupRoomMessages(isReconnecting = false) {
         targetChar = data.targetChar;
         timeLeft = data.timeLeft;
         currentRound = data.round;
+        currentMatch = data.match;
+        totalMatches = data.totalMatches;
         lastUpdateTime = Date.now();
         if (data.gameStarted) {
             document.getElementById('lobby').style.display = 'none';
@@ -301,8 +333,6 @@ function setupRoomMessages(isReconnecting = false) {
     room.onMessage('gameOver', (data) => {
         winnerId = data.winnerName || 'Nobody';
     });
-
-    room.send('clientReady');
 }
 
 function getMetrics(char) {
@@ -360,7 +390,7 @@ function draw() {
         ctx.restore();
     });
 
-    // draw player list top right
+    // player list top right
     ctx.textAlign = 'right';
     ctx.font = '18px monospace';
     const listX = boxW / 2 - 10;
@@ -369,26 +399,53 @@ function draw() {
         ctx.globalAlpha = p.tapped ? 1 : 0.3;
         if (!p.alive) ctx.globalAlpha = 0.1;
         ctx.fillStyle = 'black';
-        ctx.fillText(p.name, listX, listY);
+        const winsText = totalMatches > 1 ? ` (${p.matchWins || 0})` : '';
+        ctx.fillText(p.name + winsText, listX, listY);
         listY += 24;
     });
     ctx.globalAlpha = 1;
 
+    // top UI
     ctx.font = '32px monospace';
     ctx.fillStyle = 'black';
     ctx.textAlign = 'center';
-    ctx.fillText('Round ' + currentRound, 0, -boxH / 2 - 50);
+    if (totalMatches > 1) {
+        ctx.fillText(`Match ${currentMatch}/${totalMatches} · Round ${currentRound}`, 0, -boxH / 2 - 50);
+    } else {
+        ctx.fillText('Round ' + currentRound, 0, -boxH / 2 - 50);
+    }
     ctx.fillText(Math.ceil(timeLeft) + 's', 0, -boxH / 2 - 20);
     ctx.fillText('Find: ' + targetChar, 0, boxH / 2 + 40);
 
+    // overlays
     if (winnerId) {
         ctx.fillStyle = 'rgba(255,255,255,0.85)';
-        ctx.fillRect(-200, -60, 400, 120);
+        ctx.fillRect(-200, -80, 400, 160);
         ctx.fillStyle = 'black';
         ctx.font = '28px monospace';
-        ctx.fillText('Winner!', 0, -20);
+        ctx.fillText('Game Over!', 0, -40);
         ctx.font = '18px monospace';
-        ctx.fillText(winnerId, 0, 20);
+        ctx.fillText('Winner: ' + winnerId, 0, 0);
+        if (matchOverData) {
+            let scoreY = 30;
+            Object.entries(matchOverData.matchWins || {}).forEach(([name, wins]) => {
+                ctx.fillText(`${name}: ${wins} win${wins !== 1 ? 's' : ''}`, 0, scoreY);
+                scoreY += 24;
+            });
+        }
+    } else if (showMatchOver && matchOverData) {
+        ctx.fillStyle = 'rgba(255,255,255,0.85)';
+        ctx.fillRect(-200, -80, 400, 160);
+        ctx.fillStyle = 'black';
+        ctx.font = '28px monospace';
+        ctx.fillText(`Match ${matchOverData.match} Over!`, 0, -40);
+        ctx.font = '18px monospace';
+        ctx.fillText('Winner: ' + matchOverData.matchWinnerName, 0, 0);
+        let scoreY = 30;
+        Object.entries(matchOverData.matchWins || {}).forEach(([name, wins]) => {
+            ctx.fillText(`${name}: ${wins} win${wins !== 1 ? 's' : ''}`, 0, scoreY);
+            scoreY += 24;
+        });
     } else if (showRoundOver) {
         ctx.fillStyle = 'rgba(255,255,255,0.85)';
         ctx.fillRect(-200, -60, 400, 120);

@@ -15,7 +15,12 @@ class GameRoom extends Room {
         this.roomCode = this.generateRoomCode();
         this.gameMode = DEFAULT_MODE;
         this.settings = { ...DEFAULT_MODE.defaultSettings };
-        this.round = 1;
+
+        // match/round tracking
+        this.currentMatch = 1;
+        this.currentRound = 1;
+        this.matchWins = {};       // { playerId: winCount }
+
         this.timeLeft = this.settings.roundTime;
         this.players = {};
         this.activePlayers = {};
@@ -55,7 +60,8 @@ class GameRoom extends Room {
                 chars: this.chars,
                 targetChar: this.targetChar,
                 timeLeft: this.timeLeft,
-                round: this.round
+                round: this.currentRound,
+                match: this.currentMatch
             });
         });
 
@@ -67,27 +73,35 @@ class GameRoom extends Room {
                 return;
             }
 
-            this.activePlayers = {};
-            connected.forEach(id => {
-                this.activePlayers[id] = { ...this.players[id], tapped: false };
-            });
-
             this.settings = {
                 ...this.gameMode.defaultSettings,
                 roundTime: data.settings.roundTime || this.gameMode.defaultSettings.roundTime,
                 speedScale: data.settings.speedScale || this.gameMode.defaultSettings.speedScale,
                 charCount: data.settings.charCount || this.gameMode.defaultSettings.charCount,
+                matches: data.settings.matches || this.gameMode.defaultSettings.matches,
                 minPlayers: this.gameMode.defaultSettings.minPlayers
             };
+
+            this.activePlayers = {};
+            connected.forEach(id => {
+                this.activePlayers[id] = { ...this.players[id], tapped: false };
+                this.matchWins[id] = 0;
+            });
+
+            this.currentMatch = 1;
+            this.currentRound = 1;
             this.timeLeft = this.settings.roundTime;
             this.chars = this.generateChars();
             this.gameStarted = true;
             this.lastTick = Date.now();
+
             this.broadcast('gameStarted', {
                 chars: this.chars,
                 targetChar: this.targetChar,
                 timeLeft: this.timeLeft,
-                round: this.round
+                round: this.currentRound,
+                match: this.currentMatch,
+                totalMatches: this.settings.matches
             });
             this.broadcastPlayerList();
         });
@@ -131,7 +145,8 @@ class GameRoom extends Room {
                 name: p.name,
                 connected: p.connected,
                 alive: this.activePlayers[p.id] ? this.activePlayers[p.id].alive : true,
-                tapped: tappedIds.includes(p.id)
+                tapped: tappedIds.includes(p.id),
+                matchWins: this.matchWins[p.id] || 0
             }))
         });
     }
@@ -144,7 +159,9 @@ class GameRoom extends Room {
                 chars: this.chars,
                 targetChar: this.targetChar,
                 timeLeft: this.timeLeft,
-                round: this.round,
+                round: this.currentRound,
+                match: this.currentMatch,
+                totalMatches: this.settings.matches,
                 gameStarted: true
             });
         }
@@ -223,27 +240,98 @@ class GameRoom extends Room {
         this.timeUpHandled = false;
         const alivePlayers = this.getAlivePlayers();
 
+        // match is over when 1 or 0 players remain
         if (alivePlayers.length <= 1) {
-            this.gameOver = true;
-            const winner = alivePlayers[0] ? this.activePlayers[alivePlayers[0]] : null;
-            this.broadcast('gameOver', {
-                winnerName: winner ? winner.name : 'Nobody'
+            const matchWinnerId = alivePlayers[0] || null;
+
+            if (matchWinnerId) {
+                this.matchWins[matchWinnerId] = (this.matchWins[matchWinnerId] || 0) + 1;
+            }
+
+            this.broadcast('matchOver', {
+                matchWinnerName: matchWinnerId ? this.activePlayers[matchWinnerId].name : 'Nobody',
+                matchWins: Object.fromEntries(
+                    Object.entries(this.matchWins).map(([id, wins]) => [
+                        this.activePlayers[id]?.name || id, wins
+                    ])
+                ),
+                match: this.currentMatch,
+                totalMatches: this.settings.matches
             });
+
+            // check if all matches are done
+            if (this.currentMatch >= this.settings.matches) {
+                this.endGame();
+                return;
+            }
+
+            // start next match
+            this.currentMatch += 1;
+            this.currentRound = 1;
+            this.taps = [];
+            this.timeLeft = this.settings.roundTime;
+
+            // reset all active players to alive for new match
+            Object.keys(this.activePlayers).forEach(id => {
+                this.activePlayers[id].alive = true;
+            });
+
+            this.chars = this.generateChars();
+
+            this.broadcast('newMatch', {
+                match: this.currentMatch,
+                totalMatches: this.settings.matches,
+                round: this.currentRound,
+                targetChar: this.targetChar,
+                chars: this.chars,
+                matchWins: Object.fromEntries(
+                    Object.entries(this.matchWins).map(([id, wins]) => [
+                        this.activePlayers[id]?.name || id, wins
+                    ])
+                )
+            });
+
+            this.broadcastPlayerList();
             return;
         }
 
-        this.round += 1;
+        // continue current match with next round
+        this.currentRound += 1;
         this.taps = [];
         this.timeLeft = this.settings.roundTime;
         this.chars = this.generateChars();
 
         this.broadcast('newRound', {
-            round: this.round,
+            round: this.currentRound,
+            match: this.currentMatch,
             targetChar: this.targetChar,
             chars: this.chars
         });
 
         this.broadcastPlayerList();
+    }
+
+    endGame() {
+        this.gameOver = true;
+
+        // find overall winner by most match wins
+        const sortedPlayers = Object.entries(this.matchWins)
+            .sort(([, a], [, b]) => b - a);
+
+        const topWins = sortedPlayers[0]?.[1] || 0;
+        const topPlayers = sortedPlayers.filter(([, wins]) => wins === topWins);
+
+        this.broadcast('gameOver', {
+            winnerName: topPlayers.length === 1
+                ? this.activePlayers[topPlayers[0][0]]?.name || 'Nobody'
+                : 'Tie',
+            matchWins: Object.fromEntries(
+                Object.entries(this.matchWins).map(([id, wins]) => [
+                    this.activePlayers[id]?.name || id, wins
+                ])
+            ),
+            isTie: topPlayers.length > 1
+        });
     }
 
     onJoin(client, options) {
