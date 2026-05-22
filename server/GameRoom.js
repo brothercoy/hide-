@@ -66,6 +66,7 @@ class GameRoom extends Room {
         });
 
         this.playAgainVotes = new Set();
+        this.returnToLobbyVotes = new Set();
 
         this.onMessage('votePlayAgain', (client) => {
             if (!this.players[client.sessionId]) return;
@@ -74,9 +75,25 @@ class GameRoom extends Room {
                 this.playAgainVotes.delete(client.sessionId);
             } else {
                 this.playAgainVotes.add(client.sessionId);
+                this.returnToLobbyVotes.delete(client.sessionId);
             }
             
             this.checkPlayAgainVotes();
+            this.checkReturnToLobbyVotes();
+        });
+
+        this.onMessage('voteReturnToLobby', (client) => {
+            if (!this.players[client.sessionId]) return;
+
+            if (this.returnToLobbyVotes.has(client.sessionId)) {
+                this.returnToLobbyVotes.delete(client.sessionId);
+            } else {
+                this.returnToLobbyVotes.add(client.sessionId);
+                this.playAgainVotes.delete(client.sessionId);
+            }
+
+            this.checkPlayAgainVotes();
+            this.checkReturnToLobbyVotes();
         });
 
         this.onMessage('leaveToMenu', (client) => {
@@ -92,6 +109,7 @@ class GameRoom extends Room {
             delete this.players[client.sessionId];
             this.broadcastPlayerList();
 
+            this.returnToLobbyVotes.delete(client.sessionId);
             this.playAgainVotes.delete(client.sessionId);
 
             client.leave(1000);
@@ -367,6 +385,9 @@ class GameRoom extends Room {
             ),
             isTie: topPlayers.length > 1
         });
+
+        this.checkPlayAgainVotes();
+        this.checkReturnToLobbyVotes();
     }
 
     checkPlayAgainVotes() {
@@ -380,6 +401,38 @@ class GameRoom extends Room {
             this.playAgainVotes.clear();
             this.restartGame();
         }
+    }
+
+    checkReturnToLobbyVotes() {
+        const activePlayers = Object.keys(this.players).filter(id => this.players[id].connected);
+        this.broadcast('returnToLobbyVotes', {
+            votes: this.returnToLobbyVotes.size,
+            total: activePlayers.length,
+            voterIds: Array.from(this.returnToLobbyVotes)
+        });
+        if (this.returnToLobbyVotes.size >= activePlayers.length && activePlayers.length > 0) {
+            this.returnToLobbyVotes.clear();
+            this.playAgainVotes.clear();
+            this.returnToLobby();
+        }
+    }
+
+    returnToLobby() {
+        this.gameStarted = false;
+        this.gameOver = false;
+        this.currentMatch = 1;
+        this.currentRound = 1;
+        this.taps = [];
+        this.matchWins = {};
+        this.timeUpHandled = false;
+
+        Object.keys(this.players).forEach(id => {
+            this.players[id].alive = true;
+        });
+
+        this.activePlayers = {};
+        this.broadcast('returnedToLobby');
+        this.broadcastPlayerList();
     }
 
     restartGame() {
@@ -426,7 +479,11 @@ class GameRoom extends Room {
     onDrop(client) {
         console.log(client.sessionId, 'dropped');
         this.playAgainVotes.delete(client.sessionId);
-        if (this.gameOver) this.checkPlayAgainVotes();
+        this.returnToLobbyVotes.delete(client.sessionId);
+        if (this.gameOver) {
+            this.checkPlayAgainVotes();
+            this.checkReturnToLobbyVotes();
+        }
         this.players[client.sessionId].connected = false;
         this.broadcastPlayerList();
         this.allowReconnection(client, 60);
@@ -441,7 +498,11 @@ class GameRoom extends Room {
     onLeave(client, code) {
         console.log(client.sessionId, 'left. code:', code);
         this.playAgainVotes.delete(client.sessionId);
-        if (this.gameOver) this.checkPlayAgainVotes();
+        this.returnToLobbyVotes.delete(client.sessionId);
+        if (this.gameOver) {
+            this.checkPlayAgainVotes();
+            this.checkReturnToLobbyVotes();
+        }
         delete this.players[client.sessionId];
         this.broadcastPlayerList();
     }

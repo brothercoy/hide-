@@ -240,16 +240,30 @@ function setupRoomMessages(isReconnecting = false) {
 
     document.getElementById('main-menu-btn').onclick = () => {
         document.getElementById('game-over-menu').style.display = 'none';
-        const btn = document.getElementById('play-again-btn');
-        btn.textContent = 'Play Again';
-        btn.style.background = 'white';
-        btn.style.color = 'black';
+        resetPlayAgainBtn();
+        resetReturnToLobbyBtn();
         room.send('leaveToMenu');
     };
 
     document.getElementById('play-again-btn').onclick = () => {
         room.send('votePlayAgain');
     };
+
+    document.getElementById('return-lobby-btn').onclick = () => {
+        room.send('voteReturnToLobby');
+    };
+
+    room.onMessage('returnedToLobby', () => {
+        winnerId = null;
+        showRoundOver = false;
+        showMatchOver = false;
+        matchOverData = null;
+        document.getElementById('game-over-menu').style.display = 'none';
+        document.getElementById('game').style.display = 'none';
+        document.getElementById('lobby').style.display = 'flex';
+        resetReturnToLobbyBtn();
+        resetPlayAgainBtn();
+    });
 
     room.onMessage('roomCode', (data) => {
         document.getElementById('room-code-display').textContent = data.code;
@@ -286,6 +300,14 @@ function setupRoomMessages(isReconnecting = false) {
         btn.style.color = myVote ? 'white' : 'black';
     });
 
+    room.onMessage('returnToLobbyVotes', (data) => {
+        const btn = document.getElementById('return-lobby-btn');
+        const myVote = data.voterIds && data.voterIds.includes(room.sessionId);
+        btn.textContent = `Return to Lobby (${data.votes}/${data.total})`;
+        btn.style.background = myVote ? 'black' : 'white';
+        btn.style.color = myVote ? 'white' : 'black';
+    });
+
     room.onMessage('gameRestarted', (data) => {
         chars = data.chars;
         prevChars = data.chars.map(c => ({ ...c }));
@@ -300,10 +322,8 @@ function setupRoomMessages(isReconnecting = false) {
         showMatchOver = false;
         matchOverData = null;
         document.getElementById('game-over-menu').style.display = 'none';
-        const btn = document.getElementById('play-again-btn');
-        btn.textContent = 'Play Again';
-        btn.style.background = 'white';
-        btn.style.color = 'black';
+        resetPlayAgainBtn();
+        resetReturnToLobbyBtn();
     });
 
     room.onMessage('gameState', (data) => {
@@ -388,6 +408,20 @@ function setupRoomMessages(isReconnecting = false) {
         winnerId = data.winnerName || 'Nobody';
         document.getElementById('game-over-menu').style.display = 'flex';
     });
+}
+
+function resetPlayAgainBtn() {
+    const btn = document.getElementById('play-again-btn');
+    btn.textContent = 'Play Again';
+    btn.style.background = 'white';
+    btn.style.color = 'black';
+}
+
+function resetReturnToLobbyBtn() {
+    const btn = document.getElementById('return-lobby-btn');
+    btn.textContent = 'Return to Lobby';
+    btn.style.background = 'white';
+    btn.style.color = 'black';
 }
 
 function getMetrics(char) {
