@@ -65,6 +65,38 @@ class GameRoom extends Room {
             });
         });
 
+        this.playAgainVotes = new Set();
+
+        this.onMessage('votePlayAgain', (client) => {
+            if (!this.players[client.sessionId]) return;
+            
+            if (this.playAgainVotes.has(client.sessionId)) {
+                this.playAgainVotes.delete(client.sessionId);
+            } else {
+                this.playAgainVotes.add(client.sessionId);
+            }
+            
+            this.checkPlayAgainVotes();
+        });
+
+        this.onMessage('leaveToMenu', (client) => {
+            const player = this.players[client.sessionId];
+            if (!player) return;
+            
+            // if this was the host, assign new host
+            const playerIds = Object.keys(this.players);
+            if (playerIds[0] === client.sessionId && playerIds.length > 1) {
+                this.broadcast('newHost', { id: playerIds[1] });
+            }
+
+            delete this.players[client.sessionId];
+            this.broadcastPlayerList();
+
+            this.playAgainVotes.delete(client.sessionId);
+
+            client.leave(1000);
+        });
+
         this.onMessage('startGame', (client, data) => {
             if (client.sessionId !== Object.keys(this.players)[0]) return;
             const connected = this.getConnectedPlayers();
@@ -162,7 +194,9 @@ class GameRoom extends Room {
                 round: this.currentRound,
                 match: this.currentMatch,
                 totalMatches: this.settings.matches,
-                gameStarted: true
+                gameStarted: true,
+                gameOver: this.gameOver,
+                winnerName: this.gameOver ? this.lastWinnerName : null
             });
         }
     }
@@ -314,17 +348,18 @@ class GameRoom extends Room {
     endGame() {
         this.gameOver = true;
 
-        // find overall winner by most match wins
         const sortedPlayers = Object.entries(this.matchWins)
             .sort(([, a], [, b]) => b - a);
 
         const topWins = sortedPlayers[0]?.[1] || 0;
         const topPlayers = sortedPlayers.filter(([, wins]) => wins === topWins);
 
+        this.lastWinnerName = topPlayers.length === 1
+            ? this.activePlayers[topPlayers[0][0]]?.name || 'Nobody'
+            : 'Tie';
+
         this.broadcast('gameOver', {
-            winnerName: topPlayers.length === 1
-                ? this.activePlayers[topPlayers[0][0]]?.name || 'Nobody'
-                : 'Tie',
+            winnerName: this.lastWinnerName,
             matchWins: Object.fromEntries(
                 Object.entries(this.matchWins).map(([id, wins]) => [
                     this.activePlayers[id]?.name || id, wins
@@ -332,6 +367,49 @@ class GameRoom extends Room {
             ),
             isTie: topPlayers.length > 1
         });
+    }
+
+    checkPlayAgainVotes() {
+        const activePlayers = Object.keys(this.players).filter(id => this.players[id].connected);
+        this.broadcast('playAgainVotes', {
+            votes: this.playAgainVotes.size,
+            total: activePlayers.length,
+            voterIds: Array.from(this.playAgainVotes)
+        });
+        if (this.playAgainVotes.size >= activePlayers.length && activePlayers.length > 0) {
+            this.playAgainVotes.clear();
+            this.restartGame();
+        }
+    }
+
+    restartGame() {
+        this.currentMatch = 1;
+        this.currentRound = 1;
+        this.taps = [];
+        this.timeLeft = this.settings.roundTime;
+        this.timeUpHandled = false;
+        this.gameOver = false;
+        this.matchWins = {};
+
+        const connected = this.getConnectedPlayers();
+        this.activePlayers = {};
+        connected.forEach(id => {
+            this.activePlayers[id] = { ...this.players[id], tapped: false };
+            this.matchWins[id] = 0;
+        });
+
+        this.chars = this.generateChars();
+        this.lastTick = Date.now();
+
+        this.broadcast('gameRestarted', {
+            chars: this.chars,
+            targetChar: this.targetChar,
+            timeLeft: this.timeLeft,
+            round: this.currentRound,
+            match: this.currentMatch,
+            totalMatches: this.settings.matches
+        });
+        this.broadcastPlayerList();
     }
 
     onJoin(client, options) {
@@ -347,6 +425,8 @@ class GameRoom extends Room {
 
     onDrop(client) {
         console.log(client.sessionId, 'dropped');
+        this.playAgainVotes.delete(client.sessionId);
+        if (this.gameOver) this.checkPlayAgainVotes();
         this.players[client.sessionId].connected = false;
         this.broadcastPlayerList();
         this.allowReconnection(client, 60);
@@ -360,6 +440,8 @@ class GameRoom extends Room {
 
     onLeave(client, code) {
         console.log(client.sessionId, 'left. code:', code);
+        this.playAgainVotes.delete(client.sessionId);
+        if (this.gameOver) this.checkPlayAgainVotes();
         delete this.players[client.sessionId];
         this.broadcastPlayerList();
     }

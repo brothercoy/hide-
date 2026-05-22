@@ -102,9 +102,18 @@ async function tryReconnect() {
     const token = localStorage.getItem('reconnectionToken');
     if (!token) return;
     try {
-        const r = await colyseusClient.reconnect(token);
-        room = r;
+        room = await colyseusClient.reconnect(token);
         localStorage.setItem('reconnectionToken', room.reconnectionToken);
+
+        room.onLeave(() => {
+            localStorage.removeItem('reconnectionToken');
+            document.getElementById('lobby').style.display = 'none';
+            document.getElementById('game').style.display = 'none';
+            document.getElementById('game-over-menu').style.display = 'none';
+            document.getElementById('menu').style.display = 'flex';
+            resetGameState();
+        });
+
         document.getElementById('menu').style.display = 'none';
         document.getElementById('lobby').style.display = 'flex';
         setupRoomMessages(true);
@@ -229,6 +238,19 @@ function setupRoomMessages(isReconnecting = false) {
         room.send('clientReady');
     }
 
+    document.getElementById('main-menu-btn').onclick = () => {
+        document.getElementById('game-over-menu').style.display = 'none';
+        const btn = document.getElementById('play-again-btn');
+        btn.textContent = 'Play Again';
+        btn.style.background = 'white';
+        btn.style.color = 'black';
+        room.send('leaveToMenu');
+    };
+
+    document.getElementById('play-again-btn').onclick = () => {
+        room.send('votePlayAgain');
+    };
+
     room.onMessage('roomCode', (data) => {
         document.getElementById('room-code-display').textContent = data.code;
     });
@@ -254,6 +276,34 @@ function setupRoomMessages(isReconnecting = false) {
         document.getElementById('lobby').style.display = 'none';
         document.getElementById('game').style.display = 'block';
         resizeCanvas();
+    });
+
+    room.onMessage('playAgainVotes', (data) => {
+        const btn = document.getElementById('play-again-btn');
+        const myVote = data.voterIds && data.voterIds.includes(room.sessionId);
+        btn.textContent = `Play Again (${data.votes}/${data.total})`;
+        btn.style.background = myVote ? 'black' : 'white';
+        btn.style.color = myVote ? 'white' : 'black';
+    });
+
+    room.onMessage('gameRestarted', (data) => {
+        chars = data.chars;
+        prevChars = data.chars.map(c => ({ ...c }));
+        targetChar = data.targetChar;
+        timeLeft = data.timeLeft;
+        currentRound = data.round;
+        currentMatch = data.match;
+        totalMatches = data.totalMatches;
+        lastUpdateTime = Date.now();
+        winnerId = null;
+        showRoundOver = false;
+        showMatchOver = false;
+        matchOverData = null;
+        document.getElementById('game-over-menu').style.display = 'none';
+        const btn = document.getElementById('play-again-btn');
+        btn.textContent = 'Play Again';
+        btn.style.background = 'white';
+        btn.style.color = 'black';
     });
 
     room.onMessage('gameState', (data) => {
@@ -327,11 +377,16 @@ function setupRoomMessages(isReconnecting = false) {
             document.getElementById('lobby').style.display = 'none';
             document.getElementById('game').style.display = 'block';
             resizeCanvas();
+            if (data.gameOver) {
+                winnerId = data.winnerName || 'Nobody';
+                document.getElementById('game-over-menu').style.display = 'flex';
+            }
         }
     });
 
     room.onMessage('gameOver', (data) => {
         winnerId = data.winnerName || 'Nobody';
+        document.getElementById('game-over-menu').style.display = 'flex';
     });
 }
 
@@ -400,7 +455,8 @@ function draw() {
         if (!p.alive) ctx.globalAlpha = 0.1;
         ctx.fillStyle = 'black';
         const winsText = totalMatches > 1 ? ` (${p.matchWins || 0})` : '';
-        ctx.fillText(p.name + winsText, listX, listY);
+        const disconnectText = !p.connected ? ' %' : '';
+        ctx.fillText(p.name + winsText + disconnectText, listX, listY);
         listY += 24;
     });
     ctx.globalAlpha = 1;
@@ -420,19 +476,10 @@ function draw() {
     // overlays
     if (winnerId) {
         ctx.fillStyle = 'rgba(255,255,255,0.85)';
-        ctx.fillRect(-200, -80, 400, 160);
+        ctx.fillRect(-200, -60, 400, 120);
         ctx.fillStyle = 'black';
         ctx.font = '28px monospace';
-        ctx.fillText('Game Over!', 0, -40);
-        ctx.font = '18px monospace';
-        ctx.fillText('Winner: ' + winnerId, 0, 0);
-        if (matchOverData) {
-            let scoreY = 30;
-            Object.entries(matchOverData.matchWins || {}).forEach(([name, wins]) => {
-                ctx.fillText(`${name}: ${wins} win${wins !== 1 ? 's' : ''}`, 0, scoreY);
-                scoreY += 24;
-            });
-        }
+        ctx.fillText('Winner: ' + winnerId, 0, 10);
     } else if (showMatchOver && matchOverData) {
         ctx.fillStyle = 'rgba(255,255,255,0.85)';
         ctx.fillRect(-200, -80, 400, 160);

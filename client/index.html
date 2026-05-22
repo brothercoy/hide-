@@ -27,6 +27,7 @@
 
         #game {
             display: none;
+            position: relative;
         }
 
         h1 {
@@ -186,6 +187,16 @@
             color: white;
         }
 
+        #game-over-menu {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, 60px);
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            align-items: center;
+        }
     </style>
 </head>
 <body>
@@ -221,6 +232,10 @@
 
     <div id="game">
         <canvas id="gameCanvas"></canvas>
+        <div id="game-over-menu" style="display:none;">
+            <button id="play-again-btn">Play Again</button>
+            <button id="main-menu-btn">Main Menu</button>
+        </div>
     </div>
 
     <script type="module" src="game.js"></script>
