@@ -27,6 +27,7 @@ let showMatchOver = false;
 let matchOverData = null;
 let playerName = '';
 let timeLeft = 30;
+let isHost = false;
 
 function renderLobbySettings(modeId, isHost) {
     const mode = GAME_MODES[modeId];
@@ -65,6 +66,7 @@ function renderLobbySettings(modeId, isHost) {
                         optionsDiv.querySelectorAll('.speed-btn').forEach(b => b.classList.remove('active'));
                         btn.classList.add('active');
                         selectedSettings[key] = val;
+                        room.send('updateSettings', { mode: selectedMode, settings: selectedSettings });
                     });
                 } else {
                     btn.disabled = true;
@@ -87,6 +89,7 @@ function renderLobbySettings(modeId, isHost) {
                 slider.addEventListener('input', () => {
                     selectedSettings[key] = parseFloat(slider.value);
                     valueText.textContent = slider.value + (setting.unit || '');
+                    room.send('updateSettings', { mode: selectedMode, settings: selectedSettings });
                 });
             } else {
                 slider.disabled = true;
@@ -96,6 +99,8 @@ function renderLobbySettings(modeId, isHost) {
 
         panel.appendChild(row);
     });
+
+    updateLobbyControls();
 }
 
 async function tryReconnect() {
@@ -117,6 +122,7 @@ async function tryReconnect() {
         document.getElementById('menu').style.display = 'none';
         document.getElementById('lobby').style.display = 'flex';
         setupRoomMessages(true);
+        updateLobbyControls();
     } catch (e) {
         localStorage.removeItem('reconnectionToken');
     }
@@ -144,6 +150,7 @@ document.querySelectorAll('.mode-btn').forEach(btn => {
         btn.classList.add('active');
         selectedMode = btn.dataset.mode;
         renderLobbySettings(selectedMode, true);
+        room.send('updateSettings', { mode: selectedMode, settings: selectedSettings });
     });
 });
 
@@ -187,6 +194,7 @@ function onRoomJoined(r) {
     document.getElementById('menu').style.display = 'none';
     document.getElementById('lobby').style.display = 'flex';
     setupRoomMessages();
+    updateLobbyControls();
 }
 
 function resetGameState() {
@@ -227,7 +235,7 @@ function renderLobbyPlayerList() {
     playerList.forEach(p => {
         const entry = document.createElement('p');
         entry.id = 'player-' + p.id;
-        entry.textContent = p.name;
+        entry.textContent = p.name + (p.isHost ? ' - Host' : '');
         entry.style.opacity = p.connected ? '1' : '0.4';
         list.appendChild(entry);
     });
@@ -265,6 +273,68 @@ function setupRoomMessages(isReconnecting = false) {
         resetPlayAgainBtn();
     });
 
+    room.onMessage('settingsUpdated', (data) => {
+        if (isHost) return;
+        selectedMode = data.mode;
+        selectedSettings = { ...data.settings };
+        
+        document.querySelectorAll('.mode-btn').forEach(b => {
+            b.classList.toggle('active', b.dataset.mode === data.mode);
+        });
+
+        const mode = GAME_MODES[data.mode];
+        if (!mode) return;
+
+        document.getElementById('mode-description').textContent = mode.description;
+        const panel = document.getElementById('settings-panel');
+        panel.innerHTML = '';
+
+        Object.entries(mode.settingsOptions).forEach(([key, setting]) => {
+            const row = document.createElement('div');
+            row.className = 'setting-row';
+
+            const label = document.createElement('div');
+            label.className = 'setting-label';
+
+            const labelText = document.createElement('span');
+            labelText.textContent = setting.label;
+
+            const valueText = document.createElement('span');
+            valueText.id = `setting-value-${key}`;
+
+            label.appendChild(labelText);
+            label.appendChild(valueText);
+            row.appendChild(label);
+
+            const currentValue = data.settings[key] !== undefined ? data.settings[key] : setting.default;
+
+            if (setting.options) {
+                const optionsDiv = document.createElement('div');
+                optionsDiv.className = 'speed-options';
+                setting.options.forEach((val, i) => {
+                    const btn = document.createElement('button');
+                    btn.className = 'speed-btn' + (val === currentValue ? ' active' : '');
+                    btn.textContent = setting.labels[i];
+                    btn.disabled = true;
+                    optionsDiv.appendChild(btn);
+                });
+                row.appendChild(optionsDiv);
+            } else {
+                const slider = document.createElement('input');
+                slider.type = 'range';
+                slider.className = 'setting-slider';
+                slider.min = setting.min;
+                slider.max = setting.max;
+                slider.value = currentValue;
+                slider.disabled = true;
+                valueText.textContent = currentValue + (setting.unit || '');
+                row.appendChild(slider);
+            }
+
+            panel.appendChild(row);
+        });
+    });
+
     room.onMessage('roomCode', (data) => {
         document.getElementById('room-code-display').textContent = data.code;
     });
@@ -272,6 +342,10 @@ function setupRoomMessages(isReconnecting = false) {
     room.onMessage('playerList', (data) => {
         playerList = data.players;
         renderLobbyPlayerList();
+        const me = data.players.find(p => p.id === room.sessionId);
+        const wasHost = isHost;
+        isHost = me ? me.isHost : false;
+        if (isHost !== wasHost) updateLobbyControls();
     });
 
     room.onMessage('startError', (data) => {
@@ -404,11 +478,25 @@ function setupRoomMessages(isReconnecting = false) {
                 document.getElementById('game-over-menu').style.display = 'flex';
             }
         }
+        updateLobbyControls();
     });
 
     room.onMessage('gameOver', (data) => {
         winnerId = data.winnerName || 'Nobody';
         document.getElementById('game-over-menu').style.display = 'flex';
+    });
+}
+
+function updateLobbyControls() {
+    document.getElementById('start-btn').style.display = isHost ? 'block' : 'none';
+    document.querySelectorAll('.mode-btn').forEach(btn => {
+        btn.disabled = !isHost;
+        btn.style.opacity = isHost ? '1' : '0.6';
+    });
+    const panel = document.getElementById('settings-panel');
+    panel.querySelectorAll('input, button').forEach(el => {
+        el.disabled = !isHost;
+        el.style.opacity = isHost ? '1' : '0.6';
     });
 }
 

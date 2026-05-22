@@ -15,6 +15,8 @@ class GameRoom extends Room {
         this.roomCode = this.generateRoomCode();
         this.gameMode = DEFAULT_MODE;
         this.settings = { ...DEFAULT_MODE.defaultSettings };
+        this.selectedMode = 'redacted';
+        this.selectedSettingsData = { ...DEFAULT_MODE.defaultSettings };
 
         // match/round tracking
         this.currentMatch = 1;
@@ -53,6 +55,13 @@ class GameRoom extends Room {
                 });
                 this.startNextRound();
             }
+        });
+
+        this.onMessage('updateSettings', (client, data) => {
+            if (client.sessionId !== Object.keys(this.players)[0]) return;
+            this.selectedMode = data.mode;
+            this.selectedSettingsData = data.settings;
+            this.broadcast('settingsUpdated', data);
         });
 
         this.onMessage('clientReady', (client) => {
@@ -189,6 +198,7 @@ class GameRoom extends Room {
 
     broadcastPlayerList() {
         const tappedIds = this.taps.map(t => t.id);
+        const hostId = Object.keys(this.players)[0];
         this.broadcast('playerList', {
             players: Object.values(this.players).map(p => ({
                 id: p.id,
@@ -196,7 +206,8 @@ class GameRoom extends Room {
                 connected: p.connected,
                 alive: this.activePlayers[p.id] ? this.activePlayers[p.id].alive : true,
                 tapped: tappedIds.includes(p.id),
-                matchWins: this.matchWins[p.id] || 0
+                matchWins: this.matchWins[p.id] || 0,
+                isHost: p.id === hostId
             }))
         });
     }
@@ -204,6 +215,12 @@ class GameRoom extends Room {
     sendPlayerState(client) {
         client.send('roomCode', { code: this.roomCode });
         this.broadcastPlayerList();
+        if (this.selectedMode) {
+            client.send('settingsUpdated', {
+                mode: this.selectedMode,
+                settings: this.selectedSettingsData
+            });
+        }
         if (this.gameStarted) {
             client.send('reconnected', {
                 chars: this.chars,
