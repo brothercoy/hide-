@@ -28,6 +28,8 @@ let matchOverData = null;
 let playerName = '';
 let timeLeft = 30;
 let isHost = false;
+let countdownActive = false;
+let countdownStartTime = null;
 
 function renderLobbySettings(modeId, isHost) {
     const mode = GAME_MODES[modeId];
@@ -211,6 +213,8 @@ function resetGameState() {
     currentMatch = 1;
     totalMatches = 1;
     timeLeft = 30;
+    countdownActive = false;
+    countdownStartTime = null;
 }
 
 const canvas = document.getElementById('gameCanvas');
@@ -241,6 +245,33 @@ function renderLobbyPlayerList() {
     });
 }
 
+function updateLobbyControls() {
+    document.getElementById('start-btn').style.display = isHost ? 'block' : 'none';
+    document.querySelectorAll('.mode-btn').forEach(btn => {
+        btn.disabled = !isHost;
+        btn.style.opacity = isHost ? '1' : '0.6';
+    });
+    const panel = document.getElementById('settings-panel');
+    panel.querySelectorAll('input, button').forEach(el => {
+        el.disabled = !isHost;
+        el.style.opacity = isHost ? '1' : '0.6';
+    });
+}
+
+function resetPlayAgainBtn() {
+    const btn = document.getElementById('play-again-btn');
+    btn.textContent = 'Play Again';
+    btn.style.background = 'white';
+    btn.style.color = 'black';
+}
+
+function resetReturnToLobbyBtn() {
+    const btn = document.getElementById('return-lobby-btn');
+    btn.textContent = 'Return to Lobby';
+    btn.style.background = 'white';
+    btn.style.color = 'black';
+}
+
 function setupRoomMessages(isReconnecting = false) {
     if (!isReconnecting) {
         room.send('clientReady');
@@ -261,23 +292,28 @@ function setupRoomMessages(isReconnecting = false) {
         room.send('voteReturnToLobby');
     };
 
-    room.onMessage('returnedToLobby', () => {
-        winnerId = null;
-        showRoundOver = false;
-        showMatchOver = false;
-        matchOverData = null;
-        document.getElementById('game-over-menu').style.display = 'none';
-        document.getElementById('game').style.display = 'none';
-        document.getElementById('lobby').style.display = 'flex';
-        resetReturnToLobbyBtn();
-        resetPlayAgainBtn();
+    room.onMessage('roomCode', (data) => {
+        document.getElementById('room-code-display').textContent = data.code;
+    });
+
+    room.onMessage('playerList', (data) => {
+        playerList = data.players;
+        renderLobbyPlayerList();
+        const me = data.players.find(p => p.id === room.sessionId);
+        const wasHost = isHost;
+        isHost = me ? me.isHost : false;
+        if (isHost !== wasHost) updateLobbyControls();
+    });
+
+    room.onMessage('startError', (data) => {
+        alert(data.message);
     });
 
     room.onMessage('settingsUpdated', (data) => {
         if (isHost) return;
         selectedMode = data.mode;
         selectedSettings = { ...data.settings };
-        
+
         document.querySelectorAll('.mode-btn').forEach(b => {
             b.classList.toggle('active', b.dataset.mode === data.mode);
         });
@@ -335,71 +371,38 @@ function setupRoomMessages(isReconnecting = false) {
         });
     });
 
-    room.onMessage('roomCode', (data) => {
-        document.getElementById('room-code-display').textContent = data.code;
-    });
-
-    room.onMessage('playerList', (data) => {
-        playerList = data.players;
-        renderLobbyPlayerList();
-        const me = data.players.find(p => p.id === room.sessionId);
-        const wasHost = isHost;
-        isHost = me ? me.isHost : false;
-        if (isHost !== wasHost) updateLobbyControls();
-    });
-
-    room.onMessage('startError', (data) => {
-        alert(data.message);
-    });
-
     room.onMessage('gameStarted', (data) => {
-        chars = data.chars;
-        prevChars = data.chars.map(c => ({ ...c }));
-        targetChar = data.targetChar;
-        timeLeft = data.timeLeft;
-        currentRound = data.round;
         currentMatch = data.match;
         totalMatches = data.totalMatches;
-        lastUpdateTime = Date.now();
         document.getElementById('lobby').style.display = 'none';
         document.getElementById('game').style.display = 'block';
         resizeCanvas();
     });
 
-    room.onMessage('playAgainVotes', (data) => {
-        const btn = document.getElementById('play-again-btn');
-        const myVote = data.voterIds && data.voterIds.includes(room.sessionId);
-        btn.textContent = `Play Again (${data.votes}/${data.total})`;
-        btn.style.background = myVote ? 'black' : 'white';
-        btn.style.color = myVote ? 'white' : 'black';
-        btn.disabled = !data.canStart;
-        btn.style.opacity = data.canStart ? '1' : '0.4';
-    });
-
-    room.onMessage('returnToLobbyVotes', (data) => {
-        const btn = document.getElementById('return-lobby-btn');
-        const myVote = data.voterIds && data.voterIds.includes(room.sessionId);
-        btn.textContent = `Return to Lobby (${data.votes}/${data.total})`;
-        btn.style.background = myVote ? 'black' : 'white';
-        btn.style.color = myVote ? 'white' : 'black';
-    });
-
-    room.onMessage('gameRestarted', (data) => {
+    room.onMessage('roundCountdown', (data) => {
+        targetChar = data.targetChar;
         chars = data.chars;
         prevChars = data.chars.map(c => ({ ...c }));
-        targetChar = data.targetChar;
-        timeLeft = data.timeLeft;
         currentRound = data.round;
         currentMatch = data.match;
-        totalMatches = data.totalMatches;
-        lastUpdateTime = Date.now();
-        winnerId = null;
+        countdownActive = true;
+        countdownStartTime = Date.now();
         showRoundOver = false;
         showMatchOver = false;
+        eliminatedName = null;
         matchOverData = null;
-        document.getElementById('game-over-menu').style.display = 'none';
-        resetPlayAgainBtn();
-        resetReturnToLobbyBtn();
+        lastUpdateTime = Date.now();
+    });
+
+    room.onMessage('roundStart', (data) => {
+        targetChar = data.targetChar;
+        chars = data.chars;
+        prevChars = data.chars.map(c => ({ ...c }));
+        currentRound = data.round;
+        currentMatch = data.match;
+        timeLeft = data.timeLeft;
+        countdownActive = false;
+        lastUpdateTime = Date.now();
     });
 
     room.onMessage('gameState', (data) => {
@@ -429,17 +432,6 @@ function setupRoomMessages(isReconnecting = false) {
         showRoundOver = true;
     });
 
-    room.onMessage('newRound', (data) => {
-        targetChar = data.targetChar;
-        chars = data.chars;
-        prevChars = data.chars.map(c => ({ ...c }));
-        lastUpdateTime = Date.now();
-        currentRound = data.round;
-        currentMatch = data.match;
-        showRoundOver = false;
-        eliminatedName = null;
-    });
-
     room.onMessage('matchOver', (data) => {
         showMatchOver = true;
         matchOverData = data;
@@ -447,17 +439,48 @@ function setupRoomMessages(isReconnecting = false) {
         eliminatedName = null;
     });
 
-    room.onMessage('newMatch', (data) => {
-        targetChar = data.targetChar;
-        chars = data.chars;
-        prevChars = data.chars.map(c => ({ ...c }));
-        lastUpdateTime = Date.now();
-        currentRound = data.round;
+    room.onMessage('playAgainVotes', (data) => {
+        const btn = document.getElementById('play-again-btn');
+        const myVote = data.voterIds && data.voterIds.includes(room.sessionId);
+        btn.textContent = `Play Again (${data.votes}/${data.total})`;
+        btn.style.background = myVote ? 'black' : 'white';
+        btn.style.color = myVote ? 'white' : 'black';
+        btn.disabled = !data.canStart;
+        btn.style.opacity = data.canStart ? '1' : '0.4';
+    });
+
+    room.onMessage('returnToLobbyVotes', (data) => {
+        const btn = document.getElementById('return-lobby-btn');
+        const myVote = data.voterIds && data.voterIds.includes(room.sessionId);
+        btn.textContent = `Return to Lobby (${data.votes}/${data.total})`;
+        btn.style.background = myVote ? 'black' : 'white';
+        btn.style.color = myVote ? 'white' : 'black';
+    });
+
+    room.onMessage('gameRestarted', (data) => {
         currentMatch = data.match;
-        showMatchOver = false;
+        totalMatches = data.totalMatches;
+        winnerId = null;
         showRoundOver = false;
-        eliminatedName = null;
+        showMatchOver = false;
         matchOverData = null;
+        countdownActive = false;
+        document.getElementById('game-over-menu').style.display = 'none';
+        resetPlayAgainBtn();
+        resetReturnToLobbyBtn();
+    });
+
+    room.onMessage('returnedToLobby', () => {
+        winnerId = null;
+        showRoundOver = false;
+        showMatchOver = false;
+        matchOverData = null;
+        countdownActive = false;
+        document.getElementById('game-over-menu').style.display = 'none';
+        document.getElementById('game').style.display = 'none';
+        document.getElementById('lobby').style.display = 'flex';
+        resetReturnToLobbyBtn();
+        resetPlayAgainBtn();
     });
 
     room.onMessage('reconnected', (data) => {
@@ -483,35 +506,9 @@ function setupRoomMessages(isReconnecting = false) {
 
     room.onMessage('gameOver', (data) => {
         winnerId = data.winnerName || 'Nobody';
+        countdownActive = false;
         document.getElementById('game-over-menu').style.display = 'flex';
     });
-}
-
-function updateLobbyControls() {
-    document.getElementById('start-btn').style.display = isHost ? 'block' : 'none';
-    document.querySelectorAll('.mode-btn').forEach(btn => {
-        btn.disabled = !isHost;
-        btn.style.opacity = isHost ? '1' : '0.6';
-    });
-    const panel = document.getElementById('settings-panel');
-    panel.querySelectorAll('input, button').forEach(el => {
-        el.disabled = !isHost;
-        el.style.opacity = isHost ? '1' : '0.6';
-    });
-}
-
-function resetPlayAgainBtn() {
-    const btn = document.getElementById('play-again-btn');
-    btn.textContent = 'Play Again';
-    btn.style.background = 'white';
-    btn.style.color = 'black';
-}
-
-function resetReturnToLobbyBtn() {
-    const btn = document.getElementById('return-lobby-btn');
-    btn.textContent = 'Return to Lobby';
-    btn.style.background = 'white';
-    btn.style.color = 'black';
 }
 
 function getMetrics(char) {
@@ -549,6 +546,47 @@ function draw() {
     ctx.lineWidth = 4;
     ctx.strokeRect(-boxW / 2, -boxH / 2, boxW, boxH);
 
+    if (countdownActive) {
+        const elapsed = (Date.now() - countdownStartTime) / 1000;
+
+        ctx.font = '24px monospace';
+        ctx.fillStyle = 'black';
+        ctx.globalAlpha = 0;
+        chars.forEach((c, i) => {
+            const prev = prevChars[i] || c;
+            const now = Date.now();
+            const t = lastUpdateTime ? Math.min((now - lastUpdateTime) / TICK_RATE, 1) : 0;
+            const ix = prev.x + (c.x - prev.x) * t;
+            const iy = prev.y + (c.y - prev.y) * t;
+            const { px, py } = toPixels(ix, iy);
+            const m = getMetrics(c.char);
+            ctx.save();
+            ctx.translate(px, py);
+            ctx.rotate(c.rotation);
+            ctx.fillText(c.char, -m.width / 2, m.ascent - m.height / 2);
+            ctx.restore();
+        });
+        ctx.globalAlpha = 1;
+
+        ctx.textAlign = 'center';
+        ctx.font = '32px monospace';
+        ctx.fillStyle = 'black';
+        ctx.fillText('Find:', 0, -60);
+        ctx.font = '100px monospace';
+        ctx.fillText(targetChar, 0, 40);
+
+        if (elapsed > 1) {
+            const secondsLeft = 3 - Math.floor(elapsed - 1);
+            if (secondsLeft > 0) {
+                ctx.font = '48px monospace';
+                ctx.fillText(secondsLeft, 0, 120);
+            }
+        }
+
+        ctx.restore();
+        return;
+    }
+
     ctx.font = '24px monospace';
     ctx.fillStyle = 'black';
 
@@ -569,7 +607,6 @@ function draw() {
         ctx.restore();
     });
 
-    // player list top right
     ctx.textAlign = 'right';
     ctx.font = '18px monospace';
     const listX = boxW / 2 - 10;
@@ -585,7 +622,6 @@ function draw() {
     });
     ctx.globalAlpha = 1;
 
-    // top UI
     ctx.font = '32px monospace';
     ctx.fillStyle = 'black';
     ctx.textAlign = 'center';
@@ -597,7 +633,6 @@ function draw() {
     ctx.fillText(Math.ceil(timeLeft) + 's', 0, -boxH / 2 - 20);
     ctx.fillText('Find: ' + targetChar, 0, boxH / 2 + 40);
 
-    // overlays
     if (winnerId) {
         ctx.fillStyle = 'rgba(255,255,255,0.85)';
         ctx.fillRect(-200, -60, 400, 120);
@@ -631,6 +666,7 @@ function draw() {
 }
 
 canvas.addEventListener('click', (e) => {
+    if (countdownActive) return;
     const rect = canvas.getBoundingClientRect();
     const clickX = e.clientX - rect.left - canvas.width / 2;
     const clickY = e.clientY - rect.top - canvas.height / 2;

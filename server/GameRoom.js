@@ -15,8 +15,8 @@ class GameRoom extends Room {
         this.roomCode = this.generateRoomCode();
         this.gameMode = DEFAULT_MODE;
         this.settings = { ...DEFAULT_MODE.defaultSettings };
-        this.selectedMode = 'redacted';
-        this.selectedSettingsData = { ...DEFAULT_MODE.defaultSettings };
+        this.selectedMode = null;
+        this.selectedSettingsData = null;
 
         // match/round tracking
         this.currentMatch = 1;
@@ -32,6 +32,7 @@ class GameRoom extends Room {
         this.timeUpHandled = false;
         this.gameOver = false;
         this.gameStarted = false;
+        this.roundActive = false
 
         this.clock.setTimeout(() => {
             if (!this.gameStarted) this.disconnect();
@@ -152,21 +153,19 @@ class GameRoom extends Room {
             this.timeLeft = this.settings.roundTime;
             this.chars = this.generateChars();
             this.gameStarted = true;
+            this.roundActive = false;
             this.lastTick = Date.now();
 
             this.broadcast('gameStarted', {
-                chars: this.chars,
-                targetChar: this.targetChar,
-                timeLeft: this.timeLeft,
-                round: this.currentRound,
                 match: this.currentMatch,
                 totalMatches: this.settings.matches
             });
             this.broadcastPlayerList();
+            this.startRoundCountdown();
         });
 
         this.setSimulationInterval(() => {
-            if (!this.gameStarted || this.gameOver) return;
+            if (!this.gameStarted || this.gameOver || !this.roundActive) return;
 
             const now = Date.now();
             const delta = (now - this.lastTick) / 1000;
@@ -305,11 +304,31 @@ class GameRoom extends Room {
         });
     }
 
+    startRoundCountdown() {
+        this.broadcast('roundCountdown', {
+            targetChar: this.targetChar,
+            round: this.currentRound,
+            match: this.currentMatch,
+            chars: this.chars
+        });
+
+        this.clock.setTimeout(() => {
+            this.roundActive = true;
+            this.lastTick = Date.now();
+            this.broadcast('roundStart', {
+                targetChar: this.targetChar,
+                round: this.currentRound,
+                match: this.currentMatch,
+                chars: this.chars,
+                timeLeft: this.timeLeft
+            });
+        }, 4000);
+    }
+
     startNextRound() {
         this.timeUpHandled = false;
         const alivePlayers = this.getAlivePlayers();
 
-        // match is over when 1 or 0 players remain
         if (alivePlayers.length <= 1) {
             const matchWinnerId = alivePlayers[0] || null;
 
@@ -328,56 +347,34 @@ class GameRoom extends Room {
                 totalMatches: this.settings.matches
             });
 
-            // check if all matches are done
             if (this.currentMatch >= this.settings.matches) {
                 this.endGame();
                 return;
             }
 
-            // start next match
             this.currentMatch += 1;
             this.currentRound = 1;
             this.taps = [];
             this.timeLeft = this.settings.roundTime;
+            this.roundActive = false;
 
-            // reset all active players to alive for new match
             Object.keys(this.activePlayers).forEach(id => {
                 this.activePlayers[id].alive = true;
             });
 
             this.chars = this.generateChars();
-
-            this.broadcast('newMatch', {
-                match: this.currentMatch,
-                totalMatches: this.settings.matches,
-                round: this.currentRound,
-                targetChar: this.targetChar,
-                chars: this.chars,
-                matchWins: Object.fromEntries(
-                    Object.entries(this.matchWins).map(([id, wins]) => [
-                        this.activePlayers[id]?.name || id, wins
-                    ])
-                )
-            });
-
             this.broadcastPlayerList();
+            this.startRoundCountdown();
             return;
         }
 
-        // continue current match with next round
         this.currentRound += 1;
         this.taps = [];
         this.timeLeft = this.settings.roundTime;
+        this.roundActive = false;
         this.chars = this.generateChars();
-
-        this.broadcast('newRound', {
-            round: this.currentRound,
-            match: this.currentMatch,
-            targetChar: this.targetChar,
-            chars: this.chars
-        });
-
         this.broadcastPlayerList();
+        this.startRoundCountdown();
     }
 
     endGame() {
@@ -460,6 +457,7 @@ class GameRoom extends Room {
         this.timeLeft = this.settings.roundTime;
         this.timeUpHandled = false;
         this.gameOver = false;
+        this.roundActive = false;
         this.matchWins = {};
 
         const connected = this.getConnectedPlayers();
@@ -473,14 +471,11 @@ class GameRoom extends Room {
         this.lastTick = Date.now();
 
         this.broadcast('gameRestarted', {
-            chars: this.chars,
-            targetChar: this.targetChar,
-            timeLeft: this.timeLeft,
-            round: this.currentRound,
             match: this.currentMatch,
             totalMatches: this.settings.matches
         });
         this.broadcastPlayerList();
+        this.startRoundCountdown();
     }
 
     onJoin(client, options) {
