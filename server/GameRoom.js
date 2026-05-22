@@ -395,9 +395,10 @@ class GameRoom extends Room {
         this.broadcast('playAgainVotes', {
             votes: this.playAgainVotes.size,
             total: activePlayers.length,
-            voterIds: Array.from(this.playAgainVotes)
+            voterIds: Array.from(this.playAgainVotes),
+            canStart: activePlayers.length >= this.settings.minPlayers
         });
-        if (this.playAgainVotes.size >= activePlayers.length && activePlayers.length > 0) {
+        if (this.playAgainVotes.size >= activePlayers.length && activePlayers.length >= this.settings.minPlayers) {
             this.playAgainVotes.clear();
             this.restartGame();
         }
@@ -474,18 +475,22 @@ class GameRoom extends Room {
             connected: true
         };
         this.sendPlayerState(client);
+        if (this.gameOver) {
+            this.checkPlayAgainVotes();
+            this.checkReturnToLobbyVotes();
+        }
     }
 
     onDrop(client) {
         console.log(client.sessionId, 'dropped');
         this.playAgainVotes.delete(client.sessionId);
         this.returnToLobbyVotes.delete(client.sessionId);
+        this.players[client.sessionId].connected = false;
+        this.broadcastPlayerList();
         if (this.gameOver) {
             this.checkPlayAgainVotes();
             this.checkReturnToLobbyVotes();
         }
-        this.players[client.sessionId].connected = false;
-        this.broadcastPlayerList();
         this.allowReconnection(client, 60);
     }
 
@@ -493,6 +498,10 @@ class GameRoom extends Room {
         console.log(client.sessionId, 'reconnected');
         this.players[client.sessionId].connected = true;
         this.sendPlayerState(client);
+        if (this.gameOver) {
+            this.checkPlayAgainVotes();
+            this.checkReturnToLobbyVotes();
+        }
     }
 
     onLeave(client, code) {

@@ -298,6 +298,8 @@ function setupRoomMessages(isReconnecting = false) {
         btn.textContent = `Play Again (${data.votes}/${data.total})`;
         btn.style.background = myVote ? 'black' : 'white';
         btn.style.color = myVote ? 'white' : 'black';
+        btn.disabled = !data.canStart;
+        btn.style.opacity = data.canStart ? '1' : '0.4';
     });
 
     room.onMessage('returnToLobbyVotes', (data) => {
