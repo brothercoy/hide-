@@ -6,6 +6,7 @@ export const GAME_MODES = {
         minPlayers: 2,
         maxPlayers: 10,
         defaultSettings: {
+            lives: 3,
             matches: 1,
             roundTime: 30,
             charCount: 80,
@@ -13,6 +14,12 @@ export const GAME_MODES = {
             minPlayers: 2
         },
         settingsOptions: {
+            lives: {
+                label: 'Lives',
+                min: 1,
+                max: 10,
+                default: 3
+            },
             matches: {
                 label: 'Matches',
                 min: 1,

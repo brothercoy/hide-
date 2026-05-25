@@ -72,6 +72,7 @@ function renderLobbySettings(modeId, isHost) {
                     });
                 } else {
                     btn.disabled = true;
+                    btn.style.opacity = '0.6';
                 }
                 optionsDiv.appendChild(btn);
             });
@@ -159,6 +160,10 @@ document.querySelectorAll('.mode-btn').forEach(btn => {
 document.getElementById('start-btn').addEventListener('click', () => {
     if (!selectedMode) { alert('Please select a game mode.'); return; }
     room.send('startGame', { mode: selectedMode, settings: selectedSettings });
+});
+
+document.getElementById('lobby-main-menu-btn').addEventListener('click', () => {
+    room.send('leaveToMenu');
 });
 
 function joinGame(type, code) {
@@ -302,7 +307,12 @@ function setupRoomMessages(isReconnecting = false) {
         const me = data.players.find(p => p.id === room.sessionId);
         const wasHost = isHost;
         isHost = me ? me.isHost : false;
-        if (isHost !== wasHost) updateLobbyControls();
+        if (isHost !== wasHost) {
+            updateLobbyControls();
+            if (isHost && selectedMode) {
+                renderLobbySettings(selectedMode, true);
+            }
+        }
     });
 
     room.onMessage('startError', (data) => {
@@ -352,6 +362,7 @@ function setupRoomMessages(isReconnecting = false) {
                     btn.className = 'speed-btn' + (val === currentValue ? ' active' : '');
                     btn.textContent = setting.labels[i];
                     btn.disabled = true;
+                    btn.style.opacity = '0.6';
                     optionsDiv.appendChild(btn);
                 });
                 row.appendChild(optionsDiv);
@@ -423,12 +434,23 @@ function setupRoomMessages(isReconnecting = false) {
     });
 
     room.onMessage('roundOver', (data) => {
-        eliminatedName = data.eliminatedName;
+        if (data.lostLife) {
+            eliminatedName = `${data.lostLifeName} lost a life!`;
+        } else {
+            eliminatedName = data.eliminatedName;
+        }
         showRoundOver = true;
     });
 
     room.onMessage('timeUp', (data) => {
-        eliminatedName = data.eliminatedNames.join(', ');
+        const parts = [];
+        if (data.eliminatedNames && data.eliminatedNames.length > 0) {
+            parts.push(data.eliminatedNames.join(', ') + ' eliminated!');
+        }
+        if (data.lostLifePlayers && data.lostLifePlayers.length > 0) {
+            parts.push(data.lostLifePlayers.map(p => `${p.name} lost a life!`).join(', '));
+        }
+        eliminatedName = parts.join(' ');
         showRoundOver = true;
     });
 
@@ -617,7 +639,8 @@ function draw() {
         ctx.fillStyle = 'black';
         const winsText = totalMatches > 1 ? ` (${p.matchWins || 0})` : '';
         const disconnectText = !p.connected ? ' %' : '';
-        ctx.fillText(p.name + winsText + disconnectText, listX, listY);
+        const livesText = p.lives !== undefined ? ' ' + '♥'.repeat(Math.max(0, p.lives)) : '';
+        ctx.fillText(p.name + winsText + livesText + disconnectText, listX, listY);
         listY += 24;
     });
     ctx.globalAlpha = 1;

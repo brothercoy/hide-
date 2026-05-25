@@ -50,10 +50,21 @@ class GameRoom extends Room {
             if (totalAlive >= this.settings.minPlayers && this.taps.length === totalAlive - 1) {
                 const tappedIds = this.taps.map(t => t.id);
                 const eliminatedId = this.getAlivePlayers().find(id => !tappedIds.includes(id));
-                this.activePlayers[eliminatedId].alive = false;
-                this.broadcast('roundOver', {
-                    eliminatedName: this.activePlayers[eliminatedId].name
-                });
+                this.activePlayers[eliminatedId].lives -= 1;
+
+                if (this.activePlayers[eliminatedId].lives <= 0) {
+                    this.activePlayers[eliminatedId].alive = false;
+                    this.broadcast('roundOver', {
+                        eliminatedName: this.activePlayers[eliminatedId].name,
+                        lostLife: false
+                    });
+                } else {
+                    this.broadcast('roundOver', {
+                        lostLifeName: this.activePlayers[eliminatedId].name,
+                        livesRemaining: this.activePlayers[eliminatedId].lives,
+                        lostLife: true
+                    });
+                }
                 this.startNextRound();
             }
         });
@@ -144,7 +155,7 @@ class GameRoom extends Room {
 
             this.activePlayers = {};
             connected.forEach(id => {
-                this.activePlayers[id] = { ...this.players[id], tapped: false };
+                this.activePlayers[id] = { ...this.players[id], tapped: false, lives: this.settings.lives };
                 this.matchWins[id] = 0;
             });
 
@@ -206,7 +217,8 @@ class GameRoom extends Room {
                 alive: this.activePlayers[p.id] ? this.activePlayers[p.id].alive : true,
                 tapped: tappedIds.includes(p.id),
                 matchWins: this.matchWins[p.id] || 0,
-                isHost: p.id === hostId
+                isHost: p.id === hostId,
+                lives: this.activePlayers[p.id] ? this.activePlayers[p.id].lives : this.settings.lives
             }))
         });
     }
@@ -248,12 +260,22 @@ class GameRoom extends Room {
         const tappedIds = this.taps.map(t => t.id);
         const untapped = this.getAlivePlayers().filter(id => !tappedIds.includes(id));
 
+        const eliminated = [];
+        const lostLife = [];
+
         untapped.forEach(id => {
-            this.activePlayers[id].alive = false;
+            this.activePlayers[id].lives -= 1;
+            if (this.activePlayers[id].lives <= 0) {
+                this.activePlayers[id].alive = false;
+                eliminated.push(this.activePlayers[id].name);
+            } else {
+                lostLife.push({ name: this.activePlayers[id].name, livesRemaining: this.activePlayers[id].lives });
+            }
         });
 
         this.broadcast('timeUp', {
-            eliminatedNames: untapped.map(id => this.activePlayers[id].name)
+            eliminatedNames: eliminated,
+            lostLifePlayers: lostLife
         });
 
         this.startNextRound();
@@ -360,6 +382,7 @@ class GameRoom extends Room {
 
             Object.keys(this.activePlayers).forEach(id => {
                 this.activePlayers[id].alive = true;
+                this.activePlayers[id].lives = this.settings.lives;
             });
 
             this.chars = this.generateChars();
@@ -386,9 +409,13 @@ class GameRoom extends Room {
         const topWins = sortedPlayers[0]?.[1] || 0;
         const topPlayers = sortedPlayers.filter(([, wins]) => wins === topWins);
 
-        this.lastWinnerName = topPlayers.length === 1
-            ? this.activePlayers[topPlayers[0][0]]?.name || 'Nobody'
-            : 'Tie';
+        this.lastWinnerName = topWins === 0
+            ? 'Nobody'
+            : topPlayers.length === 1
+                ? this.activePlayers[topPlayers[0][0]]?.name || 'Nobody'
+                : 'Tie';
+
+        this.broadcastPlayerList();
 
         this.broadcast('gameOver', {
             winnerName: this.lastWinnerName,
@@ -463,7 +490,7 @@ class GameRoom extends Room {
         const connected = this.getConnectedPlayers();
         this.activePlayers = {};
         connected.forEach(id => {
-            this.activePlayers[id] = { ...this.players[id], tapped: false };
+            this.activePlayers[id] = { ...this.players[id], tapped: false, lives: this.settings.lives };
             this.matchWins[id] = 0;
         });
 
