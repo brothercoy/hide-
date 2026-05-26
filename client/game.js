@@ -420,7 +420,8 @@ function setupRoomMessages(isReconnecting = false) {
         currentRound = data.round;
         currentMatch = data.match;
         countdownActive = true;
-        countdownStartTime = Date.now();
+        const elapsed = data.elapsedSeconds || 0;
+        countdownStartTime = Date.now() - (elapsed * 1000);
         showRoundOver = false;
         showMatchOver = false;
         eliminatedName = null;
@@ -529,9 +530,11 @@ function setupRoomMessages(isReconnecting = false) {
     });
 
     room.onMessage('reconnected', (data) => {
-        chars = data.chars;
-        prevChars = data.chars.map(c => ({ ...c }));
-        targetChar = data.targetChar;
+        if (!countdownActive) {
+            chars = data.chars;
+            prevChars = data.chars.map(c => ({ ...c }));
+            targetChar = data.targetChar;
+        }
         timeLeft = data.timeLeft;
         currentRound = data.round;
         currentMatch = data.match;
@@ -662,7 +665,7 @@ function draw() {
         ctx.fillStyle = 'black';
         const winsText = totalMatches > 1 ? ` (${p.matchWins || 0})` : '';
         const disconnectText = !p.connected ? ' %' : '';
-        const livesText = p.lives !== undefined ? ' ' + '♥'.repeat(Math.max(0, p.lives)) : '';
+        const livesText = p.lives !== null && p.lives !== undefined ? ' ' + '♥'.repeat(Math.max(0, p.lives)) : ': Spectator';
         ctx.fillText(p.name + winsText + livesText + disconnectText, listX, listY);
         listY += 24;
     });
