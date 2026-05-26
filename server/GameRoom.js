@@ -76,6 +76,31 @@ class GameRoom extends Room {
             this.broadcast('settingsUpdated', data);
         });
 
+        this.onMessage('makeHost', (client, data) => {
+            if (client.sessionId !== Object.keys(this.players)[0]) return;
+            if (!this.players[data.targetId]) return;
+            if (!this.players[data.targetId].connected) return;
+
+            const playerIds = Object.keys(this.players);
+            const hostIndex = playerIds.indexOf(client.sessionId);
+            const targetIndex = playerIds.indexOf(data.targetId);
+
+            if (hostIndex === -1 || targetIndex === -1) return;
+
+            playerIds.splice(hostIndex, 1);
+            playerIds.splice(0, 0, data.targetId);
+            playerIds.splice(targetIndex + (targetIndex < hostIndex ? 1 : 0), 1);
+            playerIds.splice(1, 0, client.sessionId);
+
+            const reordered = {};
+            playerIds.forEach(id => {
+                reordered[id] = this.players[id];
+            });
+            this.players = reordered;
+
+            this.broadcastPlayerList();
+        });
+
         this.onMessage('clientReady', (client) => {
             client.send('gameState', {
                 chars: this.chars,

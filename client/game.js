@@ -242,10 +242,33 @@ function renderLobbyPlayerList() {
     const list = document.getElementById('player-list');
     list.innerHTML = '';
     playerList.forEach(p => {
-        const entry = document.createElement('p');
+        const entry = document.createElement('div');
         entry.id = 'player-' + p.id;
-        entry.textContent = p.name + (p.isHost ? ' - Host' : '');
+        entry.style.display = 'flex';
+        entry.style.gap = '8px';
+        entry.style.alignItems = 'center';
         entry.style.opacity = p.connected ? '1' : '0.4';
+
+        const name = document.createElement('span');
+        name.textContent = p.name;
+
+        const label = document.createElement('span');
+        label.textContent = p.isHost ? 'Host' : 'Player';
+        label.style.fontSize = '12px';
+        label.style.opacity = '0.5';
+
+        if (isHost && !p.isHost && p.connected) {
+            label.style.cursor = 'pointer';
+            label.style.opacity = '0.5';
+            label.addEventListener('mouseover', () => label.style.opacity = '1');
+            label.addEventListener('mouseout', () => label.style.opacity = '0.5');
+            label.addEventListener('click', () => {
+                room.send('makeHost', { targetId: p.id });
+            });
+        }
+
+        entry.appendChild(name);
+        entry.appendChild(label);
         list.appendChild(entry);
     });
 }
@@ -303,10 +326,10 @@ function setupRoomMessages(isReconnecting = false) {
 
     room.onMessage('playerList', (data) => {
         playerList = data.players;
-        renderLobbyPlayerList();
         const me = data.players.find(p => p.id === room.sessionId);
         const wasHost = isHost;
         isHost = me ? me.isHost : false;
+        renderLobbyPlayerList();
         if (isHost !== wasHost) {
             updateLobbyControls();
             if (isHost && selectedMode) {
