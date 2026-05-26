@@ -387,7 +387,9 @@ class GameRoom extends Room {
 
             this.chars = this.generateChars();
             this.broadcastPlayerList();
-            this.startRoundCountdown();
+            this.clock.setTimeout(() => {
+                this.startRoundCountdown();
+            }, 3000);
             return;
         }
 
@@ -397,7 +399,9 @@ class GameRoom extends Room {
         this.roundActive = false;
         this.chars = this.generateChars();
         this.broadcastPlayerList();
-        this.startRoundCountdown();
+        this.clock.setTimeout(() => {
+            this.startRoundCountdown();
+        }, 3000);
     }
 
     endGame() {

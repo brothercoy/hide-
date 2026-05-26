@@ -437,7 +437,7 @@ function setupRoomMessages(isReconnecting = false) {
         if (data.lostLife) {
             eliminatedName = `${data.lostLifeName} lost a life!`;
         } else {
-            eliminatedName = data.eliminatedName;
+            eliminatedName = `${data.eliminatedName} has been eliminated!`;
         }
         showRoundOver = true;
     });
@@ -679,10 +679,8 @@ function draw() {
         ctx.fillStyle = 'rgba(255,255,255,0.85)';
         ctx.fillRect(-200, -60, 400, 120);
         ctx.fillStyle = 'black';
-        ctx.font = '28px monospace';
-        ctx.fillText('Eliminated!', 0, -20);
         ctx.font = '18px monospace';
-        ctx.fillText(eliminatedName, 0, 20);
+        ctx.fillText(eliminatedName, 0, 10);
     }
 
     ctx.restore();
