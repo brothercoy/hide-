@@ -227,16 +227,18 @@ function resetGameState() {
 const canvas = document.getElementById('gameCanvas');
 const ctx = canvas.getContext('2d');
 
+let boxW = 0;
+let boxH = 0;
+
 function resizeCanvas() {
-    canvas.width = window.innerWidth;
-    canvas.height = window.innerHeight;
+    canvas.width = Math.max(window.innerWidth, 1600);
+    canvas.height = Math.max(window.innerHeight, 800);
+    boxW = canvas.width - 192;
+    boxH = canvas.height - 192;
 }
 
 resizeCanvas();
 window.addEventListener('resize', resizeCanvas);
-
-const boxW = canvas.width - 192;
-const boxH = canvas.height - 192;
 
 ctx.font = `${FONT_SIZE}px monospace`;
 
@@ -410,6 +412,11 @@ function setupRoomMessages(isReconnecting = false) {
     room.onMessage('gameStarted', (data) => {
         currentMatch = data.match;
         totalMatches = data.totalMatches;
+        winnerId = null;
+        showRoundOver = false;
+        showMatchOver = false;
+        matchOverData = null;
+        document.getElementById('game-over-menu').style.display = 'none';
         document.getElementById('lobby').style.display = 'none';
         document.getElementById('game').style.display = 'block';
         resizeCanvas();
@@ -733,14 +740,27 @@ canvas.addEventListener('click', (e) => {
     });
 });
 
-document.addEventListener('keydown', (e) => {
-    if (e.key === 'f' || e.key === 'F') {
-        if (!document.fullscreenElement) {
-            document.documentElement.requestFullscreen();
-        } else {
-            document.exitFullscreen();
-        }
+document.getElementById('fullscreen-btn').addEventListener('click', () => {
+    if (!document.fullscreenElement) {
+        document.documentElement.requestFullscreen();
+    } else {
+        document.exitFullscreen();
     }
+});
+
+document.getElementById('settings-btn').addEventListener('click', () => {
+    const panel = document.getElementById('settings-panel-overlay');
+    panel.style.display = panel.style.display === 'none' ? 'flex' : 'none';
+});
+
+document.getElementById('settings-main-menu-btn').addEventListener('click', () => {
+    document.getElementById('settings-panel-overlay').style.display = 'none';
+    document.getElementById('game-over-menu').style.display = 'none';
+    document.getElementById('game').style.display = 'none';
+    document.getElementById('lobby').style.display = 'none';
+    document.getElementById('menu').style.display = 'flex';
+    if (room) room.send('leaveToMenu');
+    resetGameState();
 });
 
 requestAnimationFrame(loop);

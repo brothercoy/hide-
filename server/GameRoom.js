@@ -9,8 +9,6 @@ const DEFAULT_MODE = GAME_MODES.redacted;
 
 class GameRoom extends Room {
     onCreate() {
-        console.log('Room created');
-
         this.autoDispose = false;
         this.roomCode = this.generateRoomCode();
         this.gameMode = DEFAULT_MODE;
@@ -21,7 +19,6 @@ class GameRoom extends Room {
         this.currentMatch = 1;
         this.currentRound = 1;
         this.matchWins = {};
-
         this.timeLeft = this.settings.roundTime;
         this.players = {};
         this.activePlayers = {};
@@ -91,7 +88,6 @@ class GameRoom extends Room {
             const playerIds = Object.keys(this.players);
             const hostIndex = playerIds.indexOf(client.sessionId);
             const targetIndex = playerIds.indexOf(data.targetId);
-
             if (hostIndex === -1 || targetIndex === -1) return;
 
             playerIds.splice(hostIndex, 1);
@@ -147,10 +143,51 @@ class GameRoom extends Room {
         this.onMessage('leaveToMenu', (client) => {
             const player = this.players[client.sessionId];
             if (!player) return;
+
             const playerIds = Object.keys(this.players);
             if (playerIds[0] === client.sessionId && playerIds.length > 1) {
                 this.broadcast('newHost', { id: playerIds[1] });
             }
+
+            if (this.gameStarted && !this.gameOver && this.activePlayers[client.sessionId]) {
+                this.activePlayers[client.sessionId].alive = false;
+                this.activePlayers[client.sessionId].lives = 0;
+                this.broadcastPlayerList();
+
+                const alivePlayers = this.getAlivePlayers();
+
+                if (alivePlayers.length <= 1) {
+                    this.taps = [];
+                    this.inCountdown = false;
+                    this.roundActive = false;
+                    this.timeUpHandled = true;
+                    this.startNextRound();
+                } else if (this.roundActive) {
+                    const tappedIds = this.taps.map(t => t.id);
+                    const tappedAlive = tappedIds.filter(id =>
+                        this.activePlayers[id] && this.activePlayers[id].alive
+                    ).length;
+
+                    if (tappedAlive >= alivePlayers.length - 1) {
+                        const eliminatedId = alivePlayers.find(id => !tappedIds.includes(id));
+                        if (eliminatedId) {
+                            this.activePlayers[eliminatedId].lives -= 1;
+                            if (this.activePlayers[eliminatedId].lives <= 0) {
+                                this.activePlayers[eliminatedId].alive = false;
+                            }
+                            const msg = {
+                                lostLifeName: this.activePlayers[eliminatedId].name,
+                                eliminatedName: this.activePlayers[eliminatedId].name,
+                                lostLife: this.activePlayers[eliminatedId].lives > 0
+                            };
+                            this.currentRoundOverMessage = msg;
+                            this.broadcast('roundOver', msg);
+                            this.startNextRound();
+                        }
+                    }
+                }
+            }
+
             delete this.players[client.sessionId];
             this.broadcastPlayerList();
             this.returnToLobbyVotes.delete(client.sessionId);
@@ -364,6 +401,8 @@ class GameRoom extends Room {
     }
 
     startRoundCountdown() {
+        if (this.gameOver) return;
+
         this.chars = this.generateChars();
         this.currentRoundOverMessage = null;
         this.inCountdown = true;
@@ -377,6 +416,7 @@ class GameRoom extends Room {
         });
 
         this.clock.setTimeout(() => {
+            if (this.gameOver) return;
             this.inCountdown = false;
             this.roundActive = true;
             this.lastTick = Date.now();
@@ -552,7 +592,6 @@ class GameRoom extends Room {
     }
 
     onJoin(client, options) {
-        console.log(client.sessionId, 'joined as', options.playerName);
         this.players[client.sessionId] = {
             id: client.sessionId,
             name: options.playerName || 'Anonymous',
@@ -567,7 +606,6 @@ class GameRoom extends Room {
     }
 
     onDrop(client) {
-        console.log(client.sessionId, 'dropped');
         this.playAgainVotes.delete(client.sessionId);
         this.returnToLobbyVotes.delete(client.sessionId);
         this.players[client.sessionId].connected = false;
@@ -580,7 +618,6 @@ class GameRoom extends Room {
     }
 
     onReconnect(client) {
-        console.log(client.sessionId, 'reconnected');
         this.players[client.sessionId].connected = true;
         this.sendPlayerState(client);
         if (this.gameOver) {
@@ -590,7 +627,6 @@ class GameRoom extends Room {
     }
 
     onLeave(client, code) {
-        console.log(client.sessionId, 'left. code:', code);
         this.playAgainVotes.delete(client.sessionId);
         this.returnToLobbyVotes.delete(client.sessionId);
         if (this.gameOver) {
