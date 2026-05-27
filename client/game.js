@@ -137,15 +137,15 @@ window.addEventListener('load', tryReconnect);
 
 document.getElementById('create-btn').addEventListener('click', () => {
     playerName = document.getElementById('name-input').value.trim();
-    if (!playerName) { alert('Please enter your name'); return; }
+    if (!playerName) { showModal('Please enter your name'); return; }
     joinGame('create');
 });
 
 document.getElementById('join-btn').addEventListener('click', () => {
     playerName = document.getElementById('name-input').value.trim();
     const code = document.getElementById('code-input').value.trim().toUpperCase();
-    if (!playerName) { alert('Please enter your name'); return; }
-    if (!code) { alert('Please enter a room code'); return; }
+    if (!playerName) { showModal('Please enter your name'); return; }
+    if (!code) { showModal('Please enter a room code'); return; }
     joinGame('join', code);
 });
 
@@ -160,7 +160,7 @@ document.querySelectorAll('.mode-btn').forEach(btn => {
 });
 
 document.getElementById('start-btn').addEventListener('click', () => {
-    if (!selectedMode) { alert('Please select a game mode.'); return; }
+    if (!selectedMode) { showModal('Please select a game mode.'); return; }
     room.send('startGame', { mode: selectedMode, settings: selectedSettings });
 });
 
@@ -179,11 +179,11 @@ function joinGame(type, code) {
                 if (data.roomId) {
                     colyseusClient.joinById(data.roomId, options).then(onRoomJoined);
                 } else {
-                    alert('Room not found. Check the code and try again.');
+                    showModal('Room not found. Check the code and try again.');
                 }
             })
             .catch(() => {
-                alert('Room not found. Check the code and try again.');
+                showModal('Room not found. Check the code and try again.');
             });
     }
 }
@@ -231,8 +231,8 @@ let boxW = 0;
 let boxH = 0;
 
 function resizeCanvas() {
-    canvas.width = Math.max(window.innerWidth, 1600);
-    canvas.height = Math.max(window.innerHeight, 800);
+    canvas.width = isMobile ? Math.max(window.innerWidth, 300) : Math.max(window.innerWidth, 1600);
+    canvas.height = isMobile ? Math.max(window.innerHeight, 720) : Math.max(window.innerHeight, 800);
     boxW = canvas.width - 192;
     boxH = canvas.height - 192;
 }
@@ -276,6 +276,15 @@ function renderLobbyPlayerList() {
         list.appendChild(entry);
     });
 }
+
+function showModal(message) {
+    document.getElementById('modal-message').textContent = message;
+    document.getElementById('modal-overlay').style.display = 'flex';
+}
+
+document.getElementById('modal-ok-btn').addEventListener('click', () => {
+    document.getElementById('modal-overlay').style.display = 'none';
+});
 
 function updateLobbyControls() {
     document.getElementById('start-btn').style.display = isHost ? 'block' : 'none';
@@ -343,7 +352,7 @@ function setupRoomMessages(isReconnecting = false) {
     });
 
     room.onMessage('startError', (data) => {
-        alert(data.message);
+        showModal(data.message);
     });
 
     room.onMessage('settingsUpdated', (data) => {
