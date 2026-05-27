@@ -8,6 +8,8 @@ const colyseusClient = new Client(
 );
 
 const TICK_RATE = 50;
+const isMobile = navigator.maxTouchPoints > 0;
+const FONT_SIZE = isMobile ? 36 : 24;
 
 let selectedMode = null;
 let selectedSettings = {};
@@ -236,7 +238,7 @@ window.addEventListener('resize', resizeCanvas);
 const boxW = canvas.width - 192;
 const boxH = canvas.height - 192;
 
-ctx.font = '24px monospace';
+ctx.font = `${FONT_SIZE}px monospace`;
 
 function renderLobbyPlayerList() {
     const list = document.getElementById('player-list');
@@ -597,7 +599,7 @@ function draw() {
     if (countdownActive) {
         const elapsed = (Date.now() - countdownStartTime) / 1000;
 
-        ctx.font = '24px monospace';
+        ctx.font = `${FONT_SIZE}px monospace`;
         ctx.fillStyle = 'black';
         ctx.globalAlpha = 0;
         chars.forEach((c, i) => {
@@ -635,7 +637,7 @@ function draw() {
         return;
     }
 
-    ctx.font = '24px monospace';
+    ctx.font = `${FONT_SIZE}px monospace`;
     ctx.fillStyle = 'black';
 
     const now = Date.now();
@@ -725,7 +727,7 @@ canvas.addEventListener('click', (e) => {
         const m = getMetrics(c.char);
         const centerY = py - m.ascent + m.height / 2;
         const dist = Math.sqrt((clickX - px) ** 2 + (clickY - centerY) ** 2);
-        if (dist < m.radius + 20) {
+        if (dist < m.radius + (isMobile ? 40 : 20)) {
             room.send('tap', { nx, ny, time: Date.now() });
         }
     });
