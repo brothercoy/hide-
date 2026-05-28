@@ -4,6 +4,11 @@
     <meta charset="UTF-8">
     <title>hide @$©!!</title>
     <style>
+        @font-face {
+            font-family: 'IBMVGA';
+            src: url('Web437_IBM_VGA_8x16.woff') format('woff');
+            font-display: block;
+        }
         * {
             margin: 0;
             padding: 0;
@@ -13,7 +18,8 @@
         body {
             background: white;
             overflow: auto;
-            font-family: monospace;
+            font-family: 'IBMVGA', monospace;
+            -webkit-font-smoothing: none;
         }
 
         #menu {
@@ -31,13 +37,13 @@
         }
 
         h1 {
-            font-size: 48px;
+            font-size: 64px;
             letter-spacing: 4px;
         }
 
         input {
-            font-family: monospace;
-            font-size: 20px;
+            font-family: 'IBMVGA', monospace;
+            font-size: 32px;
             padding: 10px 16px;
             border: 3px solid black;
             outline: none;
@@ -46,8 +52,8 @@
         }
 
         button {
-            font-family: monospace;
-            font-size: 20px;
+            font-family: 'IBMVGA', monospace;
+            font-size: 32px;
             padding: 10px 24px;
             border: 3px solid black;
             background: white;
@@ -68,7 +74,7 @@
         }
 
         .divider {
-            font-size: 14px;
+            font-size: 24px;
             color: #999;
         }
 
@@ -79,7 +85,7 @@
             justify-content: center;
             height: 100vh;
             gap: 16px;
-            font-family: monospace;
+            font-family: 'IBMVGA', monospace;
         }
 
         #lobby-inner {
@@ -91,9 +97,8 @@
         }
 
         #room-code-display {
-            font-size: 32px;
+            font-size: 48px;
             font-weight: bold;
-            letter-spacing: 8px;
         }
 
         #player-list {
@@ -117,8 +122,8 @@
         }
 
         .mode-btn {
-            font-family: monospace;
-            font-size: 16px;
+            font-family: 'IBMVGA', monospace;
+            font-size: 24px;
             padding: 8px 16px;
             border: 2px solid black;
             background: white;
@@ -138,7 +143,7 @@
         }
 
         #mode-description {
-            font-size: 13px;
+            font-size: 20px;
             color: #000000;
             text-align: center;
             min-height: 40px;
@@ -151,7 +156,7 @@
         }
 
         .setting-label {
-            font-size: 14px;
+            font-size: 20px;
             display: flex;
             justify-content: space-between;
         }
@@ -167,8 +172,8 @@
         }
 
         .speed-btn {
-            font-family: monospace;
-            font-size: 14px;
+            font-family: 'IBMVGA', monospace;
+            font-size: 24px;
             padding: 6px 0;
             border: 2px solid black;
             background: white;
@@ -242,13 +247,13 @@
 
     <script type="module" src="game.js"></script>
 
-    <div id="settings-panel-overlay" style="display:none; position:fixed; bottom:50px; right:16px; background:white; border:3px solid black; padding:16px; z-index:100; font-family:monospace; flex-direction:column; gap:8px;">
+    <div id="settings-panel-overlay" style="display:none; position:fixed; bottom:50px; right:16px; background:white; border:3px solid black; padding:16px; z-index:100; font-family:'IBMVGA', monospace; flex-direction:column; gap:8px;">
         <button id="settings-main-menu-btn">Main Menu</button>
     </div>
     <button id="settings-btn" style="position:fixed; bottom:16px; right:60px; width:auto; padding:8px 12px; font-size:14px; z-index:100;">⚙</button>
     <button id="fullscreen-btn" style="position:fixed; bottom:16px; right:16px; width:auto; padding:8px 12px; font-size:14px; z-index:100;">⛶</button>
     <div id="modal-overlay" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.5); z-index:1000; justify-content:center; align-items:center;">
-        <div style="background:white; border:3px solid black; padding:32px; font-family:monospace; text-align:center; max-width:300px;">
+        <div style="background:white; border:3px solid black; padding:32px; font-family:'IBMVGA', monospace; text-align:center; max-width:300px;">
             <p id="modal-message" style="margin-bottom:16px; font-size:16px;"></p>
             <button id="modal-ok-btn" style="width:auto; padding:8px 24px;">OK</button>
         </div>

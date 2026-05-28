@@ -9,7 +9,7 @@ const colyseusClient = new Client(
 
 const TICK_RATE = 50;
 const isMobile = navigator.maxTouchPoints > 0;
-const FONT_SIZE = isMobile ? 36 : 24;
+const FONT_SIZE = isMobile ? 36 : 32;
 
 let selectedMode = null;
 let selectedSettings = {};
@@ -240,7 +240,7 @@ function resizeCanvas() {
 resizeCanvas();
 window.addEventListener('resize', resizeCanvas);
 
-ctx.font = `${FONT_SIZE}px monospace`;
+ctx.font = `${FONT_SIZE}px "IBMVGA"`;
 
 function renderLobbyPlayerList() {
     const list = document.getElementById('player-list');
@@ -615,7 +615,7 @@ function draw() {
     if (countdownActive) {
         const elapsed = (Date.now() - countdownStartTime) / 1000;
 
-        ctx.font = `${FONT_SIZE}px monospace`;
+        ctx.font = `${FONT_SIZE}px "IBMVGA"`;
         ctx.fillStyle = 'black';
         ctx.globalAlpha = 0;
         chars.forEach((c, i) => {
@@ -635,16 +635,16 @@ function draw() {
         ctx.globalAlpha = 1;
 
         ctx.textAlign = 'center';
-        ctx.font = '32px monospace';
+        ctx.font = '32px "IBMVGA"';
         ctx.fillStyle = 'black';
         ctx.fillText('Find:', 0, -60);
-        ctx.font = '100px monospace';
+        ctx.font = '96px "IBMVGA"';
         ctx.fillText(targetChar, 0, 40);
 
         if (elapsed > 1) {
             const secondsLeft = 3 - Math.floor(elapsed - 1);
             if (secondsLeft > 0) {
-                ctx.font = '48px monospace';
+                ctx.font = '48px "IBMVGA"';
                 ctx.fillText(secondsLeft, 0, 120);
             }
         }
@@ -653,7 +653,7 @@ function draw() {
         return;
     }
 
-    ctx.font = `${FONT_SIZE}px monospace`;
+    ctx.font = `${FONT_SIZE}px "IBMVGA"`;
     ctx.fillStyle = 'black';
 
     const now = Date.now();
@@ -674,7 +674,7 @@ function draw() {
     });
 
     ctx.textAlign = 'right';
-    ctx.font = '18px monospace';
+    ctx.font = '32px "IBMVGA"';
     const listX = boxW / 2 - 10;
     let listY = -boxH / 2 + 30;
     playerList.forEach(p => {
@@ -689,7 +689,7 @@ function draw() {
     });
     ctx.globalAlpha = 1;
 
-    ctx.font = '32px monospace';
+    ctx.font = '32px "IBMVGA"';
     ctx.fillStyle = 'black';
     ctx.textAlign = 'center';
     if (totalMatches > 1) {
@@ -704,15 +704,15 @@ function draw() {
         ctx.fillStyle = 'rgba(255,255,255,0.85)';
         ctx.fillRect(-200, -60, 400, 120);
         ctx.fillStyle = 'black';
-        ctx.font = '28px monospace';
+        ctx.font = '32px "IBMVGA"';
         ctx.fillText('Winner: ' + winnerId, 0, 10);
     } else if (showMatchOver && matchOverData) {
         ctx.fillStyle = 'rgba(255,255,255,0.85)';
         ctx.fillRect(-200, -80, 400, 160);
         ctx.fillStyle = 'black';
-        ctx.font = '28px monospace';
+        ctx.font = '32px "IBMVGA"';
         ctx.fillText(`Match ${matchOverData.match} Over!`, 0, -40);
-        ctx.font = '18px monospace';
+        ctx.font = '32px "IBMVGA"';
         ctx.fillText('Winner: ' + matchOverData.matchWinnerName, 0, 0);
         let scoreY = 30;
         Object.entries(matchOverData.matchWins || {}).forEach(([name, wins]) => {
@@ -723,7 +723,7 @@ function draw() {
         ctx.fillStyle = 'rgba(255,255,255,0.85)';
         ctx.fillRect(-200, -60, 400, 120);
         ctx.fillStyle = 'black';
-        ctx.font = '18px monospace';
+        ctx.font = '32px "IBMVGA"';
         ctx.fillText(eliminatedName, 0, 10);
     }
 
