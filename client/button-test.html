@@ -1,0 +1,478 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>ASCII Button Test</title>
+    <style>
+        @font-face {
+            font-family: 'IBMVGA';
+            src: url('Web437_IBM_VGA_8x16.woff') format('woff');
+            font-display: block;
+        }
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { background: black; overflow: hidden; }
+        canvas { display: block; }
+    </style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<script>
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d');
+
+canvas.width = window.innerWidth;
+canvas.height = window.innerHeight;
+
+const FONT_SIZE = 32;
+const FONT = `${FONT_SIZE}px "IBMVGA"`;
+const ANIM_DURATION = 333;
+const CURSOR_BLINK_RATE = 500;
+
+document.fonts.ready.then(() => {
+    ctx.font = FONT;
+    initButtons();
+    initSliders();
+    initInputs();
+    loop();
+});
+
+const buttons = [];
+const sliders = [];
+const inputs = [];
+let mouseX = 0;
+let mouseY = 0;
+let dragging = null;
+let elapsed = 0;
+let focusedInput = null;
+
+function makeButton(label, x, y, onClick) {
+    return {
+        label, x, y, onClick,
+        hoverProgress: 0,
+        hovered: false,
+        rect: null,
+        phase: Math.random() * Math.PI * 2
+    };
+}
+
+function makeInput(placeholder, x, y, maxLength) {
+    return {
+        placeholder, x, y, maxLength,
+        value: '',
+        focused: false,
+        rect: null,
+        phase: Math.random() * Math.PI * 2,
+        cursorVisible: true,
+        lastBlink: performance.now(),
+        cursorPos: 0,
+        selStart: 0,
+        selEnd: 0,
+        selecting: false
+    };
+}
+
+function initButtons() {
+    buttons.push(makeButton('CREATE ROOM', canvas.width / 2, canvas.height / 2, () => console.log('Create Room:', inputs[0].value)));
+    buttons.push(makeButton('JOIN ROOM', canvas.width / 2, canvas.height / 2 + 160, () => console.log('Join Room:', inputs[1].value)));
+}
+
+function initSliders() {
+    sliders.push({ label: 'ROUND TIME', value: 30, min: 1, max: 60, x: canvas.width / 2, y: canvas.height / 2 + 320, rect: null, phase: Math.random() * Math.PI * 2 });
+}
+
+function initInputs() {
+    inputs.push(makeInput('ENTER NAME', canvas.width / 2, canvas.height / 2 - 80, 12));
+    inputs.push(makeInput('ROOM CODE', canvas.width / 2, canvas.height / 2 + 80, 6));
+}
+
+function drawButton(label, cx, cy, hoverProgress) {
+    ctx.font = FONT;
+
+    const charWidth = ctx.measureText('M').width;
+    const textWidth = ctx.measureText(label).width;
+    const padX = charWidth * 2;
+    const innerWidth = textWidth + padX * 2;
+    const borderWidth = innerWidth + charWidth * 2;
+
+    const lineHeight = FONT_SIZE;
+    const totalHeight = lineHeight * 2.5;
+
+    const left = cx - borderWidth / 2;
+    const top = cy - totalHeight / 2;
+
+    const dashCount = Math.floor(innerWidth / charWidth);
+    const plusCount = Math.floor((dashCount / 2) * hoverProgress);
+
+    let borderLine = '';
+    for (let i = 0; i < dashCount; i++) {
+        const fromLeft = i;
+        const fromRight = dashCount - 1 - i;
+        if (fromLeft < plusCount || fromRight < plusCount ||
+            (dashCount % 2 === 1 && i === Math.floor(dashCount / 2) && plusCount >= Math.floor(dashCount / 2))) {
+            borderLine += '+';
+        } else {
+            borderLine += '-';
+        }
+    }
+
+    const topBorder    = '+' + borderLine + '+';
+    const bottomBorder = '+' + borderLine + '+';
+
+    ctx.fillStyle = '#00ff41';
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'top';
+
+    ctx.fillText(topBorder, left, top);
+    ctx.fillText('|', left, top + lineHeight);
+    ctx.fillText(label, left + charWidth + padX, top + lineHeight);
+    ctx.fillText('|', left + borderWidth - charWidth, top + lineHeight);
+    ctx.fillText(bottomBorder, left, top + lineHeight * 2);
+
+    return { x: left, y: top, w: borderWidth, h: totalHeight };
+}
+
+function drawInput(inp, cy) {
+    ctx.font = FONT;
+
+    const charWidth = ctx.measureText('M').width;
+    const refTextWidth = ctx.measureText(inp.placeholder).width;
+    const padX = charWidth * 2;
+    const innerWidth = refTextWidth + padX * 2;
+    const borderWidth = innerWidth + charWidth * 2;
+
+    const lineHeight = FONT_SIZE;
+    const totalHeight = lineHeight * 2.5;
+
+    const left = inp.x - borderWidth / 2;
+    const top = cy - totalHeight / 2;
+
+    const dashCount = Math.floor(innerWidth / charWidth);
+    const topBorder    = '+' + '-'.repeat(dashCount) + '+';
+    const bottomBorder = '+' + '-'.repeat(dashCount) + '+';
+
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'top';
+
+    ctx.fillStyle = inp.focused ? '#00ff41' : '#007a1f';
+    ctx.fillText(topBorder, left, top);
+    ctx.fillText('|', left, top + lineHeight);
+    ctx.fillText('|', left + borderWidth - charWidth, top + lineHeight);
+    ctx.fillText(bottomBorder, left, top + lineHeight * 2);
+
+    const textY = top + lineHeight;
+    const totalTextWidth = ctx.measureText(inp.value).width;
+    const centerX = left + borderWidth / 2;
+    const textStartX = inp.value.length === 0
+        ? centerX - charWidth / 2
+        : centerX - totalTextWidth / 2;
+
+    // Draw selection highlight
+    const hasSelection = inp.selStart !== inp.selEnd;
+    if (hasSelection && inp.focused) {
+        const selMin = Math.min(inp.selStart, inp.selEnd);
+        const selMax = Math.max(inp.selStart, inp.selEnd);
+        const selX = textStartX + ctx.measureText(inp.value.slice(0, selMin)).width;
+        const selW = ctx.measureText(inp.value.slice(selMin, selMax)).width;
+        ctx.fillStyle = '#00ff41';
+        ctx.fillRect(selX, textY, selW, FONT_SIZE - 4);
+        // Draw selected text in black over highlight
+        ctx.fillStyle = 'black';
+        ctx.fillText(inp.value.slice(selMin, selMax), selX, textY);
+        // Draw non-selected parts
+        ctx.fillStyle = '#00ff41';
+        ctx.fillText(inp.value.slice(0, selMin), textStartX, textY);
+        ctx.fillText(inp.value.slice(selMax), selX + selW, textY);
+    } else if (inp.value.length === 0 && !inp.focused) {
+        ctx.fillStyle = '#003d0f';
+        ctx.textAlign = 'center';
+        ctx.fillText(inp.placeholder, centerX, textY);
+        ctx.textAlign = 'left';
+    } else {
+        ctx.fillStyle = inp.focused ? '#00ff41' : '#007a1f';
+        ctx.fillText(inp.value, textStartX, textY);
+    }
+
+    // Draw cursor
+    if (inp.focused && inp.cursorVisible && !hasSelection) {
+        const cursorX = textStartX + ctx.measureText(inp.value.slice(0, inp.cursorPos)).width;
+        const cursorW = charWidth - 2;
+        ctx.fillStyle = '#00ff41';
+        ctx.fillRect(cursorX, textY, cursorW, FONT_SIZE - 4);
+        // Draw the character under the cursor inverted
+        const charUnder = inp.value[inp.cursorPos];
+        if (charUnder) {
+            ctx.fillStyle = 'black';
+            ctx.fillText(charUnder, cursorX, textY);
+        }
+    }
+
+    return { x: left, y: top, w: borderWidth, h: totalHeight, textStartX, charWidth };
+}
+
+function getCharIndex(inp, mx) {
+    if (!inp.rect) return 0;
+    ctx.font = FONT;
+    const textStartX = inp.rect.textStartX;
+    let closest = 0;
+    let closestDist = Infinity;
+    for (let i = 0; i <= inp.value.length; i++) {
+        const x = textStartX + ctx.measureText(inp.value.slice(0, i)).width;
+        const dist = Math.abs(mx - x);
+        if (dist < closestDist) {
+            closestDist = dist;
+            closest = i;
+        }
+    }
+    return closest;
+}
+
+function drawSlider(s, cy) {
+    ctx.font = FONT;
+    const charWidth = ctx.measureText('M').width;
+    const totalChars = 20;
+    const handleWidth = charWidth * 2;
+    const trackWidth = totalChars * charWidth;
+    const totalWidth = trackWidth + handleWidth;
+    const left = s.x - totalWidth / 2;
+
+    const t = (s.value - s.min) / (s.max - s.min);
+    const handlePos = Math.floor(t * totalChars);
+
+    let track = '';
+    for (let i = 0; i < totalChars; i++) {
+        track += i < handlePos ? '=' : '-';
+    }
+
+    const leftPart = track.slice(0, handlePos);
+    const rightPart = track.slice(handlePos);
+    const full = leftPart + '[]' + rightPart;
+
+    ctx.fillStyle = '#00ff41';
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'top';
+
+    ctx.fillText(s.label + ': ' + s.value, left, cy - FONT_SIZE);
+    ctx.fillText('|' + full + '|', left - charWidth, cy);
+
+    return { x: left, y: cy - FONT_SIZE / 2, w: totalWidth, h: FONT_SIZE * 2, totalChars, left, trackWidth };
+}
+
+let lastTime = performance.now();
+
+function update(now) {
+    const dt = now - lastTime;
+    lastTime = now;
+    elapsed += dt / 1000;
+
+    buttons.forEach(btn => {
+        const inside = btn.rect &&
+            mouseX >= btn.rect.x && mouseX <= btn.rect.x + btn.rect.w &&
+            mouseY >= btn.rect.y && mouseY <= btn.rect.y + btn.rect.h;
+        btn.hovered = inside;
+        if (inside) {
+            btn.hoverProgress = Math.min(1, btn.hoverProgress + dt / ANIM_DURATION);
+        } else {
+            btn.hoverProgress = Math.max(0, btn.hoverProgress - dt / ANIM_DURATION);
+        }
+    });
+
+    // Cursor blink
+    inputs.forEach(inp => {
+        if (inp.focused && now - inp.lastBlink > CURSOR_BLINK_RATE) {
+            inp.cursorVisible = !inp.cursorVisible;
+            inp.lastBlink = now;
+        }
+    });
+}
+
+function loop() {
+    const now = performance.now();
+    update(now);
+
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    ctx.fillStyle = 'black';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+    inputs.forEach(inp => {
+        const yOffset = Math.sin(elapsed * 0.8 + inp.phase) * 4;
+        inp.rect = drawInput(inp, inp.y + yOffset);
+    });
+
+    buttons.forEach(btn => {
+        const yOffset = Math.sin(elapsed * 0.8 + btn.phase) * 4;
+        btn.rect = drawButton(btn.label, btn.x, btn.y + yOffset, btn.hoverProgress);
+    });
+
+    sliders.forEach(s => {
+        const yOffset = Math.sin(elapsed * 0.8 + s.phase) * 4;
+        s.rect = drawSlider(s, s.y + yOffset);
+    });
+
+    requestAnimationFrame(loop);
+}
+
+canvas.addEventListener('mousemove', e => {
+    const rect = canvas.getBoundingClientRect();
+    mouseX = e.clientX - rect.left;
+    mouseY = e.clientY - rect.top;
+
+    if (dragging) {
+        const r = dragging.rect;
+        const t = Math.max(0, Math.min(1, (mouseX - r.left) / r.trackWidth));
+        const range = dragging.max - dragging.min;
+        dragging.value = Math.round(dragging.min + t * range);
+    }
+
+    if (focusedInput && focusedInput.selecting) {
+        const idx = getCharIndex(focusedInput, mouseX);
+        focusedInput.selEnd = idx;
+        focusedInput.cursorPos = idx;
+    }
+});
+
+canvas.addEventListener('mousedown', e => {
+    const rect = canvas.getBoundingClientRect();
+    const mx = e.clientX - rect.left;
+    const my = e.clientY - rect.top;
+
+    let clickedInput = null;
+    inputs.forEach(inp => {
+        if (inp.rect &&
+            mx >= inp.rect.x && mx <= inp.rect.x + inp.rect.w &&
+            my >= inp.rect.y && my <= inp.rect.y + inp.rect.h) {
+            clickedInput = inp;
+        }
+    });
+
+    inputs.forEach(inp => {
+        inp.focused = inp === clickedInput;
+        if (inp === clickedInput) {
+            const idx = getCharIndex(inp, mx);
+            inp.cursorPos = idx;
+            inp.selStart = idx;
+            inp.selEnd = idx;
+            inp.selecting = true;
+        }
+        inp.cursorVisible = true;
+        inp.lastBlink = performance.now();
+    });
+    focusedInput = clickedInput;
+
+    sliders.forEach(s => {
+        if (s.rect &&
+            mx >= s.rect.x && mx <= s.rect.x + s.rect.w &&
+            my >= s.rect.y && my <= s.rect.y + s.rect.h) {
+            dragging = s;
+        }
+    });
+});
+
+canvas.addEventListener('mouseup', () => {
+    dragging = null;
+    if (focusedInput) focusedInput.selecting = false;
+});
+
+canvas.addEventListener('click', e => {
+    const rect = canvas.getBoundingClientRect();
+    const mx = e.clientX - rect.left;
+    const my = e.clientY - rect.top;
+    buttons.forEach(btn => {
+        if (btn.rect &&
+            mx >= btn.rect.x && mx <= btn.rect.x + btn.rect.w &&
+            my >= btn.rect.y && my <= btn.rect.y + btn.rect.h) {
+            btn.onClick();
+        }
+    });
+});
+
+window.addEventListener('keydown', e => {
+    if (!focusedInput) return;
+    const inp = focusedInput;
+    const hasSelection = inp.selStart !== inp.selEnd;
+
+    if (e.key === 'Backspace') {
+        if (hasSelection) {
+            const selMin = Math.min(inp.selStart, inp.selEnd);
+            const selMax = Math.max(inp.selStart, inp.selEnd);
+            inp.value = inp.value.slice(0, selMin) + inp.value.slice(selMax);
+            inp.cursorPos = selMin;
+            inp.selStart = selMin;
+            inp.selEnd = selMin;
+        } else if (inp.cursorPos > 0) {
+            inp.value = inp.value.slice(0, inp.cursorPos - 1) + inp.value.slice(inp.cursorPos);
+            inp.cursorPos--;
+            inp.selStart = inp.cursorPos;
+            inp.selEnd = inp.cursorPos;
+        }
+    } else if (e.key === 'Delete') {
+        if (hasSelection) {
+            const selMin = Math.min(inp.selStart, inp.selEnd);
+            const selMax = Math.max(inp.selStart, inp.selEnd);
+            inp.value = inp.value.slice(0, selMin) + inp.value.slice(selMax);
+            inp.cursorPos = selMin;
+            inp.selStart = selMin;
+            inp.selEnd = selMin;
+        } else if (inp.cursorPos < inp.value.length) {
+            inp.value = inp.value.slice(0, inp.cursorPos) + inp.value.slice(inp.cursorPos + 1);
+            inp.selStart = inp.cursorPos;
+            inp.selEnd = inp.cursorPos;
+        }
+    } else if (e.key === 'ArrowLeft') {
+        e.preventDefault();
+        if (e.shiftKey) {
+            inp.cursorPos = Math.max(0, inp.cursorPos - 1);
+            inp.selEnd = inp.cursorPos;
+        } else {
+            inp.cursorPos = Math.max(0, inp.cursorPos - 1);
+            inp.selStart = inp.cursorPos;
+            inp.selEnd = inp.cursorPos;
+        }
+    } else if (e.key === 'ArrowRight') {
+        e.preventDefault();
+        if (e.shiftKey) {
+            inp.cursorPos = Math.min(inp.value.length, inp.cursorPos + 1);
+            inp.selEnd = inp.cursorPos;
+        } else {
+            inp.cursorPos = Math.min(inp.value.length, inp.cursorPos + 1);
+            inp.selStart = inp.cursorPos;
+            inp.selEnd = inp.cursorPos;
+        }
+    } else if (e.key === 'Tab' || e.key === 'ArrowDown') {
+        e.preventDefault();
+        const idx = inputs.indexOf(inp);
+        const next = inputs[(idx + 1) % inputs.length];
+        inp.focused = false;
+        next.focused = true;
+        next.cursorVisible = true;
+        next.lastBlink = performance.now();
+        focusedInput = next;
+    } else if (e.key === 'ArrowUp') {
+        e.preventDefault();
+        const idx = inputs.indexOf(inp);
+        const prev = inputs[(idx - 1 + inputs.length) % inputs.length];
+        inp.focused = false;
+        prev.focused = true;
+        prev.cursorVisible = true;
+        prev.lastBlink = performance.now();
+        focusedInput = prev;
+    } else if (e.key.length === 1 && !e.ctrlKey && !e.metaKey) {
+        if (hasSelection) {
+            const selMin = Math.min(inp.selStart, inp.selEnd);
+            const selMax = Math.max(inp.selStart, inp.selEnd);
+            inp.value = inp.value.slice(0, selMin) + e.key.toUpperCase() + inp.value.slice(selMax);
+            inp.cursorPos = selMin + 1;
+            inp.selStart = inp.cursorPos;
+            inp.selEnd = inp.cursorPos;
+        } else if (inp.value.length < inp.maxLength) {
+            inp.value = inp.value.slice(0, inp.cursorPos) + e.key.toUpperCase() + inp.value.slice(inp.cursorPos);
+            inp.cursorPos++;
+            inp.selStart = inp.cursorPos;
+            inp.selEnd = inp.cursorPos;
+        }
+        inp.cursorVisible = true;
+        inp.lastBlink = performance.now();
+    }
+});
+</script>
+</body>
+</html>
