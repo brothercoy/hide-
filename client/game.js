@@ -1,5 +1,13 @@
 import { GAME_MODES } from '../gameModes.js';
 import { Client } from '@colyseus/sdk';
+import { UIManager } from './ui/UIManager.js';
+import { MainMenu } from './screens/MainMenu.js';
+import { PlayScreen } from './screens/PlayScreen.js';
+import { SettingsScreen } from './screens/SettingsScreen.js';
+import { LobbyScreen } from './screens/LobbyScreen.js';
+import { GameScreen } from './screens/GameScreen.js';
+import { makeButton, drawButton } from './ui/Button.js';
+import { CRTEffect } from './CRTShader.js';
 
 const colyseusClient = new Client(
     window.location.hostname === 'localhost'
@@ -7,7 +15,6 @@ const colyseusClient = new Client(
     : 'wss://' + window.location.hostname
 );
 
-const TICK_RATE = 50;
 const isMobile = navigator.maxTouchPoints > 0;
 const FONT_SIZE = isMobile ? 36 : 32;
 
@@ -32,141 +39,130 @@ let timeLeft = 30;
 let isHost = false;
 let countdownActive = false;
 let countdownStartTime = null;
+let currentScreen = null;
+let modalMessage = null;
+let settingsPanelOpen = false;
 
-function renderLobbySettings(modeId, isHost) {
-    const mode = GAME_MODES[modeId];
-    document.getElementById('mode-description').textContent = mode.description;
+const canvas = document.getElementById('gameCanvas');
+const ctx = canvas.getContext('2d');
 
-    const panel = document.getElementById('settings-panel');
-    panel.innerHTML = '';
+function resizeCanvas() {
+    canvas.width = isMobile ? Math.max(window.innerWidth, 300) : Math.max(window.innerWidth, 1600);
+    canvas.height = isMobile ? Math.max(window.innerHeight, 720) : Math.max(window.innerHeight, 800);
+}
 
-    Object.entries(mode.settingsOptions).forEach(([key, setting]) => {
-        const row = document.createElement('div');
-        row.className = 'setting-row';
+resizeCanvas();
+window.addEventListener('resize', resizeCanvas);
 
-        const label = document.createElement('div');
-        label.className = 'setting-label';
+// --- UI System ---
+const uiManager = new UIManager(canvas, ctx);
 
-        const labelText = document.createElement('span');
-        labelText.textContent = setting.label;
+const mainMenu = new MainMenu(canvas, ctx, uiManager,
+    () => showScreen('play'),
+    () => showScreen('settings')
+);
 
-        const valueText = document.createElement('span');
-        valueText.id = `setting-value-${key}`;
+const playScreen = new PlayScreen(canvas, ctx, uiManager,
+    (name) => handleCreateRoom(name), // QUICK JOIN placeholder
+    (name) => handleCreateRoom(name),
+    (name, code) => handleJoinRoom(name, code),
+    () => showScreen('main')
+);
 
-        label.appendChild(labelText);
-        label.appendChild(valueText);
-        row.appendChild(label);
+const settingsScreen = new SettingsScreen(canvas, ctx, uiManager,
+    () => showScreen('main')
+);
 
-        if (setting.options) {
-            const optionsDiv = document.createElement('div');
-            optionsDiv.className = 'speed-options';
-            setting.options.forEach((val, i) => {
-                const btn = document.createElement('button');
-                btn.className = 'speed-btn' + (val === setting.default ? ' active' : '');
-                btn.textContent = setting.labels[i];
-                btn.dataset.value = val;
-                if (isHost) {
-                    btn.addEventListener('click', () => {
-                        optionsDiv.querySelectorAll('.speed-btn').forEach(b => b.classList.remove('active'));
-                        btn.classList.add('active');
-                        selectedSettings[key] = val;
-                        room.send('updateSettings', { mode: selectedMode, settings: selectedSettings });
-                    });
-                } else {
-                    btn.disabled = true;
-                    btn.style.opacity = '0.6';
-                }
-                optionsDiv.appendChild(btn);
-            });
-            selectedSettings[key] = setting.default;
-            row.appendChild(optionsDiv);
-        } else {
-            const slider = document.createElement('input');
-            slider.type = 'range';
-            slider.className = 'setting-slider';
-            slider.min = setting.min;
-            slider.max = setting.max;
-            slider.value = setting.default;
-            valueText.textContent = setting.default + (setting.unit || '');
-            selectedSettings[key] = setting.default;
+const lobbyScreen = new LobbyScreen(canvas, ctx, uiManager,
+    (mode, settings) => {                       // onUpdateSettings
+        selectedMode = mode;
+        selectedSettings = settings;
+        if (room) room.send('updateSettings', { mode, settings });
+    },
+    (targetId) => { if (room) room.send('makeHost', { targetId }); },   // onMakeHost
+    () => {                                                              // onStart
+        if (!selectedMode) { showModal('Please select a game mode.'); return; }
+        room.send('startGame', { mode: selectedMode, settings: selectedSettings });
+    },
+    () => { if (room) room.send('leaveToMenu'); }                       // onMainMenu
+);
 
-            if (isHost) {
-                slider.addEventListener('input', () => {
-                    selectedSettings[key] = parseFloat(slider.value);
-                    valueText.textContent = slider.value + (setting.unit || '');
-                    room.send('updateSettings', { mode: selectedMode, settings: selectedSettings });
-                });
-            } else {
-                slider.disabled = true;
-            }
-            row.appendChild(slider);
-        }
+const gameScreen = new GameScreen(canvas, ctx, isMobile);
 
-        panel.appendChild(row);
-    });
+const crt = new CRTEffect(canvas);
+canvas.style.opacity = '0';
+canvas.style.display = 'block';
+uiManager.coordTransform = (x, y) => curveInverse(x, y);
 
-    updateLobbyControls();
+function curveInverse(canvasRelX, canvasRelY) {
+    const gameRect = canvas.getBoundingClientRect();
+    const u = (canvasRelX + gameRect.left) / window.innerWidth;
+    const v = (canvasRelY + gameRect.top) / window.innerHeight;
+    const c = crt.uniforms.curvature * 0.25;
+
+    let cx = u * 2 - 1;
+    let cy = v * 2 - 1;
+    const dist = cx * cx + cy * cy;
+    cx = cx * (1 + dist * c);
+    cy = cy * (1 + dist * c);
+
+    return {
+        x: (cx * 0.5 + 0.5) * canvas.width,
+        y: (cy * 0.5 + 0.5) * canvas.height
+    };
+}
+
+function showScreen(name) {
+    currentScreen = name;
+    document.getElementById('game').style.display = 'block';
+    if (name === 'main') mainMenu.enter();
+    else if (name === 'play') playScreen.enter();
+    else if (name === 'settings') settingsScreen.enter();
+    else if (name === 'lobby') lobbyScreen.enter();
+}
+
+function handleCreateRoom(name) {
+    if (!name) { showModal('PLEASE ENTER YOUR NAME'); return; }
+    playerName = name;
+    currentScreen = null;
+    uiManager.clear();
+    joinGame('create');
+}
+
+function handleJoinRoom(name, code) {
+    if (!name) { showModal('PLEASE ENTER YOUR NAME'); return; }
+    if (!code) { showModal('PLEASE ENTER A ROOM CODE'); return; }
+    playerName = name;
+    currentScreen = null;
+    uiManager.clear();
+    joinGame('join', code);
 }
 
 async function tryReconnect() {
     const token = localStorage.getItem('reconnectionToken');
-    if (!token) return;
+    if (!token) {
+        showScreen('main');
+        return;
+    }
     try {
         room = await colyseusClient.reconnect(token);
         localStorage.setItem('reconnectionToken', room.reconnectionToken);
 
         room.onLeave(() => {
             localStorage.removeItem('reconnectionToken');
-            document.getElementById('lobby').style.display = 'none';
-            document.getElementById('game').style.display = 'none';
-            document.getElementById('game-over-menu').style.display = 'none';
-            document.getElementById('menu').style.display = 'flex';
+            showScreen('main');
             resetGameState();
         });
 
-        document.getElementById('menu').style.display = 'none';
-        document.getElementById('lobby').style.display = 'flex';
+        showScreen('lobby');
         setupRoomMessages(true);
-        updateLobbyControls();
     } catch (e) {
         localStorage.removeItem('reconnectionToken');
+        showScreen('main');
     }
 }
 
 window.addEventListener('load', tryReconnect);
-
-document.getElementById('create-btn').addEventListener('click', () => {
-    playerName = document.getElementById('name-input').value.trim();
-    if (!playerName) { showModal('Please enter your name'); return; }
-    joinGame('create');
-});
-
-document.getElementById('join-btn').addEventListener('click', () => {
-    playerName = document.getElementById('name-input').value.trim();
-    const code = document.getElementById('code-input').value.trim().toUpperCase();
-    if (!playerName) { showModal('Please enter your name'); return; }
-    if (!code) { showModal('Please enter a room code'); return; }
-    joinGame('join', code);
-});
-
-document.querySelectorAll('.mode-btn').forEach(btn => {
-    btn.addEventListener('click', () => {
-        document.querySelectorAll('.mode-btn').forEach(b => b.classList.remove('active'));
-        btn.classList.add('active');
-        selectedMode = btn.dataset.mode;
-        renderLobbySettings(selectedMode, true);
-        room.send('updateSettings', { mode: selectedMode, settings: selectedSettings });
-    });
-});
-
-document.getElementById('start-btn').addEventListener('click', () => {
-    if (!selectedMode) { showModal('Please select a game mode.'); return; }
-    room.send('startGame', { mode: selectedMode, settings: selectedSettings });
-});
-
-document.getElementById('lobby-main-menu-btn').addEventListener('click', () => {
-    room.send('leaveToMenu');
-});
 
 function joinGame(type, code) {
     const options = { playerName };
@@ -194,16 +190,37 @@ function onRoomJoined(r) {
 
     room.onLeave(() => {
         localStorage.removeItem('reconnectionToken');
-        document.getElementById('lobby').style.display = 'none';
-        document.getElementById('game').style.display = 'none';
-        document.getElementById('menu').style.display = 'flex';
+        showScreen('main');
         resetGameState();
     });
 
-    document.getElementById('menu').style.display = 'none';
-    document.getElementById('lobby').style.display = 'flex';
+    showScreen('lobby');
     setupRoomMessages();
-    updateLobbyControls();
+}
+
+let gameOverBtns = { playAgain: null, returnToLobby: null };
+
+function showGameOverOverlay() {
+    uiManager.clear();
+    const cx = canvas.width / 2;
+    const cy = canvas.height / 2;
+
+    gameOverBtns.playAgain = makeButton('PLAY AGAIN', cx, cy + 60,
+        () => room.send('votePlayAgain'));
+    gameOverBtns.returnToLobby = makeButton('RETURN TO LOBBY', cx, cy + 155,
+        () => room.send('voteReturnToLobby'));
+    const mainMenuBtn = makeButton('MAIN MENU', cx, cy + 250,
+        () => { hideGameOverOverlay(); room.send('leaveToMenu'); });
+
+    uiManager.buttons.push(gameOverBtns.playAgain);
+    uiManager.buttons.push(gameOverBtns.returnToLobby);
+    uiManager.buttons.push(mainMenuBtn);
+}
+
+function hideGameOverOverlay() {
+    uiManager.clear();
+    gameOverBtns.playAgain = null;
+    gameOverBtns.returnToLobby = null;
 }
 
 function resetGameState() {
@@ -222,95 +239,66 @@ function resetGameState() {
     timeLeft = 30;
     countdownActive = false;
     countdownStartTime = null;
-}
-
-const canvas = document.getElementById('gameCanvas');
-const ctx = canvas.getContext('2d');
-
-let boxW = 0;
-let boxH = 0;
-
-function resizeCanvas() {
-    canvas.width = isMobile ? Math.max(window.innerWidth, 300) : Math.max(window.innerWidth, 1600);
-    canvas.height = isMobile ? Math.max(window.innerHeight, 720) : Math.max(window.innerHeight, 800);
-    boxW = canvas.width - 192;
-    boxH = canvas.height - 192;
-}
-
-resizeCanvas();
-window.addEventListener('resize', resizeCanvas);
-
-ctx.font = `${FONT_SIZE}px "IBMVGA"`;
-
-function renderLobbyPlayerList() {
-    const list = document.getElementById('player-list');
-    list.innerHTML = '';
-    playerList.forEach(p => {
-        const entry = document.createElement('div');
-        entry.id = 'player-' + p.id;
-        entry.style.display = 'flex';
-        entry.style.gap = '8px';
-        entry.style.alignItems = 'center';
-        entry.style.opacity = p.connected ? '1' : '0.4';
-
-        const name = document.createElement('span');
-        name.textContent = p.name;
-
-        const label = document.createElement('span');
-        label.textContent = p.isHost ? 'Host' : 'Player';
-        label.style.fontSize = '12px';
-        label.style.opacity = '0.5';
-
-        if (isHost && !p.isHost && p.connected) {
-            label.style.cursor = 'pointer';
-            label.style.opacity = '0.5';
-            label.addEventListener('mouseover', () => label.style.opacity = '1');
-            label.addEventListener('mouseout', () => label.style.opacity = '0.5');
-            label.addEventListener('click', () => {
-                room.send('makeHost', { targetId: p.id });
-            });
-        }
-
-        entry.appendChild(name);
-        entry.appendChild(label);
-        list.appendChild(entry);
-    });
+    lastUpdateTime = null;
 }
 
 function showModal(message) {
-    document.getElementById('modal-message').textContent = message;
-    document.getElementById('modal-overlay').style.display = 'flex';
+    modalMessage = message;
+    uiManager.blocked = true;
+    uiManager.buttons.forEach(btn => btn.hoverProgress = 0);
 }
 
-document.getElementById('modal-ok-btn').addEventListener('click', () => {
-    document.getElementById('modal-overlay').style.display = 'none';
-});
-
-function updateLobbyControls() {
-    document.getElementById('start-btn').style.display = isHost ? 'block' : 'none';
-    document.querySelectorAll('.mode-btn').forEach(btn => {
-        btn.disabled = !isHost;
-        btn.style.opacity = isHost ? '1' : '0.6';
-    });
-    const panel = document.getElementById('settings-panel');
-    panel.querySelectorAll('input, button').forEach(el => {
-        el.disabled = !isHost;
-        el.style.opacity = isHost ? '1' : '0.6';
-    });
+function getHUDRects() {
+    return {
+        fullscreen: { x: canvas.width - 80,  y: canvas.height - 56, w: 40, h: 28 },
+        gear:       { x: canvas.width - 160, y: canvas.height - 56, w: 40, h: 28 }
+    };
 }
 
-function resetPlayAgainBtn() {
-    const btn = document.getElementById('play-again-btn');
-    btn.textContent = 'Play Again';
-    btn.style.background = 'white';
-    btn.style.color = 'black';
+function getSettingsPanelRect() {
+    return { x: canvas.width - 216, y: canvas.height - 148, w: 208, h: 76 };
 }
 
-function resetReturnToLobbyBtn() {
-    const btn = document.getElementById('return-lobby-btn');
-    btn.textContent = 'Return to Lobby';
-    btn.style.background = 'white';
-    btn.style.color = 'black';
+function getModalOkRect() {
+    return { x: canvas.width / 2 - 60, y: canvas.height / 2 + 16, w: 120, h: 36 };
+}
+
+function drawPersistentHUD() {
+    ctx.font = '20px "IBMVGA"';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillStyle = '#00ff41';
+    const r = getHUDRects();
+    ctx.fillText('⚙', r.gear.x + r.gear.w / 2, r.gear.y + r.gear.h / 2);
+    ctx.fillText('⛶', r.fullscreen.x + r.fullscreen.w / 2, r.fullscreen.y + r.fullscreen.h / 2);
+
+    if (settingsPanelOpen) {
+        const p = getSettingsPanelRect();
+        ctx.strokeStyle = '#00ff41';
+        ctx.lineWidth = 2;
+        ctx.strokeRect(p.x, p.y, p.w, p.h);
+        ctx.fillStyle = '#00ff41';
+        ctx.font = '20px "IBMVGA"';
+        ctx.fillText('MAIN MENU', p.x + p.w / 2, p.y + p.h / 2);
+    }
+
+    if (modalMessage) {
+        ctx.fillStyle = 'rgba(0,0,0,0.8)';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        const bw = 600, bh = 180;
+        const bx = canvas.width / 2 - bw / 2;
+        const by = canvas.height / 2 - bh / 2;
+        ctx.strokeStyle = '#00ff41';
+        ctx.lineWidth = 2;
+        ctx.strokeRect(bx, by, bw, bh);
+        ctx.fillStyle = '#00ff41';
+        ctx.font = '24px "IBMVGA"';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(modalMessage, canvas.width / 2, canvas.height / 2 - 20);
+        const ok = getModalOkRect();
+        ctx.fillText('[ OK ]', canvas.width / 2, ok.y + ok.h / 2);
+    }
 }
 
 function setupRoomMessages(isReconnecting = false) {
@@ -318,37 +306,16 @@ function setupRoomMessages(isReconnecting = false) {
         room.send('clientReady');
     }
 
-    document.getElementById('main-menu-btn').onclick = () => {
-        document.getElementById('game-over-menu').style.display = 'none';
-        resetPlayAgainBtn();
-        resetReturnToLobbyBtn();
-        room.send('leaveToMenu');
-    };
-
-    document.getElementById('play-again-btn').onclick = () => {
-        room.send('votePlayAgain');
-    };
-
-    document.getElementById('return-lobby-btn').onclick = () => {
-        room.send('voteReturnToLobby');
-    };
-
     room.onMessage('roomCode', (data) => {
-        document.getElementById('room-code-display').textContent = data.code;
+        lobbyScreen.setRoomCode(data.code);
     });
 
     room.onMessage('playerList', (data) => {
         playerList = data.players;
         const me = data.players.find(p => p.id === room.sessionId);
-        const wasHost = isHost;
         isHost = me ? me.isHost : false;
-        renderLobbyPlayerList();
-        if (isHost !== wasHost) {
-            updateLobbyControls();
-            if (isHost && selectedMode) {
-                renderLobbySettings(selectedMode, true);
-            }
-        }
+        lobbyScreen.setHost(isHost);
+        lobbyScreen.setPlayers(data.players);
     });
 
     room.onMessage('startError', (data) => {
@@ -359,63 +326,7 @@ function setupRoomMessages(isReconnecting = false) {
         if (isHost) return;
         selectedMode = data.mode;
         selectedSettings = { ...data.settings };
-
-        document.querySelectorAll('.mode-btn').forEach(b => {
-            b.classList.toggle('active', b.dataset.mode === data.mode);
-        });
-
-        const mode = GAME_MODES[data.mode];
-        if (!mode) return;
-
-        document.getElementById('mode-description').textContent = mode.description;
-        const panel = document.getElementById('settings-panel');
-        panel.innerHTML = '';
-
-        Object.entries(mode.settingsOptions).forEach(([key, setting]) => {
-            const row = document.createElement('div');
-            row.className = 'setting-row';
-
-            const label = document.createElement('div');
-            label.className = 'setting-label';
-
-            const labelText = document.createElement('span');
-            labelText.textContent = setting.label;
-
-            const valueText = document.createElement('span');
-            valueText.id = `setting-value-${key}`;
-
-            label.appendChild(labelText);
-            label.appendChild(valueText);
-            row.appendChild(label);
-
-            const currentValue = data.settings[key] !== undefined ? data.settings[key] : setting.default;
-
-            if (setting.options) {
-                const optionsDiv = document.createElement('div');
-                optionsDiv.className = 'speed-options';
-                setting.options.forEach((val, i) => {
-                    const btn = document.createElement('button');
-                    btn.className = 'speed-btn' + (val === currentValue ? ' active' : '');
-                    btn.textContent = setting.labels[i];
-                    btn.disabled = true;
-                    btn.style.opacity = '0.6';
-                    optionsDiv.appendChild(btn);
-                });
-                row.appendChild(optionsDiv);
-            } else {
-                const slider = document.createElement('input');
-                slider.type = 'range';
-                slider.className = 'setting-slider';
-                slider.min = setting.min;
-                slider.max = setting.max;
-                slider.value = currentValue;
-                slider.disabled = true;
-                valueText.textContent = currentValue + (setting.unit || '');
-                row.appendChild(slider);
-            }
-
-            panel.appendChild(row);
-        });
+        lobbyScreen.applyRemoteSettings(data.mode, data.settings);
     });
 
     room.onMessage('gameStarted', (data) => {
@@ -425,8 +336,8 @@ function setupRoomMessages(isReconnecting = false) {
         showRoundOver = false;
         showMatchOver = false;
         matchOverData = null;
-        document.getElementById('game-over-menu').style.display = 'none';
-        document.getElementById('lobby').style.display = 'none';
+        currentScreen = null;
+        uiManager.clear();
         document.getElementById('game').style.display = 'block';
         resizeCanvas();
     });
@@ -504,21 +415,17 @@ function setupRoomMessages(isReconnecting = false) {
     });
 
     room.onMessage('playAgainVotes', (data) => {
-        const btn = document.getElementById('play-again-btn');
+        if (!gameOverBtns.playAgain) return;
         const myVote = data.voterIds && data.voterIds.includes(room.sessionId);
-        btn.textContent = `Play Again (${data.votes}/${data.total})`;
-        btn.style.background = myVote ? 'black' : 'white';
-        btn.style.color = myVote ? 'white' : 'black';
-        btn.disabled = !data.canStart;
-        btn.style.opacity = data.canStart ? '1' : '0.4';
+        gameOverBtns.playAgain.label = `PLAY AGAIN (${data.votes}/${data.total})`;
+        gameOverBtns.playAgain.active = myVote;
     });
 
     room.onMessage('returnToLobbyVotes', (data) => {
-        const btn = document.getElementById('return-lobby-btn');
+        if (!gameOverBtns.returnToLobby) return;
         const myVote = data.voterIds && data.voterIds.includes(room.sessionId);
-        btn.textContent = `Return to Lobby (${data.votes}/${data.total})`;
-        btn.style.background = myVote ? 'black' : 'white';
-        btn.style.color = myVote ? 'white' : 'black';
+        gameOverBtns.returnToLobby.label = `RETURN TO LOBBY (${data.votes}/${data.total})`;
+        gameOverBtns.returnToLobby.active = myVote;
     });
 
     room.onMessage('gameRestarted', (data) => {
@@ -529,9 +436,8 @@ function setupRoomMessages(isReconnecting = false) {
         showMatchOver = false;
         matchOverData = null;
         countdownActive = false;
-        document.getElementById('game-over-menu').style.display = 'none';
-        resetPlayAgainBtn();
-        resetReturnToLobbyBtn();
+        currentScreen = null;
+        hideGameOverOverlay();
     });
 
     room.onMessage('returnedToLobby', () => {
@@ -540,11 +446,8 @@ function setupRoomMessages(isReconnecting = false) {
         showMatchOver = false;
         matchOverData = null;
         countdownActive = false;
-        document.getElementById('game-over-menu').style.display = 'none';
-        document.getElementById('game').style.display = 'none';
-        document.getElementById('lobby').style.display = 'flex';
-        resetReturnToLobbyBtn();
-        resetPlayAgainBtn();
+        currentScreen = null;
+        showScreen('lobby');
     });
 
     room.onMessage('reconnected', (data) => {
@@ -559,222 +462,112 @@ function setupRoomMessages(isReconnecting = false) {
         totalMatches = data.totalMatches;
         lastUpdateTime = Date.now();
         if (data.gameStarted) {
-            document.getElementById('lobby').style.display = 'none';
+            currentScreen = null;
             document.getElementById('game').style.display = 'block';
             resizeCanvas();
             if (data.gameOver) {
                 winnerId = data.winnerName || 'Nobody';
-                document.getElementById('game-over-menu').style.display = 'flex';
+                showGameOverOverlay();
             }
         }
-        updateLobbyControls();
     });
 
     room.onMessage('gameOver', (data) => {
         winnerId = data.winnerName || 'Nobody';
         countdownActive = false;
-        document.getElementById('game-over-menu').style.display = 'flex';
+        showGameOverOverlay();
     });
-}
-
-function getMetrics(char) {
-    const metrics = ctx.measureText(char);
-    const width = metrics.width;
-    const height = metrics.actualBoundingBoxAscent + metrics.actualBoundingBoxDescent;
-    const radius = Math.sqrt(width * width + height * height) / 2;
-    const ascent = metrics.actualBoundingBoxAscent;
-    return { width, height, radius, ascent };
-}
-
-function toPixels(nx, ny) {
-    return {
-        px: nx * boxW / 2,
-        py: ny * boxH / 2
-    };
-}
-
-function toNormalized(px, py) {
-    return {
-        nx: px / (boxW / 2),
-        ny: py / (boxH / 2)
-    };
 }
 
 function draw() {
     ctx.clearRect(0, 0, canvas.width, canvas.height);
-    ctx.save();
-    ctx.translate(canvas.width / 2, canvas.height / 2);
-
-    ctx.fillStyle = 'white';
-    ctx.fillRect(-boxW / 2, -boxH / 2, boxW, boxH);
-
-    ctx.strokeStyle = 'black';
-    ctx.lineWidth = 4;
-    ctx.strokeRect(-boxW / 2, -boxH / 2, boxW, boxH);
-
-    if (countdownActive) {
-        const elapsed = (Date.now() - countdownStartTime) / 1000;
-
-        ctx.font = `${FONT_SIZE}px "IBMVGA"`;
-        ctx.fillStyle = 'black';
-        ctx.globalAlpha = 0;
-        chars.forEach((c, i) => {
-            const prev = prevChars[i] || c;
-            const now = Date.now();
-            const t = lastUpdateTime ? Math.min((now - lastUpdateTime) / TICK_RATE, 1) : 0;
-            const ix = prev.x + (c.x - prev.x) * t;
-            const iy = prev.y + (c.y - prev.y) * t;
-            const { px, py } = toPixels(ix, iy);
-            const m = getMetrics(c.char);
-            ctx.save();
-            ctx.translate(px, py);
-            ctx.rotate(c.rotation);
-            ctx.fillText(c.char, -m.width / 2, m.ascent - m.height / 2);
-            ctx.restore();
-        });
-        ctx.globalAlpha = 1;
-
-        ctx.textAlign = 'center';
-        ctx.font = '32px "IBMVGA"';
-        ctx.fillStyle = 'black';
-        ctx.fillText('Find:', 0, -60);
-        ctx.font = '96px "IBMVGA"';
-        ctx.fillText(targetChar, 0, 40);
-
-        if (elapsed > 1) {
-            const secondsLeft = 3 - Math.floor(elapsed - 1);
-            if (secondsLeft > 0) {
-                ctx.font = '48px "IBMVGA"';
-                ctx.fillText(secondsLeft, 0, 120);
-            }
-        }
-
-        ctx.restore();
-        return;
-    }
-
-    ctx.font = `${FONT_SIZE}px "IBMVGA"`;
     ctx.fillStyle = 'black';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-    const now = Date.now();
-    const t = lastUpdateTime ? Math.min((now - lastUpdateTime) / TICK_RATE, 1) : 0;
-
-    chars.forEach((c, i) => {
-        const prev = prevChars[i] || c;
-        const ix = prev.x + (c.x - prev.x) * t;
-        const iy = prev.y + (c.y - prev.y) * t;
-        const { px, py } = toPixels(ix, iy);
-        const m = getMetrics(c.char);
-
-        ctx.save();
-        ctx.translate(px, py);
-        ctx.rotate(c.rotation);
-        ctx.fillText(c.char, -m.width / 2, m.ascent - m.height / 2);
-        ctx.restore();
-    });
-
-    ctx.textAlign = 'right';
-    ctx.font = '32px "IBMVGA"';
-    const listX = boxW / 2 - 10;
-    let listY = -boxH / 2 + 30;
-    playerList.forEach(p => {
-        ctx.globalAlpha = p.tapped ? 1 : 0.3;
-        if (!p.alive) ctx.globalAlpha = 0.1;
-        ctx.fillStyle = 'black';
-        const winsText = totalMatches > 1 ? ` (${p.matchWins || 0})` : '';
-        const disconnectText = !p.connected ? ' %' : '';
-        const livesText = p.lives !== null && p.lives !== undefined ? ' ' + '♥'.repeat(Math.max(0, p.lives)) : ': Spectator';
-        ctx.fillText(p.name + winsText + livesText + disconnectText, listX, listY);
-        listY += 24;
-    });
-    ctx.globalAlpha = 1;
-
-    ctx.font = '32px "IBMVGA"';
-    ctx.fillStyle = 'black';
-    ctx.textAlign = 'center';
-    if (totalMatches > 1) {
-        ctx.fillText(`Match ${currentMatch}/${totalMatches} · Round ${currentRound}`, 0, -boxH / 2 - 50);
+    if (currentScreen === 'main') {
+        uiManager.update(performance.now());
+        mainMenu.draw();
+    } else if (currentScreen === 'play') {
+        uiManager.update(performance.now());
+        playScreen.draw();
+    } else if (currentScreen === 'settings') {
+        uiManager.update(performance.now());
+        settingsScreen.draw();
+    } else if (currentScreen === 'lobby') {
+        uiManager.update(performance.now());
+        lobbyScreen.draw();
     } else {
-        ctx.fillText('Round ' + currentRound, 0, -boxH / 2 - 50);
-    }
-    ctx.fillText(Math.ceil(timeLeft) + 's', 0, -boxH / 2 - 20);
-    ctx.fillText('Find: ' + targetChar, 0, boxH / 2 + 40);
-
-    if (winnerId) {
-        ctx.fillStyle = 'rgba(255,255,255,0.85)';
-        ctx.fillRect(-200, -60, 400, 120);
-        ctx.fillStyle = 'black';
-        ctx.font = '32px "IBMVGA"';
-        ctx.fillText('Winner: ' + winnerId, 0, 10);
-    } else if (showMatchOver && matchOverData) {
-        ctx.fillStyle = 'rgba(255,255,255,0.85)';
-        ctx.fillRect(-200, -80, 400, 160);
-        ctx.fillStyle = 'black';
-        ctx.font = '32px "IBMVGA"';
-        ctx.fillText(`Match ${matchOverData.match} Over!`, 0, -40);
-        ctx.font = '32px "IBMVGA"';
-        ctx.fillText('Winner: ' + matchOverData.matchWinnerName, 0, 0);
-        let scoreY = 30;
-        Object.entries(matchOverData.matchWins || {}).forEach(([name, wins]) => {
-            ctx.fillText(`${name}: ${wins} win${wins !== 1 ? 's' : ''}`, 0, scoreY);
-            scoreY += 24;
+        gameScreen.draw({
+            chars, prevChars, targetChar,
+            playerList, timeLeft, currentRound, currentMatch, totalMatches,
+            showRoundOver, showMatchOver, matchOverData, eliminatedName,
+            countdownActive, countdownStartTime, lastUpdateTime, winnerId
         });
-    } else if (showRoundOver) {
-        ctx.fillStyle = 'rgba(255,255,255,0.85)';
-        ctx.fillRect(-200, -60, 400, 120);
-        ctx.fillStyle = 'black';
-        ctx.font = '32px "IBMVGA"';
-        ctx.fillText(eliminatedName, 0, 10);
+        if (winnerId) {
+            uiManager.update(performance.now());
+            uiManager.buttons.forEach(btn => drawButton(ctx, btn, uiManager.elapsed, FONT_SIZE));
+        }
     }
 
-    ctx.restore();
+    drawPersistentHUD();
 }
 
 canvas.addEventListener('click', (e) => {
-    if (countdownActive) return;
     const rect = canvas.getBoundingClientRect();
-    const clickX = e.clientX - rect.left - canvas.width / 2;
-    const clickY = e.clientY - rect.top - canvas.height / 2;
-    const { nx, ny } = toNormalized(clickX, clickY);
+    const { x: mx, y: my } = curveInverse(
+        e.clientX - rect.left,
+        e.clientY - rect.top
+    );
 
-    chars.forEach(c => {
-        if (!c.isTarget) return;
-        const { px, py } = toPixels(c.x, c.y);
-        const m = getMetrics(c.char);
-        const centerY = py - m.ascent + m.height / 2;
-        const dist = Math.sqrt((clickX - px) ** 2 + (clickY - centerY) ** 2);
-        if (dist < m.radius + (isMobile ? 40 : 20)) {
-            room.send('tap', { nx, ny, time: Date.now() });
-        }
-    });
-});
-
-document.getElementById('fullscreen-btn').addEventListener('click', () => {
-    if (!document.fullscreenElement) {
-        document.documentElement.requestFullscreen();
-    } else {
-        document.exitFullscreen();
+    function hits(r) {
+        return mx >= r.x && mx <= r.x + r.w && my >= r.y && my <= r.y + r.h;
     }
-});
 
-document.getElementById('settings-btn').addEventListener('click', () => {
-    const panel = document.getElementById('settings-panel-overlay');
-    panel.style.display = panel.style.display === 'none' ? 'flex' : 'none';
-});
+    if (modalMessage) {
+        if (hits(getModalOkRect())) {
+            modalMessage = null;
+            uiManager.blocked = false;
+        }
+        return;
+    }
 
-document.getElementById('settings-main-menu-btn').addEventListener('click', () => {
-    document.getElementById('settings-panel-overlay').style.display = 'none';
-    document.getElementById('game-over-menu').style.display = 'none';
-    document.getElementById('game').style.display = 'none';
-    document.getElementById('lobby').style.display = 'none';
-    document.getElementById('menu').style.display = 'flex';
-    if (room) room.send('leaveToMenu');
-    resetGameState();
+    if (settingsPanelOpen) {
+        if (hits(getSettingsPanelRect())) {
+            settingsPanelOpen = false;
+            if (room) room.send('leaveToMenu');
+            resetGameState();
+            showScreen('main');
+        } else {
+            settingsPanelOpen = false;
+        }
+        return;
+    }
+
+    const hudRects = getHUDRects();
+    if (hits(hudRects.gear)) {
+        settingsPanelOpen = !settingsPanelOpen;
+        return;
+    }
+    if (hits(hudRects.fullscreen)) {
+        if (!document.fullscreenElement) {
+            document.documentElement.requestFullscreen();
+        } else {
+            document.exitFullscreen();
+        }
+        return;
+    }
+
+    if (currentScreen) return;
+    const clickX = mx - canvas.width / 2;
+    const clickY = my - canvas.height / 2;
+    const hit = gameScreen.hitTest(clickX, clickY, chars, countdownActive);
+    if (hit) room.send('tap', { nx: hit.nx, ny: hit.ny, time: Date.now() });
 });
 
 requestAnimationFrame(loop);
 
 function loop() {
     draw();
+    crt.render(performance.now() / 1000);
     requestAnimationFrame(loop);
 }

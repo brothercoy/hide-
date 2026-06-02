@@ -20,20 +20,20 @@ export class CRTEffect {
         }
 
         this.uniforms = {
-            scanlineIntensity: 0.15,
-            scanlineCount: 400.0,
+            scanlineIntensity: 0.6,
+            scanlineCount: 500.0,
             time: 0.0,
             yOffset: 0.0,
-            brightness: 1.1,
-            contrast: 1.05,
-            saturation: 1.1,
-            bloomIntensity: 0.2,
-            bloomThreshold: 0.5,
+            brightness: 1.3,
+            contrast: 1.1,
+            saturation: 1.2,
+            bloomIntensity: 1.0,
+            bloomThreshold: 0.03,
             rgbShift: 0.0,
-            adaptiveIntensity: 0.5,
-            vignetteStrength: 0.3,
+            adaptiveIntensity: 5.0,
+            vignetteStrength: 0.45,
             curvature: 0.15,
-            flickerStrength: 0.01
+            flickerStrength: 0.03
         };
 
         this._initShader();
@@ -95,15 +95,23 @@ export class CRTEffect {
             }
 
             vec4 sampleBloom(sampler2D tex, vec2 uv, float radius, vec4 centerSample) {
-                vec2 o = vec2(radius);
-                vec4 c = centerSample * 0.4;
-                vec4 cross_ = (
-                    texture2D(tex, uv + vec2(o.x, 0.0)) +
-                    texture2D(tex, uv - vec2(o.x, 0.0)) +
-                    texture2D(tex, uv + vec2(0.0, o.y)) +
-                    texture2D(tex, uv - vec2(0.0, o.y))
-                ) * 0.15;
-                return c + cross_;
+                vec4 c = vec4(0.0);
+                float r1 = radius;
+                float r2 = radius * 2.5;
+                float r3 = radius * 5.0;
+                c += texture2D(tex, uv + vec2(r1,  0.0)) * 0.12;
+                c += texture2D(tex, uv - vec2(r1,  0.0)) * 0.12;
+                c += texture2D(tex, uv + vec2(0.0,  r1)) * 0.12;
+                c += texture2D(tex, uv - vec2(0.0,  r1)) * 0.12;
+                c += texture2D(tex, uv + vec2(r2,  0.0)) * 0.08;
+                c += texture2D(tex, uv - vec2(r2,  0.0)) * 0.08;
+                c += texture2D(tex, uv + vec2(0.0,  r2)) * 0.08;
+                c += texture2D(tex, uv - vec2(0.0,  r2)) * 0.08;
+                c += texture2D(tex, uv + vec2(r3,  0.0)) * 0.04;
+                c += texture2D(tex, uv - vec2(r3,  0.0)) * 0.04;
+                c += texture2D(tex, uv + vec2(0.0,  r3)) * 0.04;
+                c += texture2D(tex, uv - vec2(0.0,  r3)) * 0.04;
+                return c;
             }
 
             float vignetteApprox(vec2 uv, float strength) {
@@ -126,15 +134,9 @@ export class CRTEffect {
                 vec4 pixel = texture2D(tDiffuse, uv);
 
                 if (bloomIntensity > 0.001) {
-                    float pixelLum = dot(pixel.rgb, LUMA);
-                    float bloomThresholdHalf = bloomThreshold * BLOOM_THRESHOLD_FACTOR;
-                    if (pixelLum > bloomThresholdHalf) {
-                        vec4 bloomSample = sampleBloom(tDiffuse, uv, 0.005, pixel);
-                        bloomSample.rgb *= brightness;
-                        float bloomLum = dot(bloomSample.rgb, LUMA);
-                        float bloomFactor = bloomIntensity * max(0.0, (bloomLum - bloomThreshold) * BLOOM_FACTOR_MULT);
-                        pixel.rgb += bloomSample.rgb * bloomFactor;
-                    }
+                    vec4 bloomSample = sampleBloom(tDiffuse, uv, 0.01, pixel);
+                    vec4 brightPart = max(bloomSample - vec4(bloomThreshold), vec4(0.0));
+                    pixel.rgb += brightPart.rgb * bloomIntensity;
                 }
 
                 if (rgbShift > 0.005) {
@@ -173,6 +175,7 @@ export class CRTEffect {
                 }
 
                 pixel.rgb *= lightingMask;
+                pixel.rgb += vec3(0.0, 0.08, 0.018);
                 gl_FragColor = pixel;
             }
         `;
@@ -252,7 +255,7 @@ export class CRTEffect {
 
         // Upload source canvas as texture
         gl.bindTexture(gl.TEXTURE_2D, this.texture);
-        gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, src);
+        gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, this.sourceCanvas);
 
         gl.useProgram(this.program);
 
