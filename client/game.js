@@ -162,7 +162,11 @@ async function tryReconnect() {
     }
 }
 
-window.addEventListener('load', tryReconnect);
+window.addEventListener('load', () => {
+    document.fonts.load('32px IBMVGA').then(() => {
+        tryReconnect();
+    });
+});
 
 function joinGame(type, code) {
     const options = { playerName };
@@ -564,9 +568,7 @@ canvas.addEventListener('click', (e) => {
     if (hit) room.send('tap', { nx: hit.nx, ny: hit.ny, time: Date.now() });
 });
 
-document.fonts.ready.then(() => {
-    requestAnimationFrame(loop);
-});
+requestAnimationFrame(loop);
 
 function loop() {
     draw();
