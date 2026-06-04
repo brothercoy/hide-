@@ -564,7 +564,9 @@ canvas.addEventListener('click', (e) => {
     if (hit) room.send('tap', { nx: hit.nx, ny: hit.ny, time: Date.now() });
 });
 
-requestAnimationFrame(loop);
+document.fonts.ready.then(() => {
+    requestAnimationFrame(loop);
+});
 
 function loop() {
     draw();
