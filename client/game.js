@@ -1,12 +1,12 @@
 import { GAME_MODES } from '../gameModes.js';
 import { Client } from '@colyseus/sdk';
-import { UIManager } from './ui/UIManager.js';
-import { MainMenu } from './screens/MainMenu.js';
-import { PlayScreen } from './screens/PlayScreen.js';
-import { SettingsScreen } from './screens/SettingsScreen.js';
-import { LobbyScreen } from './screens/LobbyScreen.js';
-import { GameScreen } from './screens/GameScreen.js';
-import { makeButton, drawButton } from './ui/Button.js';
+import { UIManager } from './UI/UIManager.js';
+import { MainMenu } from './Screens/MainMenu.js';
+import { PlayScreen } from './Screens/PlayScreen.js';
+import { SettingsScreen } from './Screens/SettingsScreen.js';
+import { LobbyScreen } from './Screens/LobbyScreen.js';
+import { GameScreen } from './Screens/GameScreen.js';
+import { makeButton, drawButton } from './UI/Button.js';
 import { CRTEffect } from './CRTShader.js';
 
 const colyseusClient = new Client(
