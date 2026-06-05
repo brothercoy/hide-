@@ -93,6 +93,7 @@ export class UIManager {
     }
 
     _onClick(e) {
+        console.log('click fired', this.blocked, this.buttons.length);
         if (this.blocked) return;
 
         const { x, y } = this._getPos(e);

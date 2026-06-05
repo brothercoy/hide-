@@ -8,11 +8,12 @@ import { LobbyScreen } from './screens/LobbyScreen.js';
 import { GameScreen } from './screens/GameScreen.js';
 import { makeButton, drawButton } from './ui/Button.js';
 import { CRTEffect } from './CRTShader.js';
+import { DELMode } from './modes/DELmode.js';
 
 const colyseusClient = new Client(
     window.location.hostname === 'localhost'
-    ? 'ws://localhost:3000'
-    : 'wss://' + window.location.hostname
+        ? 'ws://localhost:3000'
+        : 'wss://' + window.location.hostname
 );
 
 const isMobile = navigator.maxTouchPoints > 0;
@@ -21,30 +22,17 @@ const FONT_SIZE = isMobile ? 36 : 32;
 let selectedMode = null;
 let selectedSettings = {};
 let room;
-let targetChar = null;
-let chars = [];
-let prevChars = [];
-let lastUpdateTime = null;
-let currentRound = 1;
-let currentMatch = 1;
-let totalMatches = 1;
-let eliminatedName = null;
-let winnerId = null;
-let playerList = [];
-let showRoundOver = false;
-let showMatchOver = false;
-let matchOverData = null;
+let currentMode = null;
 let playerName = '';
-let timeLeft = 30;
 let isHost = false;
-let countdownActive = false;
-let countdownStartTime = null;
+let playerList = [];
 let currentScreen = null;
 let modalMessage = null;
 let settingsPanelOpen = false;
+let winnerId = null;
 
 const canvas = document.getElementById('gameCanvas');
-const ctx = canvas.getContext('2d');
+const ctx = canvas.getContext('2d', { alpha: false });
 
 function resizeCanvas() {
     canvas.width = isMobile ? Math.max(window.innerWidth, 300) : Math.max(window.innerWidth, 1600);
@@ -54,7 +42,6 @@ function resizeCanvas() {
 resizeCanvas();
 window.addEventListener('resize', resizeCanvas);
 
-// --- UI System ---
 const uiManager = new UIManager(canvas, ctx);
 
 const mainMenu = new MainMenu(canvas, ctx, uiManager,
@@ -63,7 +50,7 @@ const mainMenu = new MainMenu(canvas, ctx, uiManager,
 );
 
 const playScreen = new PlayScreen(canvas, ctx, uiManager,
-    (name) => handleCreateRoom(name), // QUICK JOIN placeholder
+    (name) => handleCreateRoom(name),
     (name) => handleCreateRoom(name),
     (name, code) => handleJoinRoom(name, code),
     () => showScreen('main')
@@ -74,17 +61,17 @@ const settingsScreen = new SettingsScreen(canvas, ctx, uiManager,
 );
 
 const lobbyScreen = new LobbyScreen(canvas, ctx, uiManager,
-    (mode, settings) => {                       // onUpdateSettings
+    (mode, settings) => {
         selectedMode = mode;
         selectedSettings = settings;
         if (room) room.send('updateSettings', { mode, settings });
     },
-    (targetId) => { if (room) room.send('makeHost', { targetId }); },   // onMakeHost
-    () => {                                                              // onStart
+    (targetId) => { if (room) room.send('makeHost', { targetId }); },
+    () => {
         if (!selectedMode) { showModal('Please select a game mode.'); return; }
         room.send('startGame', { mode: selectedMode, settings: selectedSettings });
     },
-    () => { if (room) room.send('leaveToMenu'); }                       // onMainMenu
+    () => { if (room) room.send('leaveToMenu'); }
 );
 
 const gameScreen = new GameScreen(canvas, ctx, isMobile);
@@ -92,6 +79,7 @@ const gameScreen = new GameScreen(canvas, ctx, isMobile);
 const crt = new CRTEffect(canvas);
 canvas.style.opacity = '0';
 canvas.style.display = 'block';
+crt.render(0);
 uiManager.coordTransform = (x, y) => curveInverse(x, y);
 
 function curveInverse(canvasRelX, canvasRelY) {
@@ -99,13 +87,11 @@ function curveInverse(canvasRelX, canvasRelY) {
     const u = (canvasRelX + gameRect.left) / window.innerWidth;
     const v = (canvasRelY + gameRect.top) / window.innerHeight;
     const c = crt.uniforms.curvature * 0.25;
-
     let cx = u * 2 - 1;
     let cy = v * 2 - 1;
     const dist = cx * cx + cy * cy;
     cx = cx * (1 + dist * c);
     cy = cy * (1 + dist * c);
-
     return {
         x: (cx * 0.5 + 0.5) * canvas.width,
         y: (cy * 0.5 + 0.5) * canvas.height
@@ -114,7 +100,6 @@ function curveInverse(canvasRelX, canvasRelY) {
 
 function showScreen(name) {
     currentScreen = name;
-    document.getElementById('game').style.display = 'block';
     if (name === 'main') mainMenu.enter();
     else if (name === 'play') playScreen.enter();
     else if (name === 'settings') settingsScreen.enter();
@@ -124,7 +109,6 @@ function showScreen(name) {
 function handleCreateRoom(name) {
     if (!name) { showModal('PLEASE ENTER YOUR NAME'); return; }
     playerName = name;
-    currentScreen = null;
     uiManager.clear();
     joinGame('create');
 }
@@ -133,7 +117,6 @@ function handleJoinRoom(name, code) {
     if (!name) { showModal('PLEASE ENTER YOUR NAME'); return; }
     if (!code) { showModal('PLEASE ENTER A ROOM CODE'); return; }
     playerName = name;
-    currentScreen = null;
     uiManager.clear();
     joinGame('join', code);
 }
@@ -147,13 +130,11 @@ async function tryReconnect() {
     try {
         room = await colyseusClient.reconnect(token);
         localStorage.setItem('reconnectionToken', room.reconnectionToken);
-
         room.onLeave(() => {
             localStorage.removeItem('reconnectionToken');
             showScreen('main');
-            resetGameState();
+            if (currentMode) currentMode.reset();
         });
-
         showScreen('lobby');
         setupRoomMessages(true);
     } catch (e) {
@@ -182,29 +163,28 @@ function joinGame(type, code) {
                     showModal('Room not found. Check the code and try again.');
                 }
             })
-            .catch(() => {
-                showModal('Room not found. Check the code and try again.');
-            });
+            .catch(() => showModal('Room not found. Check the code and try again.'));
     }
 }
 
 function onRoomJoined(r) {
     room = r;
     localStorage.setItem('reconnectionToken', room.reconnectionToken);
-
     room.onLeave(() => {
         localStorage.removeItem('reconnectionToken');
         showScreen('main');
-        resetGameState();
+        if (currentMode) currentMode.reset();
     });
-
     showScreen('lobby');
     setupRoomMessages();
 }
 
+// --- Game Over Overlay (shared across all modes) ---
+
 let gameOverBtns = { playAgain: null, returnToLobby: null };
 
-function showGameOverOverlay() {
+function showGameOverOverlay(winner) {
+    winnerId = winner;
     uiManager.clear();
     const cx = canvas.width / 2;
     const cy = canvas.height / 2;
@@ -222,29 +202,108 @@ function showGameOverOverlay() {
 }
 
 function hideGameOverOverlay() {
+    winnerId = null;
     uiManager.clear();
     gameOverBtns.playAgain = null;
     gameOverBtns.returnToLobby = null;
 }
 
-function resetGameState() {
-    chars = [];
-    prevChars = [];
-    targetChar = null;
-    winnerId = null;
-    eliminatedName = null;
-    showRoundOver = false;
-    showMatchOver = false;
-    matchOverData = null;
-    playerList = [];
-    currentRound = 1;
-    currentMatch = 1;
-    totalMatches = 1;
-    timeLeft = 30;
-    countdownActive = false;
-    countdownStartTime = null;
-    lastUpdateTime = null;
+// --- Room Messages ---
+
+function setupRoomMessages(isReconnecting = false) {
+    if (!isReconnecting) room.send('clientReady');
+
+    room.onMessage('roomCode', (data) => {
+        lobbyScreen.setRoomCode(data.code);
+    });
+
+    room.onMessage('playerList', (data) => {
+        playerList = data.players;
+        const me = data.players.find(p => p.id === room.sessionId);
+        isHost = me ? me.isHost : false;
+        lobbyScreen.setHost(isHost);
+        lobbyScreen.setPlayers(data.players);
+        if (currentMode) currentMode.onMessage('playerList', data);
+    });
+
+    room.onMessage('startError', (data) => {
+        showModal(data.message);
+    });
+
+    room.onMessage('settingsUpdated', (data) => {
+        if (isHost) return;
+        selectedMode = data.mode;
+        selectedSettings = { ...data.settings };
+        lobbyScreen.applyRemoteSettings(data.mode, data.settings);
+    });
+
+    room.onMessage('gameStarted', (data) => {
+        currentMode = createMode(data.mode, data);
+        currentScreen = 'game';
+        uiManager.clear();
+        resizeCanvas();
+    });
+
+    room.onMessage('gameRestarted', (data) => {
+        if (currentMode) currentMode.reset();
+        if (data.mode) currentMode = createMode(data.mode, data);
+        currentScreen = 'game';
+        hideGameOverOverlay();
+    });
+
+    room.onMessage('returnedToLobby', () => {
+        if (currentMode) currentMode.reset();
+        currentMode = null;
+        hideGameOverOverlay();
+        showScreen('lobby');
+    });
+
+    room.onMessage('playAgainVotes', (data) => {
+        if (!gameOverBtns.playAgain) return;
+        const myVote = data.voterIds?.includes(room.sessionId);
+        gameOverBtns.playAgain.label = `PLAY AGAIN (${data.votes}/${data.total})`;
+        gameOverBtns.playAgain.active = myVote;
+    });
+
+    room.onMessage('returnToLobbyVotes', (data) => {
+        if (!gameOverBtns.returnToLobby) return;
+        const myVote = data.voterIds?.includes(room.sessionId);
+        gameOverBtns.returnToLobby.label = `RETURN TO LOBBY (${data.votes}/${data.total})`;
+        gameOverBtns.returnToLobby.active = myVote;
+    });
+
+    // Route all other messages to the active mode
+    const modeMessages = [
+        'roundCountdown', 'roundStart', 'gameState', 'charUpdate',
+        'roundOver', 'timeUp', 'matchOver', 'gameOver', 'reconnected'
+    ];
+    modeMessages.forEach(type => {
+        room.onMessage(type, (data) => {
+            if (type === 'reconnected' && data.gameStarted) {
+                if (!currentMode) currentMode = createMode(data.mode || 'redacted', data);
+                currentScreen = 'game';
+                resizeCanvas();
+            }
+            if (currentMode) currentMode.onMessage(type, data);
+        });
+    });
 }
+
+function createMode(modeId, data) {
+    const callbacks = {
+        onGameOver: (winner) => showGameOverOverlay(winner)
+    };
+    switch (modeId) {
+        case 'redacted':
+        default:
+            const mode = new DELMode(canvas, ctx, uiManager, room, callbacks);
+            mode.totalMatches = data.totalMatches || 1;
+            mode.currentMatch = data.match || 1;
+            return mode;
+    }
+}
+
+// --- Modal ---
 
 function showModal(message) {
     modalMessage = message;
@@ -305,183 +364,7 @@ function drawPersistentHUD() {
     }
 }
 
-function setupRoomMessages(isReconnecting = false) {
-    if (!isReconnecting) {
-        room.send('clientReady');
-    }
-
-    room.onMessage('roomCode', (data) => {
-        lobbyScreen.setRoomCode(data.code);
-    });
-
-    room.onMessage('playerList', (data) => {
-        playerList = data.players;
-        const me = data.players.find(p => p.id === room.sessionId);
-        isHost = me ? me.isHost : false;
-        lobbyScreen.setHost(isHost);
-        lobbyScreen.setPlayers(data.players);
-    });
-
-    room.onMessage('startError', (data) => {
-        showModal(data.message);
-    });
-
-    room.onMessage('settingsUpdated', (data) => {
-        if (isHost) return;
-        selectedMode = data.mode;
-        selectedSettings = { ...data.settings };
-        lobbyScreen.applyRemoteSettings(data.mode, data.settings);
-    });
-
-    room.onMessage('gameStarted', (data) => {
-        currentMatch = data.match;
-        totalMatches = data.totalMatches;
-        winnerId = null;
-        showRoundOver = false;
-        showMatchOver = false;
-        matchOverData = null;
-        currentScreen = null;
-        uiManager.clear();
-        document.getElementById('game').style.display = 'block';
-        resizeCanvas();
-    });
-
-    room.onMessage('roundCountdown', (data) => {
-        targetChar = data.targetChar;
-        chars = data.chars;
-        prevChars = data.chars.map(c => ({ ...c }));
-        currentRound = data.round;
-        currentMatch = data.match;
-        countdownActive = true;
-        const elapsed = data.elapsedSeconds || 0;
-        countdownStartTime = Date.now() - (elapsed * 1000);
-        showRoundOver = false;
-        showMatchOver = false;
-        eliminatedName = null;
-        matchOverData = null;
-        lastUpdateTime = Date.now();
-    });
-
-    room.onMessage('roundStart', (data) => {
-        targetChar = data.targetChar;
-        chars = data.chars;
-        prevChars = data.chars.map(c => ({ ...c }));
-        currentRound = data.round;
-        currentMatch = data.match;
-        timeLeft = data.timeLeft;
-        countdownActive = false;
-        lastUpdateTime = Date.now();
-    });
-
-    room.onMessage('gameState', (data) => {
-        chars = data.chars;
-        prevChars = data.chars.map(c => ({ ...c }));
-        targetChar = data.targetChar;
-        timeLeft = data.timeLeft;
-        currentRound = data.round;
-        currentMatch = data.match;
-        lastUpdateTime = Date.now();
-    });
-
-    room.onMessage('charUpdate', (data) => {
-        prevChars = chars.map(c => ({ ...c }));
-        chars = data.chars;
-        timeLeft = data.timeLeft;
-        lastUpdateTime = Date.now();
-    });
-
-    room.onMessage('roundOver', (data) => {
-        if (data.lostLife) {
-            eliminatedName = `${data.lostLifeName} lost a life!`;
-        } else {
-            eliminatedName = `${data.eliminatedName} has been eliminated!`;
-        }
-        showRoundOver = true;
-    });
-
-    room.onMessage('timeUp', (data) => {
-        const parts = [];
-        if (data.eliminatedNames && data.eliminatedNames.length > 0) {
-            parts.push(data.eliminatedNames.join(', ') + ' eliminated!');
-        }
-        if (data.lostLifePlayers && data.lostLifePlayers.length > 0) {
-            parts.push(data.lostLifePlayers.map(p => `${p.name} lost a life!`).join(', '));
-        }
-        eliminatedName = parts.join(' ');
-        showRoundOver = true;
-    });
-
-    room.onMessage('matchOver', (data) => {
-        showMatchOver = true;
-        matchOverData = data;
-        showRoundOver = false;
-        eliminatedName = null;
-    });
-
-    room.onMessage('playAgainVotes', (data) => {
-        if (!gameOverBtns.playAgain) return;
-        const myVote = data.voterIds && data.voterIds.includes(room.sessionId);
-        gameOverBtns.playAgain.label = `PLAY AGAIN (${data.votes}/${data.total})`;
-        gameOverBtns.playAgain.active = myVote;
-    });
-
-    room.onMessage('returnToLobbyVotes', (data) => {
-        if (!gameOverBtns.returnToLobby) return;
-        const myVote = data.voterIds && data.voterIds.includes(room.sessionId);
-        gameOverBtns.returnToLobby.label = `RETURN TO LOBBY (${data.votes}/${data.total})`;
-        gameOverBtns.returnToLobby.active = myVote;
-    });
-
-    room.onMessage('gameRestarted', (data) => {
-        currentMatch = data.match;
-        totalMatches = data.totalMatches;
-        winnerId = null;
-        showRoundOver = false;
-        showMatchOver = false;
-        matchOverData = null;
-        countdownActive = false;
-        currentScreen = null;
-        hideGameOverOverlay();
-    });
-
-    room.onMessage('returnedToLobby', () => {
-        winnerId = null;
-        showRoundOver = false;
-        showMatchOver = false;
-        matchOverData = null;
-        countdownActive = false;
-        currentScreen = null;
-        showScreen('lobby');
-    });
-
-    room.onMessage('reconnected', (data) => {
-        if (!countdownActive) {
-            chars = data.chars;
-            prevChars = data.chars.map(c => ({ ...c }));
-            targetChar = data.targetChar;
-        }
-        timeLeft = data.timeLeft;
-        currentRound = data.round;
-        currentMatch = data.match;
-        totalMatches = data.totalMatches;
-        lastUpdateTime = Date.now();
-        if (data.gameStarted) {
-            currentScreen = null;
-            document.getElementById('game').style.display = 'block';
-            resizeCanvas();
-            if (data.gameOver) {
-                winnerId = data.winnerName || 'Nobody';
-                showGameOverOverlay();
-            }
-        }
-    });
-
-    room.onMessage('gameOver', (data) => {
-        winnerId = data.winnerName || 'Nobody';
-        countdownActive = false;
-        showGameOverOverlay();
-    });
-}
+// --- Draw Loop ---
 
 function draw() {
     ctx.clearRect(0, 0, canvas.width, canvas.height);
@@ -500,13 +383,8 @@ function draw() {
     } else if (currentScreen === 'lobby') {
         uiManager.update(performance.now());
         lobbyScreen.draw();
-    } else {
-        gameScreen.draw({
-            chars, prevChars, targetChar,
-            playerList, timeLeft, currentRound, currentMatch, totalMatches,
-            showRoundOver, showMatchOver, matchOverData, eliminatedName,
-            countdownActive, countdownStartTime, lastUpdateTime, winnerId
-        });
+    } else if (currentScreen === 'game') {
+        if (currentMode) currentMode.draw(gameScreen);
         if (winnerId) {
             uiManager.update(performance.now());
             uiManager.buttons.forEach(btn => drawButton(ctx, btn, uiManager.elapsed, FONT_SIZE));
@@ -515,6 +393,8 @@ function draw() {
 
     drawPersistentHUD();
 }
+
+// --- Click Handler ---
 
 canvas.addEventListener('click', (e) => {
     const rect = canvas.getBoundingClientRect();
@@ -539,7 +419,7 @@ canvas.addEventListener('click', (e) => {
         if (hits(getSettingsPanelRect())) {
             settingsPanelOpen = false;
             if (room) room.send('leaveToMenu');
-            resetGameState();
+            if (currentMode) currentMode.reset();
             showScreen('main');
         } else {
             settingsPanelOpen = false;
@@ -561,11 +441,14 @@ canvas.addEventListener('click', (e) => {
         return;
     }
 
-    if (currentScreen) return;
+    if (currentScreen !== 'game') return;
+
     const clickX = mx - canvas.width / 2;
     const clickY = my - canvas.height / 2;
-    const hit = gameScreen.hitTest(clickX, clickY, chars, countdownActive);
-    if (hit) room.send('tap', { nx: hit.nx, ny: hit.ny, time: Date.now() });
+    if (currentMode) {
+        const hit = currentMode.hitTest(gameScreen, clickX, clickY);
+        if (hit) room.send('tap', { nx: hit.nx, ny: hit.ny, time: Date.now() });
+    }
 });
 
 requestAnimationFrame(loop);

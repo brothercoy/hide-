@@ -39,6 +39,7 @@ class GameRoom extends Room {
 
         this.onMessage('tap', (client) => {
             if (this.inCountdown) return;
+            if (!this.roundActive) return;
             const player = this.activePlayers[client.sessionId];
             if (!player || !player.alive) return;
             if (this.taps.find(t => t.id === client.sessionId)) return;
@@ -228,7 +229,8 @@ class GameRoom extends Room {
 
             this.broadcast('gameStarted', {
                 match: this.currentMatch,
-                totalMatches: this.settings.matches
+                totalMatches: this.settings.matches,
+                mode: this.selectedMode || 'redacted'
             });
             this.broadcastPlayerList();
             this.startRoundCountdown();
@@ -284,7 +286,6 @@ class GameRoom extends Room {
 
     sendPlayerState(client) {
         client.send('roomCode', { code: this.roomCode });
-        this.broadcastPlayerList();
         if (this.selectedMode) {
             client.send('settingsUpdated', {
                 mode: this.selectedMode,
@@ -292,6 +293,21 @@ class GameRoom extends Room {
             });
         }
         if (this.gameStarted) {
+            client.send('reconnected', {
+                chars: this.inCountdown ? [] : this.chars,
+                targetChar: this.inCountdown ? null : this.targetChar,
+                timeLeft: this.timeLeft,
+                round: this.currentRound,
+                match: this.currentMatch,
+                totalMatches: this.settings.matches,
+                gameStarted: true,
+                gameOver: this.gameOver,
+                winnerName: this.gameOver ? this.lastWinnerName : null,
+                mode: this.selectedMode || 'redacted'
+            });
+
+            this.broadcastPlayerList();
+
             if (this.inCountdown) {
                 const elapsed = (Date.now() - this.countdownStartTime) / 1000;
                 client.send('roundCountdown', {
@@ -304,18 +320,8 @@ class GameRoom extends Room {
             } else if (this.currentRoundOverMessage && !this.roundActive) {
                 client.send('roundOver', this.currentRoundOverMessage);
             }
-
-            client.send('reconnected', {
-                chars: this.inCountdown ? [] : this.chars,
-                targetChar: this.inCountdown ? null : this.targetChar,
-                timeLeft: this.timeLeft,
-                round: this.currentRound,
-                match: this.currentMatch,
-                totalMatches: this.settings.matches,
-                gameStarted: true,
-                gameOver: this.gameOver,
-                winnerName: this.gameOver ? this.lastWinnerName : null
-            });
+        } else {
+            this.broadcastPlayerList();
         }
     }
 
