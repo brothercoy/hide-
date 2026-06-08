@@ -128,6 +128,7 @@ async function tryReconnect() {
         return;
     }
     try {
+        uiManager.blocked = true;
         room = await colyseusClient.reconnect(token);
         localStorage.setItem('reconnectionToken', room.reconnectionToken);
         room.onLeave(() => {
@@ -139,6 +140,7 @@ async function tryReconnect() {
         setupRoomMessages(true);
     } catch (e) {
         localStorage.removeItem('reconnectionToken');
+        uiManager.blocked = false;
         showScreen('main');
     }
 }
@@ -282,6 +284,8 @@ function setupRoomMessages(isReconnecting = false) {
             if (type === 'reconnected' && data.gameStarted) {
                 if (!currentMode) currentMode = createMode(data.mode || 'redacted', data);
                 currentScreen = 'game';
+                uiManager.clear();
+                uiManager.blocked = false;
                 resizeCanvas();
             }
             if (currentMode) currentMode.onMessage(type, data);
