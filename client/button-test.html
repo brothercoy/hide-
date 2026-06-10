@@ -28,25 +28,22 @@ const FONT = `${FONT_SIZE}px "IBMVGA"`;
 const ANIM_DURATION = 333;
 const CURSOR_BLINK_RATE = 500;
 
-// Z-depth constants
-// z=1.0 = closest (largest, most opaque)
-// z=1.3 = furthest in float range (smaller, less opaque)
-// z=1.8 = pressed deep (smallest, most faded)
-const Z_FLOAT_MIN = 1.0;
-const Z_FLOAT_MAX = 1.6;
-const Z_PRESSED   = 1.8;
-const Z_FLOAT_SPEED = 1.2;      // radians/sec for sine oscillation
-const Z_PRESS_SPEED = 0.012;    // how fast z snaps to pressed (ms per frame)
-const Z_RETURN_SPEED = 0.008;   // how fast z returns from pressed
+const Z_FLOAT_MIN = 1.3;
+const Z_FLOAT_MAX = 1.8;
+const Z_PRESSED   = 2.5;
+const Z_FLOAT_SPEED = 0.5;
+const Z_PRESS_SPEED = 0.007;
+const Z_RETURN_SPEED = 0.005;
 
-// Scale and opacity derived from z
 function zToScale(z) {
-    // z=1.0 → scale=1.0, z=1.8 → scale=0.88 (subtle size change)
-    return 1.0 - (z - 1.0) * 0.15;
+    const t = (z - 1.0) / (3.0 - 1.0);
+    const curved = Math.pow(t, 1.0);
+    return Math.max(0.5, 1.0 - curved * 0.5);
 }
 function zToAlpha(z) {
-    // z=1.0 → alpha=1.0, z=1.8 → alpha=0.35
-    return 1.0 - (z - 1.0) * 0.8125;
+    const t = (z - 1.0) / (3.0 - 1.0);
+    const curved = Math.pow(t, 1.0);
+    return Math.max(0, 1.0 - curved);
 }
 
 document.fonts.ready.then(() => {
@@ -60,14 +57,13 @@ document.fonts.ready.then(() => {
 const buttons = [];
 const sliders = [];
 const inputs = [];
-let mouseX = 0;
-let mouseY = 0;
+let mouseX = 0, mouseY = 0;
 let dragging = null;
 let elapsed = 0;
 let focusedInput = null;
-let pressedButton = null; // button currently held down
-let mouseIsDown = false;  // track global mouse state
-let clickedPopup = null;  // { text, time } for popup display
+let pressedButton = null;
+let mouseIsDown = false;
+let clickedPopup = null;
 
 function makeButton(label, x, y, onClick, options = {}) {
     return {
@@ -77,293 +73,359 @@ function makeButton(label, x, y, onClick, options = {}) {
         phase: Math.random() * Math.PI * 2,
         active: options.active || false,
         plain: options.plain || false,
-        // z-depth state
         z: Z_FLOAT_MIN + (Math.random() * (Z_FLOAT_MAX - Z_FLOAT_MIN)),
-        zPressed: false,
-        zPressTime: 0
+        releasePhase: null,
+        charPhases: null,
+        glowT: 0,
+        _fireClick: false,
+        charZ: null,
+        zPressed: false, zPressTime: 0
     };
 }
 
 function makeInput(placeholder, x, y, maxLength) {
     return {
         placeholder, x, y, maxLength,
-        value: '',
-        focused: false,
-        rect: null,
+        value: '', focused: false, rect: null,
         phase: Math.random() * Math.PI * 2,
-        cursorVisible: true,
-        lastBlink: performance.now(),
-        cursorPos: 0,
-        selStart: 0,
-        selEnd: 0,
-        selecting: false,
-        z: Z_FLOAT_MIN,
-        zPressed: false
+        cursorVisible: true, lastBlink: performance.now(),
+        cursorPos: 0, selStart: 0, selEnd: 0, selecting: false,
+        z: Z_FLOAT_MIN, zPressed: false
     };
 }
 
 function initButtons() {
-    buttons.push(makeButton('CREATE ROOM', canvas.width / 2, canvas.height / 2 - 60, () => console.log('Create')));
-    buttons.push(makeButton('JOIN ROOM',   canvas.width / 2, canvas.height / 2 + 80,  () => console.log('Join')));
-    buttons.push(makeButton('SETTINGS',    canvas.width / 2, canvas.height / 2 + 220, () => console.log('Settings')));
+    buttons.push(makeButton('CREATE ROOM', canvas.width/2, canvas.height/2-60,  () => console.log('Create')));
+    buttons.push(makeButton('JOIN ROOM',   canvas.width/2, canvas.height/2+80,  () => console.log('Join')));
+    buttons.push(makeButton('SETTINGS',    canvas.width/2, canvas.height/2+220, () => console.log('Settings')));
 }
 
 function initSliders() {
     sliders.push({
         label: 'ROUND TIME', value: 30, min: 1, max: 60,
-        x: canvas.width / 2, y: canvas.height / 2 + 360,
-        rect: null, phase: Math.random() * Math.PI * 2,
-        z: Z_FLOAT_MIN
+        x: canvas.width/2, y: canvas.height/2+360,
+        rect: null, phase: Math.random()*Math.PI*2, z: Z_FLOAT_MIN
     });
 }
 
-// Z visualizer — separate raw slider, not part of the z-animated system
-const zViz = {
-    value: 1.0,   // raw z value, 1.0 = Z_FLOAT_MIN, 1.8 = Z_PRESSED
-    min: 1.0,
-    max: 3.0,
-    x: canvas.width - 260,
-    y: 80,
-    rect: null
-};
+const zViz = { value: 1.0, min: 1.0, max: 3.0, x: canvas.width-260, y: 80, rect: null };
 let draggingZViz = false;
 
 function initInputs() {
-    inputs.push(makeInput('ENTER NAME', canvas.width / 2, canvas.height / 2 - 200, 12));
+    inputs.push(makeInput('ENTER NAME', canvas.width/2, canvas.height/2-200, 12));
 }
 
-// ── Per-character z helpers ───────────────────────────────────────────────────
-function getCharZ(phase, charIndex, baseZ) {
-    const floatZ = Z_FLOAT_MIN + (Math.sin(elapsed * Z_FLOAT_SPEED + phase + charIndex * 1.5) * 0.5 + 0.5) * (Z_FLOAT_MAX - Z_FLOAT_MIN);
+// ── Per-character z ───────────────────────────────────────────────────────────
+function getCharZ(phase, baseZ) {
     const pressOffset = (baseZ || Z_FLOAT_MIN) - Z_FLOAT_MIN;
-    // Add press offset on top of oscillation — no clamp, wave keeps running
+    const pressT = pressOffset / (Z_PRESSED - Z_FLOAT_MIN);
+    const oscRange = (Z_FLOAT_MAX - Z_FLOAT_MIN) * (1.0 - pressT * 1.0);
+    const floatZ = Z_FLOAT_MIN + (Math.sin(elapsed * Z_FLOAT_SPEED + phase) * 0.5 + 0.5) * oscRange;
     return floatZ + pressOffset;
 }
 
-function drawChar(char, x, y, z) {
-    const scale = zToScale(z);
-    const alpha = zToAlpha(z);
-    const yShift = (FONT_SIZE - FONT_SIZE * scale) * 0.5;
-    ctx.globalAlpha = alpha;
-    ctx.font = `${Math.round(FONT_SIZE * scale)}px "IBMVGA"`;
-    ctx.fillText(char, x, y + yShift);
+// During returning phase: lerp each character from 1.0 to its snapshot target
+function getCharZWithReturn(btn, ci) {
+    if (btn.releasePhase === 'returning' && btn.charZ) {
+        return btn.charZ[ci];
+    }
+    return getCharZ(btn.charPhases[ci], btn.z);
 }
 
-// ── Draw button with per-character z-depth ────────────────────────────────────
-function drawButton(btn, elapsed) {
+function drawChar(char, x, y, z, color) {
+    const scale = zToScale(z);
+    const alpha = zToAlpha(z);
+    ctx.font = FONT;
+    const fw = ctx.measureText('M').width;
+    ctx.font = `${FONT_SIZE * scale}px "IBMVGA"`;
+    const sw = ctx.measureText('M').width;
+    const xShift = (fw - sw) / 2;
+    const yShift = (FONT_SIZE - FONT_SIZE * scale) * 0.5;
+    ctx.globalAlpha = alpha;
+    ctx.fillStyle = color || '#00ff41';
+    ctx.fillText(char, x + xShift, y + yShift);
+    ctx.font = FONT;
+}
+
+// ── Button ────────────────────────────────────────────────────────────────────
+function drawButton(btn) {
     ctx.font = FONT;
     ctx.fillStyle = '#00ff41';
     ctx.textAlign = 'left';
     ctx.textBaseline = 'top';
 
-    const charWidth = ctx.measureText('M').width;
+    const cw = ctx.measureText('M').width;
     const textWidth = ctx.measureText(btn.label).width;
-    const padX = charWidth * 2;
+    const padX = cw * 2;
     const innerWidth = textWidth + padX * 2;
-    const borderWidth = innerWidth + charWidth * 2;
-    const lineHeight = FONT_SIZE;
-    const totalHeight = lineHeight * 2.5;
-
+    const borderWidth = innerWidth + cw * 2;
+    const lh = FONT_SIZE;
+    const totalHeight = lh * 2.5;
     const sl = btn.x - borderWidth / 2;
     const st = btn.y - totalHeight / 2;
-
-    const dashCount = Math.floor(innerWidth / charWidth);
+    const dashCount = Math.floor(innerWidth / cw);
     const plusCount = Math.floor((dashCount / 2) * (btn.active ? 1 : btn.hoverProgress));
 
     let borderLine = '';
     for (let i = 0; i < dashCount; i++) {
-        const fromLeft = i;
-        const fromRight = dashCount - 1 - i;
-        if (fromLeft < plusCount || fromRight < plusCount ||
-            (dashCount % 2 === 1 && i === Math.floor(dashCount / 2) && plusCount >= Math.floor(dashCount / 2))) {
-            borderLine += '+';
-        } else {
-            borderLine += '-';
-        }
+        const fl = i, fr = dashCount - 1 - i;
+        borderLine += (fl < plusCount || fr < plusCount ||
+            (dashCount % 2 === 1 && i === Math.floor(dashCount/2) && plusCount >= Math.floor(dashCount/2)))
+            ? '+' : '-';
     }
-
-    const topBorder    = '+' + borderLine + '+';
-    const bottomBorder = '+' + borderLine + '+';
+    const topB = '+' + borderLine + '+';
+    const botB = '+' + borderLine + '+';
     const isPressed = btn === pressedButton && mouseIsDown;
-    const leftSide  = isPressed ? '}' : (btn.active ? (Math.floor(Date.now() / 500) % 2 === 0 ? '}' : ' ') : '|');
-    const rightSide = isPressed ? '{' : (btn.active ? (Math.floor(Date.now() / 500) % 2 === 0 ? '{' : ' ') : '|');
+    const ls = isPressed ? '}' : (btn.active ? (Math.floor(Date.now()/500)%2===0?'}':' ') : '|');
+    const rs = isPressed ? '{' : (btn.active ? (Math.floor(Date.now()/500)%2===0?'{':' ') : '|');
 
-    let ci = 0; // running char index for consistent wave across whole button
-
-    // Top border
-    for (let i = 0; i < topBorder.length; i++, ci++) {
-        drawChar(topBorder[i], sl + i * charWidth, st, getCharZ(btn.phase, ci, btn.z));
+    if (!btn.charPhases) {
+        btn.charPhases = Array.from({length: 200}, () => Math.random() * Math.PI * 2);
     }
 
-    // Middle row
-    drawChar(leftSide, sl, st + lineHeight, getCharZ(btn.phase, ci++, btn.z));
-    for (let i = 0; i < btn.label.length; i++, ci++) {
-        const labelX = sl + charWidth + padX + i * charWidth;
-        drawChar(btn.label[i], labelX, st + lineHeight, getCharZ(btn.phase, ci, btn.z));
+    let glowColor = '#00ff41';
+    if (btn.releasePhase === 'glowing' && btn.glowT > 0) {
+        const g = btn.glowT < 0.5 ? btn.glowT * 2 : (1 - btn.glowT) * 2;
+        glowColor = `rgb(${Math.round(g * 170)}, 255, ${Math.round(65 + g * 121)})`;
     }
-    drawChar(rightSide, sl + borderWidth - charWidth, st + lineHeight, getCharZ(btn.phase, ci++, btn.z));
 
-    // Bottom border
-    for (let i = 0; i < bottomBorder.length; i++, ci++) {
-        drawChar(bottomBorder[i], sl + i * charWidth, st + lineHeight * 2, getCharZ(btn.phase, ci, btn.z));
-    }
+    // Freeze oscillation only during releasing and glowing
+    // During returning, getCharZWithReturn handles per-character interpolation
+    const useFixed = btn.releasePhase === 'releasing' || btn.releasePhase === 'glowing';
+
+    let ci = 0;
+    for (let i = 0; i < topB.length; i++, ci++)
+        drawChar(topB[i], sl+i*cw, st, useFixed ? btn.z : getCharZWithReturn(btn, ci), glowColor);
+    drawChar(ls, sl, st+lh, useFixed ? btn.z : getCharZWithReturn(btn, ci++), glowColor);
+    for (let i = 0; i < btn.label.length; i++, ci++)
+        drawChar(btn.label[i], sl+cw+padX+i*cw, st+lh, useFixed ? btn.z : getCharZWithReturn(btn, ci), glowColor);
+    drawChar(rs, sl+borderWidth-cw, st+lh, useFixed ? btn.z : getCharZWithReturn(btn, ci++), glowColor);
+    for (let i = 0; i < botB.length; i++, ci++)
+        drawChar(botB[i], sl+i*cw, st+lh*2, useFixed ? btn.z : getCharZWithReturn(btn, ci), glowColor);
 
     ctx.globalAlpha = 1;
     ctx.font = FONT;
-
-    btn.rect     = { x: sl, y: st, w: borderWidth, h: totalHeight };
-    btn.fullRect = { x: sl, y: st, w: borderWidth, h: totalHeight };
+    btn.rect = btn.fullRect = { x: sl, y: st, w: borderWidth, h: totalHeight };
 }
 
-// ── Draw input with z-depth ───────────────────────────────────────────────────
+// ── Input ─────────────────────────────────────────────────────────────────────
 function drawInput(inp) {
-    const scale = zToScale(inp.z);
-    const alpha = zToAlpha(inp.z);
-
     ctx.font = FONT;
-    ctx.globalAlpha = alpha;
-
-    const charWidth = ctx.measureText('M').width;
-    const refTextWidth = ctx.measureText(inp.placeholder).width;
-    const padX = charWidth * 2;
-    const innerWidth = refTextWidth + padX * 2;
-    const borderWidth = innerWidth + charWidth * 2;
-    const lineHeight = FONT_SIZE;
-    const totalHeight = lineHeight * 2.5;
-
-    const sl = inp.x - borderWidth / 2;
-    const st = inp.y - totalHeight / 2;
-
-    const dashCount = Math.floor(innerWidth / charWidth);
-    const topBorder    = '+' + '-'.repeat(dashCount) + '+';
-    const bottomBorder = '+' + '-'.repeat(dashCount) + '+';
-
-    ctx.save();
-    ctx.translate(inp.x, inp.y);
-    ctx.scale(scale, scale);
-    ctx.translate(-inp.x, -inp.y);
-
     ctx.textAlign = 'left';
     ctx.textBaseline = 'top';
-    ctx.fillStyle = inp.focused ? '#00ff41' : '#007a1f';
-    ctx.fillText(topBorder,    sl, st);
-    ctx.fillText('|',          sl, st + lineHeight);
-    ctx.fillText('|',          sl + borderWidth - charWidth, st + lineHeight);
-    ctx.fillText(bottomBorder, sl, st + lineHeight * 2);
 
-    const textY = st + lineHeight;
-    const totalTextWidth = ctx.measureText(inp.value).width;
+    const cw = ctx.measureText('M').width;
+    const refW = ctx.measureText(inp.placeholder).width;
+    const padX = cw * 2;
+    const innerWidth = refW + padX * 2;
+    const borderWidth = innerWidth + cw * 2;
+    const lh = FONT_SIZE;
+    const totalHeight = lh * 2.5;
+    const sl = inp.x - borderWidth / 2;
+    const st = inp.y - totalHeight / 2;
+    const textY = st + lh;
     const centerX = sl + borderWidth / 2;
-    const textStartX = inp.value.length === 0
-        ? centerX - charWidth / 2
-        : centerX - totalTextWidth / 2;
+    const dashCount = Math.floor(innerWidth / cw);
+    const topB = '+' + '-'.repeat(dashCount) + '+';
+    const botB = '+' + '-'.repeat(dashCount) + '+';
+    const borderColor = inp.focused ? '#00ff41' : '#007a1f';
+
+    let ci = 0;
+    for (let i = 0; i < topB.length; i++, ci++)
+        drawChar(topB[i], sl+i*cw, st, getCharZ(inp.phase + ci * 0.7, inp.z), borderColor);
+    drawChar('|', sl, textY, getCharZ(inp.phase + ci * 0.7, inp.z), borderColor); ci++;
+    drawChar('|', sl+borderWidth-cw, textY, getCharZ(inp.phase + ci * 0.7, inp.z), borderColor); ci++;
+    for (let i = 0; i < botB.length; i++, ci++)
+        drawChar(botB[i], sl+i*cw, st+lh*2, getCharZ(inp.phase + ci * 0.7, inp.z), borderColor);
 
     const hasSelection = inp.selStart !== inp.selEnd;
-    if (hasSelection && inp.focused) {
+    const totalTextWidth = inp.value.length === 0 ? 0 : ctx.measureText(inp.value).width;
+    const textStartX = inp.value.length === 0 ? centerX - cw/2 : centerX - totalTextWidth/2;
+
+    if (inp.value.length === 0 && !inp.focused) {
+        const phW = ctx.measureText(inp.placeholder).width;
+        const phX = centerX - phW / 2;
+        for (let i = 0; i < inp.placeholder.length; i++, ci++)
+            drawChar(inp.placeholder[i], phX + i*cw, textY, getCharZ(inp.phase + ci * 0.7, inp.z), '#003d0f');
+    } else if (hasSelection && inp.focused) {
         const selMin = Math.min(inp.selStart, inp.selEnd);
         const selMax = Math.max(inp.selStart, inp.selEnd);
         const selX = textStartX + ctx.measureText(inp.value.slice(0, selMin)).width;
         const selW = ctx.measureText(inp.value.slice(selMin, selMax)).width;
+        ctx.globalAlpha = 1;
         ctx.fillStyle = '#00ff41';
         ctx.fillRect(selX, textY, selW, FONT_SIZE - 4);
-        ctx.fillStyle = 'black';
-        ctx.fillText(inp.value.slice(selMin, selMax), selX, textY);
-        ctx.fillStyle = '#00ff41';
-        ctx.fillText(inp.value.slice(0, selMin), textStartX, textY);
-        ctx.fillText(inp.value.slice(selMax), selX + selW, textY);
-    } else if (inp.value.length === 0 && !inp.focused) {
-        ctx.fillStyle = '#003d0f';
-        ctx.textAlign = 'center';
-        ctx.fillText(inp.placeholder, centerX, textY);
-        ctx.textAlign = 'left';
+        for (let i = 0; i < inp.value.length; i++, ci++) {
+            const isSel = i >= selMin && i < selMax;
+            drawChar(inp.value[i], textStartX + i*cw, textY, getCharZ(inp.phase + ci * 0.7, inp.z), isSel ? 'black' : '#00ff41');
+        }
     } else {
-        ctx.fillStyle = inp.focused ? '#00ff41' : '#007a1f';
-        ctx.fillText(inp.value, textStartX, textY);
+        const color = inp.focused ? '#00ff41' : '#007a1f';
+        for (let i = 0; i < inp.value.length; i++, ci++)
+            drawChar(inp.value[i], textStartX + i*cw, textY, getCharZ(inp.phase + ci * 0.7, inp.z), color);
     }
 
     if (inp.focused && inp.cursorVisible && !hasSelection) {
         const cursorX = textStartX + ctx.measureText(inp.value.slice(0, inp.cursorPos)).width;
+        ctx.globalAlpha = 1;
         ctx.fillStyle = '#00ff41';
-        ctx.fillRect(cursorX, textY, charWidth - 2, FONT_SIZE - 4);
+        ctx.fillRect(cursorX, textY, cw - 2, FONT_SIZE - 4);
         const charUnder = inp.value[inp.cursorPos];
         if (charUnder) {
             ctx.fillStyle = 'black';
+            ctx.font = FONT;
             ctx.fillText(charUnder, cursorX, textY);
         }
     }
 
-    ctx.restore();
     ctx.globalAlpha = 1;
-
-    inp.rect = {
-        x: inp.x - (borderWidth * scale) / 2,
-        y: inp.y - (totalHeight * scale) / 2,
-        w: borderWidth * scale,
-        h: totalHeight * scale,
-        textStartX,
-        charWidth
-    };
+    ctx.font = FONT;
+    inp.rect = { x: sl, y: st, w: borderWidth, h: totalHeight, textStartX, charWidth: cw };
 }
 
-// ── Draw slider with z-depth ──────────────────────────────────────────────────
+// ── Slider ────────────────────────────────────────────────────────────────────
 function drawSlider(s) {
-    const scale = zToScale(s.z);
-    const alpha = zToAlpha(s.z);
-
     ctx.font = FONT;
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'top';
 
-    const charWidth = ctx.measureText('M').width;
+    const cw = ctx.measureText('M').width;
     const totalChars = 20;
-    const trackWidth = totalChars * charWidth;
-    const handleWidth = charWidth * 2;
-    const totalWidth = trackWidth + handleWidth;
+    const trackWidth = totalChars * cw;
+    const totalWidth = trackWidth + cw * 2;
     const left = s.x - totalWidth / 2;
-
     const t = (s.value - s.min) / (s.max - s.min);
-    const handlePos = Math.floor(t * totalChars);
+    const handlePos = Math.min(Math.floor(t * totalChars), totalChars - 2);
 
-    let track = '';
-    for (let i = 0; i < totalChars; i++) track += i < handlePos ? '=' : '-';
-    const full = track.slice(0, handlePos) + '[]' + track.slice(handlePos);
+    const chars = ['|'];
+    for (let i = 0; i < totalChars; i++) {
+        if (i === handlePos) chars.push('[');
+        else if (i === handlePos + 1) chars.push(']');
+        else chars.push(i < handlePos ? '=' : '-');
+    }
+    chars.push('|');
 
-    // Label — no transform, always static
+    ctx.globalAlpha = 1;
+    ctx.fillStyle = '#00ff41';
+    ctx.fillText(s.label + ': ' + s.value, left, s.y - FONT_SIZE);
+
+    const trackStartX = left - cw;
+    for (let i = 0; i < chars.length; i++)
+        drawChar(chars[i], trackStartX + i*cw, s.y, getCharZ(s.phase + i * 0.7, s.z));
+
+    ctx.globalAlpha = 1;
+    ctx.font = FONT;
+    s.rect = { x: left, y: s.y - FONT_SIZE/2, w: totalWidth, h: FONT_SIZE*2, totalChars, left, trackWidth };
+}
+
+// ── Z Visualizer ──────────────────────────────────────────────────────────────
+function drawZViz() {
+    const z = zViz.value;
+    const scale = zToScale(z);
+    const alpha = zToAlpha(z);
+    const vx = zViz.x, vy = zViz.y;
+
     ctx.globalAlpha = 1;
     ctx.fillStyle = '#00ff41';
     ctx.textAlign = 'left';
     ctx.textBaseline = 'top';
-    ctx.fillText(s.label + ': ' + s.value, left, s.y - FONT_SIZE);
+    ctx.font = '20px "IBMVGA"';
+    ctx.fillText('Z VISUALIZER', vx, vy);
 
-    // Track only — z transform applied
-    ctx.globalAlpha = alpha;
-    ctx.save();
-    ctx.translate(s.x, s.y);
-    ctx.scale(scale, scale);
-    ctx.translate(-s.x, -s.y);
-    ctx.fillStyle = '#00ff41';
-    ctx.fillText('|' + full + '|', left - charWidth, s.y);
-    ctx.restore();
+    const cw = ctx.measureText('M').width;
+    const totalChars = 20;
+    const trackWidth = totalChars * cw;
+    const t = (z - zViz.min) / (zViz.max - zViz.min);
+    const handlePos = Math.floor(t * totalChars);
+    let track = '';
+    for (let i = 0; i < totalChars; i++) track += i < handlePos ? '=' : '-';
+    ctx.fillText('|' + track.slice(0,handlePos) + '[]' + track.slice(handlePos) + '|', vx - cw, vy + 28);
+    zViz.rect = { x: vx, y: vy+24, w: trackWidth, h: 28, left: vx, trackWidth };
+
+    ctx.font = '16px "IBMVGA"';
+    ctx.fillText('1.0 (CLOSE)', vx, vy+60);
+    ctx.textAlign = 'right';
+    ctx.fillText('3.0 (FAR)', vx+trackWidth, vy+60);
+    ctx.textAlign = 'left';
+
+    ctx.font = '18px "IBMVGA"';
+    ctx.fillText(`z:     ${z.toFixed(3)}`, vx, vy+90);
+    ctx.fillText(`scale: ${scale.toFixed(3)}`, vx, vy+112);
+    ctx.fillText(`alpha: ${alpha.toFixed(3)}`, vx, vy+134);
+
+    ctx.font = '14px "IBMVGA"';
+    ctx.fillStyle = '#007a1f';
+    ctx.fillText(`float: ${Z_FLOAT_MIN.toFixed(1)}-${Z_FLOAT_MAX.toFixed(1)}  pressed: ${Z_PRESSED.toFixed(1)}`, vx, vy+162);
+
+    const boxX = vx, boxY = vy+190, boxW = trackWidth+cw*2, boxH = 120;
     ctx.globalAlpha = 1;
+    ctx.strokeStyle = '#003d0f';
+    ctx.lineWidth = 1;
+    ctx.strokeRect(boxX, boxY, boxW, boxH);
+    ctx.globalAlpha = alpha;
+    ctx.font = `${Math.round(64*scale)}px "IBMVGA"`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillStyle = '#00ff41';
+    ctx.fillText('M', boxX+boxW/2, boxY+boxH/2);
 
-    s.rect = { x: left, y: s.y - FONT_SIZE / 2, w: totalWidth, h: FONT_SIZE * 2, totalChars, left, trackWidth };
+    ctx.globalAlpha = 1;
+    ctx.font = FONT;
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'top';
 }
 
-// ── Update z values ───────────────────────────────────────────────────────────
+// ── Update ────────────────────────────────────────────────────────────────────
 let lastTime = performance.now();
 
-function updateZ(el, dt, now) {
+function updateZ(el, dt) {
     const r = el.fullRect || el.rect;
-    const overButton = r &&
-        mouseX >= r.x && mouseX <= r.x + r.w &&
-        mouseY >= r.y && mouseY <= r.y + r.h;
-
-    const isPressed = el === pressedButton && mouseIsDown && overButton;
+    const over = r && mouseX>=r.x && mouseX<=r.x+r.w && mouseY>=r.y && mouseY<=r.y+r.h;
+    const isPressed = el === pressedButton && mouseIsDown && over;
 
     if (isPressed) {
         el.z = Math.min(Z_PRESSED, el.z + dt * Z_PRESS_SPEED);
+    } else if (el.releasePhase === 'releasing') {
+        el.z -= dt * Z_RETURN_SPEED;
+        if (el.z <= 1.0) {
+            el.z = 1.0;
+            el.releasePhase = 'glowing';
+            el.glowT = 0;
+        }
+    } else if (el.releasePhase === 'glowing') {
+        el.glowT += dt * 0.001;
+        if (el.glowT >= 1.0) {
+            el.glowT = 0;
+            el.releasePhase = 'returning';
+            el._fireClick = true;
+            if (el.charPhases) {
+                el.charZ = new Array(200).fill(1.0);
+            }
+        }
+    } else if (el.releasePhase === 'returning') {
+        if (el.charZ) {
+            let allDone = true;
+            const speed = (Z_FLOAT_MAX - Z_FLOAT_MIN) * Z_FLOAT_SPEED * dt / 1000;
+            for (let i = 0; i < el.charZ.length; i++) {
+                const target = getCharZ(el.charPhases[i], Z_FLOAT_MIN);
+                const diff = target - el.charZ[i];
+                if (Math.abs(diff) <= speed) {
+                    el.charZ[i] = target; // arrived — now just tracks the sine
+                } else {
+                    el.charZ[i] += Math.sign(diff) * speed;
+                    allDone = false;
+                }
+            }
+            if (allDone) {
+                el.z = Z_FLOAT_MIN;
+                el.releasePhase = null;
+                el.charZ = null;
+            }
+        }
     } else {
-        // Spring back to Z_FLOAT_MIN only — not a float target
-        const diff = Z_FLOAT_MIN - el.z;
-        el.z += diff * Math.min(1, dt * Z_RETURN_SPEED);
+        if (el.z > Z_FLOAT_MIN + 0.01) {
+            el.z += (Z_FLOAT_MIN - el.z) * Math.min(1, dt * Z_RETURN_SPEED);
+        }
     }
 }
 
@@ -373,149 +435,65 @@ function update(now) {
     elapsed += dt / 1000;
 
     buttons.forEach(btn => {
-        const inside = btn.rect &&
-            mouseX >= btn.rect.x && mouseX <= btn.rect.x + btn.rect.w &&
-            mouseY >= btn.rect.y && mouseY <= btn.rect.y + btn.rect.h;
-        if (inside) {
-            btn.hoverProgress = Math.min(1, btn.hoverProgress + dt / ANIM_DURATION);
-        } else {
-            btn.hoverProgress = Math.max(0, btn.hoverProgress - dt / ANIM_DURATION);
+        const inside = btn.rect && mouseX>=btn.rect.x && mouseX<=btn.rect.x+btn.rect.w && mouseY>=btn.rect.y && mouseY<=btn.rect.y+btn.rect.h;
+        btn.hoverProgress = inside ? Math.min(1, btn.hoverProgress+dt/ANIM_DURATION) : Math.max(0, btn.hoverProgress-dt/ANIM_DURATION);
+        updateZ(btn, dt);
+        if (btn._fireClick) {
+            btn._fireClick = false;
+            btn.onClick();
         }
-        updateZ(btn, dt, now);
     });
-
     inputs.forEach(inp => {
-        updateZ(inp, dt, now);
+        updateZ(inp, dt);
         if (inp.focused && now - inp.lastBlink > CURSOR_BLINK_RATE) {
             inp.cursorVisible = !inp.cursorVisible;
             inp.lastBlink = now;
         }
     });
-
-    sliders.forEach(s => updateZ(s, dt, now));
+    sliders.forEach(s => updateZ(s, dt));
 }
 
-function drawZViz() {
-    const z = zViz.value;
-    const scale = zToScale(z);
-    const alpha = zToAlpha(z);
-    const vx = zViz.x;
-    const vy = zViz.y;
-
-    ctx.fillStyle = '#00ff41';
-    ctx.textAlign = 'left';
-    ctx.textBaseline = 'top';
-
-    // Label
-    ctx.globalAlpha = 1;
-    ctx.font = '20px "IBMVGA"';
-    ctx.fillText('Z VISUALIZER', vx, vy);
-
-    // Slider track
-    const charWidth = ctx.measureText('M').width;
-    const totalChars = 20;
-    const trackWidth = totalChars * charWidth;
-    const t = (z - zViz.min) / (zViz.max - zViz.min);
-    const handlePos = Math.floor(t * totalChars);
-    let track = '';
-    for (let i = 0; i < totalChars; i++) track += i < handlePos ? '=' : '-';
-    const full = track.slice(0, handlePos) + '[]' + track.slice(handlePos);
-    ctx.font = '20px "IBMVGA"';
-    ctx.fillText('|' + full + '|', vx - charWidth, vy + 28);
-    zViz.rect = { x: vx, y: vy + 24, w: trackWidth, h: 28, left: vx, trackWidth };
-
-    // z range labels
-    ctx.font = '16px "IBMVGA"';
-    ctx.fillText('1.0 (CLOSE)', vx, vy + 60);
-    ctx.textAlign = 'right';
-    ctx.fillText('2.0 (FAR)', vx + trackWidth, vy + 60);
-    ctx.textAlign = 'left';
-
-    // Stats
-    ctx.font = '18px "IBMVGA"';
-    ctx.fillText(`z:     ${z.toFixed(3)}`, vx, vy + 90);
-    ctx.fillText(`scale: ${scale.toFixed(3)}`, vx, vy + 112);
-    ctx.fillText(`alpha: ${alpha.toFixed(3)}`, vx, vy + 134);
-
-    // Zone labels
-    ctx.font = '14px "IBMVGA"';
-    ctx.fillStyle = '#007a1f';
-    ctx.fillText(`float range: ${Z_FLOAT_MIN.toFixed(1)} - ${Z_FLOAT_MAX.toFixed(1)}`, vx, vy + 162);
-    ctx.fillText(`pressed:     ${Z_PRESSED.toFixed(1)}`, vx, vy + 178);
-
-    // Live "M" preview — drawn large in a box
-    const boxX = vx;
-    const boxY = vy + 200;
-    const boxW = trackWidth + charWidth * 2;
-    const boxH = 120;
-    ctx.globalAlpha = 1;
-    ctx.strokeStyle = '#003d0f';
-    ctx.lineWidth = 1;
-    ctx.strokeRect(boxX, boxY, boxW, boxH);
-
-    // Draw M at computed scale and alpha, centered in box
-    const mSize = 64 * scale;
-    ctx.globalAlpha = alpha;
-    ctx.font = `${Math.round(mSize)}px "IBMVGA"`;
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    ctx.fillStyle = '#00ff41';
-    ctx.fillText('M', boxX + boxW / 2, boxY + boxH / 2);
-
-    ctx.globalAlpha = 1;
-    ctx.font = FONT;
-    ctx.textAlign = 'left';
-    ctx.textBaseline = 'top';
-}
-
+// ── Loop ──────────────────────────────────────────────────────────────────────
 function loop() {
     const now = performance.now();
     update(now);
-
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     ctx.fillStyle = 'black';
     ctx.fillRect(0, 0, canvas.width, canvas.height);
 
     inputs.forEach(inp => drawInput(inp));
-    buttons.forEach(btn => drawButton(btn, elapsed));
+    buttons.forEach(btn => drawButton(btn));
     sliders.forEach(s => drawSlider(s));
     drawZViz();
 
-    // Draw clicked popup
     if (clickedPopup) {
         const age = performance.now() - clickedPopup.time;
         if (age < 1000) {
-            ctx.globalAlpha = Math.max(0, 1 - age / 600);
+            ctx.globalAlpha = Math.max(0, 1-age/600);
             ctx.font = '24px "IBMVGA"';
             ctx.fillStyle = '#00ff41';
             ctx.textAlign = 'center';
             ctx.textBaseline = 'top';
-            ctx.fillText('[ ' + clickedPopup.text + ' CLICKED! ]', canvas.width / 2, 40);
+            ctx.fillText('[ '+clickedPopup.text+' CLICKED! ]', canvas.width/2, 40);
             ctx.globalAlpha = 1;
-        } else {
-            clickedPopup = null;
-        }
+        } else { clickedPopup = null; }
     }
-
     requestAnimationFrame(loop);
 }
 
 // ── Events ────────────────────────────────────────────────────────────────────
 canvas.addEventListener('mousemove', e => {
-    const rect = canvas.getBoundingClientRect();
-    mouseX = e.clientX - rect.left;
-    mouseY = e.clientY - rect.top;
-
+    const r = canvas.getBoundingClientRect();
+    mouseX = e.clientX - r.left;
+    mouseY = e.clientY - r.top;
     if (draggingZViz && zViz.rect) {
-        const t = Math.max(0, Math.min(1, (mouseX - zViz.rect.left) / zViz.rect.trackWidth));
-        zViz.value = zViz.min + t * (zViz.max - zViz.min);
+        const t = Math.max(0, Math.min(1, (mouseX-zViz.rect.left)/zViz.rect.trackWidth));
+        zViz.value = zViz.min + t*(zViz.max-zViz.min);
     }
     if (dragging) {
-        const r = dragging.rect;
-        const t = Math.max(0, Math.min(1, (mouseX - r.left) / r.trackWidth));
-        dragging.value = Math.round(dragging.min + t * (dragging.max - dragging.min));
+        const dr = dragging.rect;
+        dragging.value = Math.round(dragging.min + Math.max(0,Math.min(1,(mouseX-dr.left)/dr.trackWidth))*(dragging.max-dragging.min));
     }
-
     if (focusedInput && focusedInput.selecting) {
         const idx = getCharIndex(focusedInput, mouseX);
         focusedInput.selEnd = idx;
@@ -524,82 +502,56 @@ canvas.addEventListener('mousemove', e => {
 });
 
 canvas.addEventListener('mousedown', e => {
-    const rect = canvas.getBoundingClientRect();
-    const mx = e.clientX - rect.left;
-    const my = e.clientY - rect.top;
-
+    const r = canvas.getBoundingClientRect();
+    const mx = e.clientX-r.left, my = e.clientY-r.top;
     mouseIsDown = true;
-    pressedButton = null; // reset — only set if mousedown is ON a button
+    pressedButton = null;
 
-    // Check buttons — only register press if mousedown starts on the button
     buttons.forEach(btn => {
-        if (btn.rect && mx >= btn.rect.x && mx <= btn.rect.x + btn.rect.w &&
-            my >= btn.rect.y && my <= btn.rect.y + btn.rect.h) {
+        if (btn.rect && mx>=btn.rect.x && mx<=btn.rect.x+btn.rect.w && my>=btn.rect.y && my<=btn.rect.y+btn.rect.h)
             pressedButton = btn;
-        }
     });
 
-    // Handle inputs
     let clickedInput = null;
     inputs.forEach(inp => {
-        if (inp.rect && mx >= inp.rect.x && mx <= inp.rect.x + inp.rect.w &&
-            my >= inp.rect.y && my <= inp.rect.y + inp.rect.h) {
+        if (inp.rect && mx>=inp.rect.x && mx<=inp.rect.x+inp.rect.w && my>=inp.rect.y && my<=inp.rect.y+inp.rect.h)
             clickedInput = inp;
-        }
     });
-
     inputs.forEach(inp => {
         inp.focused = inp === clickedInput;
         if (inp === clickedInput) {
             const idx = getCharIndex(inp, mx);
-            inp.cursorPos = idx;
-            inp.selStart = idx;
-            inp.selEnd = idx;
-            inp.selecting = true;
+            inp.cursorPos = idx; inp.selStart = idx; inp.selEnd = idx; inp.selecting = true;
         }
-        inp.cursorVisible = true;
-        inp.lastBlink = performance.now();
+        inp.cursorVisible = true; inp.lastBlink = performance.now();
     });
     focusedInput = clickedInput;
 
     sliders.forEach(s => {
-        if (s.rect && mx >= s.rect.x && mx <= s.rect.x + s.rect.w &&
-            my >= s.rect.y && my <= s.rect.y + s.rect.h) {
+        if (s.rect && mx>=s.rect.x && mx<=s.rect.x+s.rect.w && my>=s.rect.y && my<=s.rect.y+s.rect.h)
             dragging = s;
-        }
     });
 
-    // zViz slider
-    if (zViz.rect && mx >= zViz.rect.x && mx <= zViz.rect.x + zViz.rect.trackWidth &&
-        my >= zViz.rect.y && my <= zViz.rect.y + zViz.rect.h) {
+    if (zViz.rect && mx>=zViz.rect.x && mx<=zViz.rect.x+zViz.rect.trackWidth && my>=zViz.rect.y && my<=zViz.rect.y+zViz.rect.h) {
         draggingZViz = true;
-        const t = Math.max(0, Math.min(1, (mx - zViz.rect.left) / zViz.rect.trackWidth));
-        zViz.value = zViz.min + t * (zViz.max - zViz.min);
+        zViz.value = zViz.min + Math.max(0,Math.min(1,(mx-zViz.rect.left)/zViz.rect.trackWidth))*(zViz.max-zViz.min);
     }
 });
 
 canvas.addEventListener('mouseup', e => {
-    const rect = canvas.getBoundingClientRect();
-    const mx = e.clientX - rect.left;
-    const my = e.clientY - rect.top;
-
+    const r = canvas.getBoundingClientRect();
+    const mx = e.clientX-r.left, my = e.clientY-r.top;
     mouseIsDown = false;
-
-    // Fire onClick only if:
-    // 1. A button was pressed via mousedown (pressedButton is set)
-    // 2. Mouse is released over that same button
     if (pressedButton) {
         const btn = pressedButton;
-        const stillOver = btn.rect &&
-            mx >= btn.rect.x && mx <= btn.rect.x + btn.rect.w &&
-            my >= btn.rect.y && my <= btn.rect.y + btn.rect.h;
+        const stillOver = btn.rect && mx>=btn.rect.x && mx<=btn.rect.x+btn.rect.w && my>=btn.rect.y && my<=btn.rect.y+btn.rect.h;
         if (stillOver) {
-            clickedPopup = { text: btn.label, time: performance.now() };
-            btn.onClick();
+            btn.releasePhase = 'releasing';
+            btn.glowT = 0;
+            btn._fireClick = false;
         }
         pressedButton = null;
     }
-
     dragging = null;
     draggingZViz = false;
     if (focusedInput) focusedInput.selecting = false;
@@ -608,12 +560,12 @@ canvas.addEventListener('mouseup', e => {
 function getCharIndex(inp, mx) {
     if (!inp.rect) return 0;
     ctx.font = FONT;
-    const textStartX = inp.rect.textStartX;
+    const tx = inp.rect.textStartX;
     let closest = 0, closestDist = Infinity;
     for (let i = 0; i <= inp.value.length; i++) {
-        const x = textStartX + ctx.measureText(inp.value.slice(0, i)).width;
-        const dist = Math.abs(mx - x);
-        if (dist < closestDist) { closestDist = dist; closest = i; }
+        const x = tx + ctx.measureText(inp.value.slice(0,i)).width;
+        const d = Math.abs(mx-x);
+        if (d < closestDist) { closestDist = d; closest = i; }
     }
     return closest;
 }
@@ -621,45 +573,23 @@ function getCharIndex(inp, mx) {
 window.addEventListener('keydown', e => {
     if (!focusedInput) return;
     const inp = focusedInput;
-    const hasSelection = inp.selStart !== inp.selEnd;
-
+    const hasSel = inp.selStart !== inp.selEnd;
     if (e.key === 'Backspace') {
-        if (hasSelection) {
-            const a = Math.min(inp.selStart, inp.selEnd), b = Math.max(inp.selStart, inp.selEnd);
-            inp.value = inp.value.slice(0, a) + inp.value.slice(b);
-            inp.cursorPos = a; inp.selStart = a; inp.selEnd = a;
-        } else if (inp.cursorPos > 0) {
-            inp.value = inp.value.slice(0, inp.cursorPos - 1) + inp.value.slice(inp.cursorPos);
-            inp.cursorPos--; inp.selStart = inp.cursorPos; inp.selEnd = inp.cursorPos;
-        }
-    } else if (e.key === 'ArrowLeft') {
-        e.preventDefault();
-        inp.cursorPos = Math.max(0, inp.cursorPos - 1);
-        if (e.shiftKey) { inp.selEnd = inp.cursorPos; }
-        else { inp.selStart = inp.cursorPos; inp.selEnd = inp.cursorPos; }
-    } else if (e.key === 'ArrowRight') {
-        e.preventDefault();
-        inp.cursorPos = Math.min(inp.value.length, inp.cursorPos + 1);
-        if (e.shiftKey) { inp.selEnd = inp.cursorPos; }
-        else { inp.selStart = inp.cursorPos; inp.selEnd = inp.cursorPos; }
-    } else if (e.key === 'Tab' || e.key === 'ArrowDown') {
-        e.preventDefault();
-        const idx = inputs.indexOf(inp);
-        const next = inputs[(idx + 1) % inputs.length];
-        inp.focused = false; next.focused = true;
-        next.cursorVisible = true; next.lastBlink = performance.now();
-        focusedInput = next;
-    } else if (e.key.length === 1 && !e.ctrlKey && !e.metaKey) {
-        if (hasSelection) {
-            const a = Math.min(inp.selStart, inp.selEnd), b = Math.max(inp.selStart, inp.selEnd);
-            inp.value = inp.value.slice(0, a) + e.key.toUpperCase() + inp.value.slice(b);
-            inp.cursorPos = a + 1;
-        } else if (inp.value.length < inp.maxLength) {
-            inp.value = inp.value.slice(0, inp.cursorPos) + e.key.toUpperCase() + inp.value.slice(inp.cursorPos);
-            inp.cursorPos++;
-        }
-        inp.selStart = inp.cursorPos; inp.selEnd = inp.cursorPos;
-        inp.cursorVisible = true; inp.lastBlink = performance.now();
+        if (hasSel) { const a=Math.min(inp.selStart,inp.selEnd),b=Math.max(inp.selStart,inp.selEnd); inp.value=inp.value.slice(0,a)+inp.value.slice(b); inp.cursorPos=a; inp.selStart=a; inp.selEnd=a; }
+        else if (inp.cursorPos>0) { inp.value=inp.value.slice(0,inp.cursorPos-1)+inp.value.slice(inp.cursorPos); inp.cursorPos--; inp.selStart=inp.cursorPos; inp.selEnd=inp.cursorPos; }
+    } else if (e.key==='ArrowLeft') {
+        e.preventDefault(); inp.cursorPos=Math.max(0,inp.cursorPos-1);
+        if (e.shiftKey) inp.selEnd=inp.cursorPos; else { inp.selStart=inp.cursorPos; inp.selEnd=inp.cursorPos; }
+    } else if (e.key==='ArrowRight') {
+        e.preventDefault(); inp.cursorPos=Math.min(inp.value.length,inp.cursorPos+1);
+        if (e.shiftKey) inp.selEnd=inp.cursorPos; else { inp.selStart=inp.cursorPos; inp.selEnd=inp.cursorPos; }
+    } else if (e.key==='Tab'||e.key==='ArrowDown') {
+        e.preventDefault(); const idx=inputs.indexOf(inp),next=inputs[(idx+1)%inputs.length];
+        inp.focused=false; next.focused=true; next.cursorVisible=true; next.lastBlink=performance.now(); focusedInput=next;
+    } else if (e.key.length===1&&!e.ctrlKey&&!e.metaKey) {
+        if (hasSel) { const a=Math.min(inp.selStart,inp.selEnd),b=Math.max(inp.selStart,inp.selEnd); inp.value=inp.value.slice(0,a)+e.key.toUpperCase()+inp.value.slice(b); inp.cursorPos=a+1; }
+        else if (inp.value.length<inp.maxLength) { inp.value=inp.value.slice(0,inp.cursorPos)+e.key.toUpperCase()+inp.value.slice(inp.cursorPos); inp.cursorPos++; }
+        inp.selStart=inp.cursorPos; inp.selEnd=inp.cursorPos; inp.cursorVisible=true; inp.lastBlink=performance.now();
     }
 });
 </script>
