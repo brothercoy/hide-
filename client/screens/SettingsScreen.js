@@ -21,7 +21,7 @@ export class SettingsScreen {
         this.ui.sliders.push(makeSlider('SFX VOLUME', cx, cy, 0, 100, 80));
         this.ui.sliders.push(makeSlider('MUSIC VOLUME', cx, cy + 80, 0, 100, 50));
 
-        this.ui.buttons.push(makeButton('BACK', cx, cy + 200, () => this.onBack()));
+        this.ui.buttons.push(makeButton('BACK', cx, cy + 200, () => this.onBack(), { blocksInput: true }));
     }
 
     draw() {

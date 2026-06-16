@@ -28,10 +28,10 @@ export class PlayScreen {
         this.ui.inputs.push(this.nameInput);
         this.ui.inputs.push(this.codeInput);
 
-        this.ui.buttons.push(makeButton('QUICK JOIN', cx, cy - 80, () => this.onQuickJoin(this.nameInput.value)));
-        this.ui.buttons.push(makeButton('CREATE ROOM', cx, cy, () => this.onCreateRoom(this.nameInput.value)));
-        this.ui.buttons.push(makeButton('JOIN ROOM', cx, cy + 160, () => this.onJoinRoom(this.nameInput.value, this.codeInput.value)));
-        this.ui.buttons.push(makeButton('BACK', cx, cy + 280, () => this.onBack()));
+        this.ui.buttons.push(makeButton('QUICK JOIN', cx, cy - 80, () => this.onQuickJoin(this.nameInput.value), { blocksInput: true }));
+        this.ui.buttons.push(makeButton('CREATE ROOM', cx, cy, () => this.onCreateRoom(this.nameInput.value), { blocksInput: true }));
+        this.ui.buttons.push(makeButton('JOIN ROOM', cx, cy + 160, () => this.onJoinRoom(this.nameInput.value, this.codeInput.value), { blocksInput: true }));
+        this.ui.buttons.push(makeButton('BACK', cx, cy + 280, () => this.onBack(), { blocksInput: true }));
     }
 
     draw() {

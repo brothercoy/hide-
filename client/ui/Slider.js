@@ -1,3 +1,6 @@
+import { otFont, charWidth } from './Font.js';
+import { getCharZ, drawChar, Z_FLOAT_MIN } from './Button.js';
+
 export function makeSlider(label, x, y, min, max, defaultValue, onChange, disabled = false, unit = '') {
     return {
         label, x, y, min, max,
@@ -6,47 +9,57 @@ export function makeSlider(label, x, y, min, max, defaultValue, onChange, disabl
         phase: Math.random() * Math.PI * 2,
         onChange: onChange || null,
         disabled,
-        unit
+        unit,
+        z: Z_FLOAT_MIN
     };
 }
 
 export function drawSlider(ctx, s, elapsed, FONT_SIZE) {
-    const FONT = `${FONT_SIZE}px "IBMVGA"`;
-    ctx.font = FONT;
+    if (!otFont) return;
 
-    const charWidth = ctx.measureText('M').width;
+    const cw = charWidth(FONT_SIZE);
     const totalChars = 20;
-    const trackWidth = totalChars * charWidth;
-    const totalWidth = trackWidth + charWidth * 4;
+    const trackWidth = totalChars * cw;
+    const totalWidth = trackWidth + cw * 4;
     const left = s.x - totalWidth / 2;
 
-    const yOffset = Math.sin(elapsed * 0.8 + s.phase) * 0;
-    const cy = s.y + yOffset;
-
     const t = (s.value - s.min) / (s.max - s.min);
-    const handlePos = Math.floor(t * totalChars);
+    const handlePos = Math.min(Math.floor(t * totalChars), totalChars - 2);
 
-    let track = '';
-    for (let i = 0; i < totalChars; i++) track += i < handlePos ? '=' : '-';
+    const chars = ['|'];
+    for (let i = 0; i < totalChars; i++) {
+        if (i === handlePos) chars.push('[');
+        else if (i === handlePos + 1) chars.push(']');
+        else chars.push(i < handlePos ? '=' : '-');
+    }
+    chars.push('|');
 
-    const leftPart = track.slice(0, handlePos);
-    const rightPart = track.slice(handlePos);
-    const full = '|' + leftPart + '[]' + rightPart + '|';
+    // Static label via opentype
+    ctx.globalAlpha = 1;
+    const labelPath = otFont.getPath(
+        s.label + ': ' + s.value + (s.unit || ''),
+        left, s.y, FONT_SIZE
+    );
+    labelPath.fill = s.disabled ? '#007a1f' : '#00ff41';
+    labelPath.draw(ctx);
 
-    ctx.fillStyle = s.disabled ? '#007a1f' : '#00ff41';
-    ctx.textAlign = 'left';
-    ctx.textBaseline = 'top';
+    // Animated track
+    const trackStartX = left - cw;
+    for (let i = 0; i < chars.length; i++) {
+        const color = s.disabled ? '#007a1f' : '#00ff41';
+        drawChar(ctx, chars[i], trackStartX + i * cw, s.y,
+            getCharZ(s.phase + i * 0.7, s.z, elapsed), color, FONT_SIZE);
+    }
 
-    ctx.fillText(s.label + ': ' + s.value + (s.unit || ''), left, cy - FONT_SIZE);
-    ctx.fillText(full, left, cy);
+    ctx.globalAlpha = 1;
 
     s.rect = {
-        x: left + charWidth,
-        y: cy - FONT_SIZE / 2,
-        w: trackWidth + charWidth * 2,
+        x: left + cw,
+        y: s.y - FONT_SIZE / 2,
+        w: trackWidth + cw * 2,
         h: FONT_SIZE * 2,
         totalChars,
-        left: left + charWidth,
+        left: left + cw,
         trackWidth
     };
 }

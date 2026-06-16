@@ -6,7 +6,7 @@
     <style>
         @font-face {
             font-family: 'IBMVGA';
-            src: url('Web437_IBM_VGA_8x16.woff') format('woff');
+            src: url('PxPlus_IBM_VGA_8x16.ttf') format('truetype');
             font-display: block;
         }
         * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -16,6 +16,7 @@
 </head>
 <body>
 <canvas id="c"></canvas>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/opentype.js/1.3.4/opentype.min.js"></script>
 <script>
 const canvas = document.getElementById('c');
 const ctx = canvas.getContext('2d', { alpha: false });
@@ -23,7 +24,7 @@ const ctx = canvas.getContext('2d', { alpha: false });
 canvas.width = window.innerWidth;
 canvas.height = window.innerHeight;
 
-const FONT_SIZE = 46;
+const FONT_SIZE = 54;
 const FONT = `${FONT_SIZE}px "IBMVGA"`;
 const ANIM_DURATION = 333;
 const CURSOR_BLINK_RATE = 500;
@@ -31,28 +32,28 @@ const CURSOR_BLINK_RATE = 500;
 const Z_FLOAT_MIN = 1.3;
 const Z_FLOAT_MAX = 1.8;
 const Z_PRESSED   = 2.5;
-const Z_FLOAT_SPEED = 0.5;
+const Z_FLOAT_SPEED = 0.9;
 const Z_PRESS_SPEED = 0.007;
-const Z_RETURN_SPEED = 0.005;
+const Z_RETURN_SPEED = 0.009;
+const GLOW_SPEED = 0.002;      // lower = slower fade in/out
+const CHAR_ROT_MAX = 0.03;     // max rotation radians (~8.5 degrees)
+const CHAR_ROT_SPEED = 0.4;    // rotation oscillation speed
+
+// ── Change this to any character to inspect its collision ──────────────────
+const VIZ_CHAR = 'q';
+// ──────────────────────────────────────────────────────────────────────────
 
 function zToScale(z) {
     const t = (z - 1.0) / (3.0 - 1.0);
-    const curved = Math.pow(t, 1.0);
-    return Math.max(0.5, 1.0 - curved * 0.5);
+    return Math.max(0.5, 1.0 - t * 0.5);
 }
 function zToAlpha(z) {
     const t = (z - 1.0) / (3.0 - 1.0);
-    const curved = Math.pow(t, 1.0);
-    return Math.max(0, 1.0 - curved);
+    return Math.max(0, 1.0 - t);
 }
 
-document.fonts.ready.then(() => {
-    ctx.font = FONT;
-    initButtons();
-    initSliders();
-    initInputs();
-    loop();
-});
+let otFont = null;
+let fullCharW = null;
 
 const buttons = [];
 const sliders = [];
@@ -64,6 +65,16 @@ let focusedInput = null;
 let pressedButton = null;
 let mouseIsDown = false;
 let clickedPopup = null;
+
+opentype.load('PxPlus_IBM_VGA_8x16.ttf', (err, font) => {
+    if (err) { console.error('opentype load error:', err); return; }
+    otFont = font;
+    fullCharW = font.getAdvanceWidth('M', FONT_SIZE);
+    initButtons();
+    initSliders();
+    initInputs();
+    loop();
+});
 
 function makeButton(label, x, y, onClick, options = {}) {
     return {
@@ -79,6 +90,7 @@ function makeButton(label, x, y, onClick, options = {}) {
         glowT: 0,
         _fireClick: false,
         charZ: null,
+        charRot: null,
         zPressed: false, zPressTime: 0
     };
 }
@@ -115,16 +127,14 @@ function initInputs() {
     inputs.push(makeInput('ENTER NAME', canvas.width/2, canvas.height/2-200, 12));
 }
 
-// ── Per-character z ───────────────────────────────────────────────────────────
 function getCharZ(phase, baseZ) {
     const pressOffset = (baseZ || Z_FLOAT_MIN) - Z_FLOAT_MIN;
     const pressT = pressOffset / (Z_PRESSED - Z_FLOAT_MIN);
-    const oscRange = (Z_FLOAT_MAX - Z_FLOAT_MIN) * (1.0 - pressT * 1.0);
+    const oscRange = (Z_FLOAT_MAX - Z_FLOAT_MIN) * (1.0 - pressT);
     const floatZ = Z_FLOAT_MIN + (Math.sin(elapsed * Z_FLOAT_SPEED + phase) * 0.5 + 0.5) * oscRange;
     return floatZ + pressOffset;
 }
 
-// During returning phase: lerp each character from 1.0 to its snapshot target
 function getCharZWithReturn(btn, ci) {
     if (btn.releasePhase === 'returning' && btn.charZ) {
         return btn.charZ[ci];
@@ -132,32 +142,77 @@ function getCharZWithReturn(btn, ci) {
     return getCharZ(btn.charPhases[ci], btn.z);
 }
 
-function drawChar(char, x, y, z, color) {
-    const scale = zToScale(z);
-    const alpha = zToAlpha(z);
-    ctx.font = FONT;
-    const fw = ctx.measureText('M').width;
-    ctx.font = `${FONT_SIZE * scale}px "IBMVGA"`;
-    const sw = ctx.measureText('M').width;
-    const xShift = (fw - sw) / 2;
-    const yShift = (FONT_SIZE - FONT_SIZE * scale) * 0.5;
-    ctx.globalAlpha = alpha;
-    ctx.fillStyle = color || '#00ff41';
-    ctx.fillText(char, x + xShift, y + yShift);
-    ctx.font = FONT;
+function getCharRotWithReturn(btn, ci) {
+    if ((btn.releasePhase === 'releasing' || btn.releasePhase === 'glowing' || btn.releasePhase === 'returning') && btn.charRot) {
+        return btn.charRot[ci];
+    }
+    if (!btn.charPhases) return 0;
+    return Math.sin(elapsed * CHAR_ROT_SPEED + btn.charPhases[ci] + Math.PI) * CHAR_ROT_MAX;
 }
 
-// ── Button ────────────────────────────────────────────────────────────────────
+// ── Collision helper — returns { cx, cy, radius } for a char at draw position ─
+function getCharCollision(char, drawX, drawY, fontSize) {
+    const glyph = otFont.charToGlyph(char);
+    const fontScale = fontSize / otFont.unitsPerEm;
+    const bbox = glyph.getBoundingBox();
+    // drawX/drawY is top-left of slot; opentype baseline is drawY + fontSize
+    const baseline = drawY + fontSize;
+    const cx = drawX + (bbox.x1 + (bbox.x2 - bbox.x1) / 2) * fontScale;
+    const cy = baseline - (bbox.y1 + (bbox.y2 - bbox.y1) / 2) * fontScale;
+    const rx = (bbox.x2 - bbox.x1) / 2 * fontScale;
+    const ry = (bbox.y2 - bbox.y1) / 2 * fontScale;
+    const radius = Math.sqrt(rx * rx + ry * ry);
+    return { cx, cy, radius };
+}
+
+function drawChar(char, x, y, z, color, rotAngle, overrideAlpha) {
+    if (!otFont) return;
+    const scale = zToScale(z);
+    const alpha = overrideAlpha !== undefined ? overrideAlpha : zToAlpha(z);
+    const scaledSize = FONT_SIZE * scale;
+
+    const glyph = otFont.charToGlyph(char);
+    const fullScale = FONT_SIZE / otFont.unitsPerEm;
+    const sScale = scaledSize / otFont.unitsPerEm;
+    const bbox = glyph.getBoundingBox();
+
+    // Fixed visual center at full size
+    const fullCX = x + (bbox.x1 + bbox.x2) / 2 * fullScale;
+    const fullCY = (y + FONT_SIZE) - (bbox.y1 + bbox.y2) / 2 * fullScale;
+
+    // Scaled glyph center offset from its own origin
+    const scaledCX = (bbox.x1 + bbox.x2) / 2 * sScale;
+    const scaledCY = (bbox.y1 + bbox.y2) / 2 * sScale;
+
+    const drawX = fullCX - scaledCX;
+    const drawY = fullCY + scaledCY;
+
+    const path = otFont.getPath(char, drawX, drawY, scaledSize);
+    path.fill = color || '#00ff41';
+
+    ctx.save();
+    ctx.globalAlpha = alpha;
+    if (rotAngle) {
+        ctx.translate(fullCX, fullCY);
+        ctx.rotate(rotAngle);
+        ctx.translate(-fullCX, -fullCY);
+    }
+    path.draw(ctx);
+    ctx.restore();
+}
+
+function charWidth() {
+    return fullCharW;
+}
+
 function drawButton(btn) {
     ctx.font = FONT;
-    ctx.fillStyle = '#00ff41';
     ctx.textAlign = 'left';
     ctx.textBaseline = 'top';
-
-    const cw = ctx.measureText('M').width;
-    const textWidth = ctx.measureText(btn.label).width;
+    const cw = charWidth();
+    const labelW = btn.label.length * cw;
     const padX = cw * 2;
-    const innerWidth = textWidth + padX * 2;
+    const innerWidth = labelW + padX * 2;
     const borderWidth = innerWidth + cw * 2;
     const lh = FONT_SIZE;
     const totalHeight = lh * 2.5;
@@ -165,7 +220,6 @@ function drawButton(btn) {
     const st = btn.y - totalHeight / 2;
     const dashCount = Math.floor(innerWidth / cw);
     const plusCount = Math.floor((dashCount / 2) * (btn.active ? 1 : btn.hoverProgress));
-
     let borderLine = '';
     for (let i = 0; i < dashCount; i++) {
         const fl = i, fr = dashCount - 1 - i;
@@ -178,44 +232,50 @@ function drawButton(btn) {
     const isPressed = btn === pressedButton && mouseIsDown;
     const ls = isPressed ? '}' : (btn.active ? (Math.floor(Date.now()/500)%2===0?'}':' ') : '|');
     const rs = isPressed ? '{' : (btn.active ? (Math.floor(Date.now()/500)%2===0?'{':' ') : '|');
-
     if (!btn.charPhases) {
         btn.charPhases = Array.from({length: 200}, () => Math.random() * Math.PI * 2);
     }
-
     let glowColor = '#00ff41';
     if (btn.releasePhase === 'glowing' && btn.glowT > 0) {
         const g = btn.glowT < 0.5 ? btn.glowT * 2 : (1 - btn.glowT) * 2;
         glowColor = `rgb(${Math.round(g * 170)}, 255, ${Math.round(65 + g * 121)})`;
     }
-
-    // Freeze oscillation only during releasing and glowing
-    // During returning, getCharZWithReturn handles per-character interpolation
     const useFixed = btn.releasePhase === 'releasing' || btn.releasePhase === 'glowing';
 
     let ci = 0;
     for (let i = 0; i < topB.length; i++, ci++)
-        drawChar(topB[i], sl+i*cw, st, useFixed ? btn.z : getCharZWithReturn(btn, ci), glowColor);
-    drawChar(ls, sl, st+lh, useFixed ? btn.z : getCharZWithReturn(btn, ci++), glowColor);
+        drawChar(topB[i], sl+i*cw, st, useFixed ? btn.z : getCharZWithReturn(btn, ci), '#00ff41', getCharRotWithReturn(btn, ci));
+    drawChar(ls, sl, st+lh, useFixed ? btn.z : getCharZWithReturn(btn, ci++), '#00ff41', getCharRotWithReturn(btn, ci));
     for (let i = 0; i < btn.label.length; i++, ci++)
-        drawChar(btn.label[i], sl+cw+padX+i*cw, st+lh, useFixed ? btn.z : getCharZWithReturn(btn, ci), glowColor);
-    drawChar(rs, sl+borderWidth-cw, st+lh, useFixed ? btn.z : getCharZWithReturn(btn, ci++), glowColor);
+        drawChar(btn.label[i], sl+cw+padX+i*cw, st+lh, useFixed ? btn.z : getCharZWithReturn(btn, ci), '#00ff41', getCharRotWithReturn(btn, ci));
+    drawChar(rs, sl+borderWidth-cw, st+lh, useFixed ? btn.z : getCharZWithReturn(btn, ci++), '#00ff41', getCharRotWithReturn(btn, ci));
     for (let i = 0; i < botB.length; i++, ci++)
-        drawChar(botB[i], sl+i*cw, st+lh*2, useFixed ? btn.z : getCharZWithReturn(btn, ci), glowColor);
+        drawChar(botB[i], sl+i*cw, st+lh*2, useFixed ? btn.z : getCharZWithReturn(btn, ci), '#00ff41', getCharRotWithReturn(btn, ci));
+
+    // Glow — draw duplicate fading in and back out
+    if (btn.releasePhase === 'glowing' && btn.glowT > 0) {
+        const glowAlpha = btn.glowT < 0.5 ? btn.glowT * 2 : (1 - btn.glowT) * 2;
+        ci = 0;
+        for (let i = 0; i < topB.length; i++, ci++)
+            drawChar(topB[i], sl+i*cw, st, btn.z, '#00ff41', getCharRotWithReturn(btn, ci), glowAlpha);
+        drawChar(ls, sl, st+lh, btn.z, '#00ff41', getCharRotWithReturn(btn, ci++), glowAlpha);
+        for (let i = 0; i < btn.label.length; i++, ci++)
+            drawChar(btn.label[i], sl+cw+padX+i*cw, st+lh, btn.z, '#00ff41', getCharRotWithReturn(btn, ci), glowAlpha);
+        drawChar(rs, sl+borderWidth-cw, st+lh, btn.z, '#00ff41', getCharRotWithReturn(btn, ci++), glowAlpha);
+        for (let i = 0; i < botB.length; i++, ci++)
+            drawChar(botB[i], sl+i*cw, st+lh*2, btn.z, '#00ff41', getCharRotWithReturn(btn, ci), glowAlpha);
+    }
 
     ctx.globalAlpha = 1;
-    ctx.font = FONT;
     btn.rect = btn.fullRect = { x: sl, y: st, w: borderWidth, h: totalHeight };
 }
 
-// ── Input ─────────────────────────────────────────────────────────────────────
 function drawInput(inp) {
     ctx.font = FONT;
     ctx.textAlign = 'left';
     ctx.textBaseline = 'top';
-
-    const cw = ctx.measureText('M').width;
-    const refW = ctx.measureText(inp.placeholder).width;
+    const cw = charWidth();
+    const refW = inp.placeholder.length * cw;
     const padX = cw * 2;
     const innerWidth = refW + padX * 2;
     const borderWidth = innerWidth + cw * 2;
@@ -229,74 +289,87 @@ function drawInput(inp) {
     const topB = '+' + '-'.repeat(dashCount) + '+';
     const botB = '+' + '-'.repeat(dashCount) + '+';
     const borderColor = inp.focused ? '#00ff41' : '#007a1f';
-
     let ci = 0;
-    for (let i = 0; i < topB.length; i++, ci++)
-        drawChar(topB[i], sl+i*cw, st, getCharZ(inp.phase + ci * 0.7, inp.z), borderColor);
-    drawChar('|', sl, textY, getCharZ(inp.phase + ci * 0.7, inp.z), borderColor); ci++;
-    drawChar('|', sl+borderWidth-cw, textY, getCharZ(inp.phase + ci * 0.7, inp.z), borderColor); ci++;
-    for (let i = 0; i < botB.length; i++, ci++)
-        drawChar(botB[i], sl+i*cw, st+lh*2, getCharZ(inp.phase + ci * 0.7, inp.z), borderColor);
-
+    for (let i = 0; i < topB.length; i++, ci++) {
+        const rotAngle = Math.sin(elapsed * CHAR_ROT_SPEED + inp.phase + ci * 0.7 + Math.PI) * CHAR_ROT_MAX;
+        drawChar(topB[i], sl+i*cw, st, getCharZ(inp.phase + ci * 0.7, inp.z), borderColor, rotAngle);
+    }
+    let rotAngle = Math.sin(elapsed * CHAR_ROT_SPEED + inp.phase + ci * 0.7 + Math.PI) * CHAR_ROT_MAX;
+    drawChar('|', sl, textY, getCharZ(inp.phase + ci * 0.7, inp.z), borderColor, rotAngle); ci++;
+    rotAngle = Math.sin(elapsed * CHAR_ROT_SPEED + inp.phase + ci * 0.7 + Math.PI) * CHAR_ROT_MAX;
+    drawChar('|', sl+borderWidth-cw, textY, getCharZ(inp.phase + ci * 0.7, inp.z), borderColor, rotAngle); ci++;
+    for (let i = 0; i < botB.length; i++, ci++) {
+        rotAngle = Math.sin(elapsed * CHAR_ROT_SPEED + inp.phase + ci * 0.7 + Math.PI) * CHAR_ROT_MAX;
+        drawChar(botB[i], sl+i*cw, st+lh*2, getCharZ(inp.phase + ci * 0.7, inp.z), borderColor, rotAngle);
+    }
     const hasSelection = inp.selStart !== inp.selEnd;
-    const totalTextWidth = inp.value.length === 0 ? 0 : ctx.measureText(inp.value).width;
+    const totalTextWidth = inp.value.length * cw;
     const textStartX = inp.value.length === 0 ? centerX - cw/2 : centerX - totalTextWidth/2;
 
+    // Draw cursor rectangle before text (like selection rectangle)
+    if (inp.focused && inp.cursorVisible && !hasSelection) {
+        const cursorX = textStartX + inp.cursorPos * cw;
+        const refGlyph = otFont.charToGlyph('M');
+        const refScale = FONT_SIZE / otFont.unitsPerEm;
+        const refBbox = refGlyph.getBoundingBox();
+        const glyphTop = (textY + FONT_SIZE) - refBbox.y2 * refScale;
+        const glyphH = (refBbox.y2 - refBbox.y1) * refScale;
+        const extendAmount = 6;
+        ctx.globalAlpha = 1;
+        ctx.fillStyle = '#00ff41';
+        ctx.fillRect(cursorX, glyphTop - extendAmount, cw - 2, glyphH + extendAmount * 2);
+    }
+
     if (inp.value.length === 0 && !inp.focused) {
-        const phW = ctx.measureText(inp.placeholder).width;
+        const phW = inp.placeholder.length * cw;
         const phX = centerX - phW / 2;
-        for (let i = 0; i < inp.placeholder.length; i++, ci++)
-            drawChar(inp.placeholder[i], phX + i*cw, textY, getCharZ(inp.phase + ci * 0.7, inp.z), '#003d0f');
+        for (let i = 0; i < inp.placeholder.length; i++, ci++) {
+            const rotAngle = Math.sin(elapsed * CHAR_ROT_SPEED + inp.phase + ci * 0.7 + Math.PI) * CHAR_ROT_MAX;
+            drawChar(inp.placeholder[i], phX + i*cw, textY, getCharZ(inp.phase + ci * 0.7, inp.z), '#003d0f', rotAngle);
+        }
     } else if (hasSelection && inp.focused) {
         const selMin = Math.min(inp.selStart, inp.selEnd);
         const selMax = Math.max(inp.selStart, inp.selEnd);
-        const selX = textStartX + ctx.measureText(inp.value.slice(0, selMin)).width;
-        const selW = ctx.measureText(inp.value.slice(selMin, selMax)).width;
+        const isBackwardSelection = inp.selStart > inp.selEnd;
+        const selX = textStartX + selMin * cw;
+        const selW = (selMax - selMin + 1) * cw;
+        const refGlyph2 = otFont.charToGlyph('M');
+        const refScale2 = FONT_SIZE / otFont.unitsPerEm;
+        const refBbox2 = refGlyph2.getBoundingBox();
+        const selTop = (textY + FONT_SIZE) - refBbox2.y2 * refScale2;
+        const selH = (refBbox2.y2 - refBbox2.y1) * refScale2;
+        const extendAmount = 6;
         ctx.globalAlpha = 1;
         ctx.fillStyle = '#00ff41';
-        ctx.fillRect(selX, textY, selW, FONT_SIZE - 4);
+        ctx.fillRect(selX, selTop - extendAmount, selW, selH + extendAmount * 2);
         for (let i = 0; i < inp.value.length; i++, ci++) {
-            const isSel = i >= selMin && i < selMax;
-            drawChar(inp.value[i], textStartX + i*cw, textY, getCharZ(inp.phase + ci * 0.7, inp.z), isSel ? 'black' : '#00ff41');
+            const isSel = i >= selMin && i <= selMax;
+            const rotAngle = Math.sin(elapsed * CHAR_ROT_SPEED + inp.phase + ci * 0.7 + Math.PI) * CHAR_ROT_MAX;
+            drawChar(inp.value[i], textStartX + i*cw, textY, getCharZ(inp.phase + ci * 0.7, inp.z), isSel ? 'black' : '#00ff41', rotAngle);
         }
     } else {
         const color = inp.focused ? '#00ff41' : '#007a1f';
-        for (let i = 0; i < inp.value.length; i++, ci++)
-            drawChar(inp.value[i], textStartX + i*cw, textY, getCharZ(inp.phase + ci * 0.7, inp.z), color);
-    }
-
-    if (inp.focused && inp.cursorVisible && !hasSelection) {
-        const cursorX = textStartX + ctx.measureText(inp.value.slice(0, inp.cursorPos)).width;
-        ctx.globalAlpha = 1;
-        ctx.fillStyle = '#00ff41';
-        ctx.fillRect(cursorX, textY, cw - 2, FONT_SIZE - 4);
-        const charUnder = inp.value[inp.cursorPos];
-        if (charUnder) {
-            ctx.fillStyle = 'black';
-            ctx.font = FONT;
-            ctx.fillText(charUnder, cursorX, textY);
+        for (let i = 0; i < inp.value.length; i++, ci++) {
+            const rotAngle = Math.sin(elapsed * CHAR_ROT_SPEED + inp.phase + ci * 0.7 + Math.PI) * CHAR_ROT_MAX;
+            const charColor = inp.focused && inp.cursorVisible && i === inp.cursorPos ? 'black' : color;
+            drawChar(inp.value[i], textStartX + i*cw, textY, getCharZ(inp.phase + ci * 0.7, inp.z), charColor, rotAngle);
         }
     }
-
     ctx.globalAlpha = 1;
-    ctx.font = FONT;
     inp.rect = { x: sl, y: st, w: borderWidth, h: totalHeight, textStartX, charWidth: cw };
 }
 
-// ── Slider ────────────────────────────────────────────────────────────────────
 function drawSlider(s) {
     ctx.font = FONT;
     ctx.textAlign = 'left';
     ctx.textBaseline = 'top';
-
-    const cw = ctx.measureText('M').width;
+    const cw = charWidth();
     const totalChars = 20;
     const trackWidth = totalChars * cw;
     const totalWidth = trackWidth + cw * 2;
     const left = s.x - totalWidth / 2;
     const t = (s.value - s.min) / (s.max - s.min);
     const handlePos = Math.min(Math.floor(t * totalChars), totalChars - 2);
-
     const chars = ['|'];
     for (let i = 0; i < totalChars; i++) {
         if (i === handlePos) chars.push('[');
@@ -304,55 +377,50 @@ function drawSlider(s) {
         else chars.push(i < handlePos ? '=' : '-');
     }
     chars.push('|');
-
+    const labelPath = otFont.getPath(s.label + ': ' + s.value, left, s.y, FONT_SIZE);
+    labelPath.fill = '#00ff41';
     ctx.globalAlpha = 1;
-    ctx.fillStyle = '#00ff41';
-    ctx.fillText(s.label + ': ' + s.value, left, s.y - FONT_SIZE);
-
+    labelPath.draw(ctx);
     const trackStartX = left - cw;
-    for (let i = 0; i < chars.length; i++)
-        drawChar(chars[i], trackStartX + i*cw, s.y, getCharZ(s.phase + i * 0.7, s.z));
-
+    for (let i = 0; i < chars.length; i++) {
+        const rotAngle = Math.sin(elapsed * CHAR_ROT_SPEED + s.phase + i * 0.7 + Math.PI) * CHAR_ROT_MAX;
+        drawChar(chars[i], trackStartX + i*cw, s.y, getCharZ(s.phase + i * 0.7, s.z), '#00ff41', rotAngle);
+    }
     ctx.globalAlpha = 1;
     ctx.font = FONT;
     s.rect = { x: left, y: s.y - FONT_SIZE/2, w: totalWidth, h: FONT_SIZE*2, totalChars, left, trackWidth };
 }
 
-// ── Z Visualizer ──────────────────────────────────────────────────────────────
 function drawZViz() {
     const z = zViz.value;
     const scale = zToScale(z);
     const alpha = zToAlpha(z);
     const vx = zViz.x, vy = zViz.y;
-
+    const VIZ_FONT = 20;
+    const cw = otFont.getAdvanceWidth('M', VIZ_FONT);
+    const totalChars = 20;
+    const trackWidth = totalChars * cw;
     ctx.globalAlpha = 1;
     ctx.fillStyle = '#00ff41';
     ctx.textAlign = 'left';
     ctx.textBaseline = 'top';
     ctx.font = '20px "IBMVGA"';
     ctx.fillText('Z VISUALIZER', vx, vy);
-
-    const cw = ctx.measureText('M').width;
-    const totalChars = 20;
-    const trackWidth = totalChars * cw;
     const t = (z - zViz.min) / (zViz.max - zViz.min);
     const handlePos = Math.floor(t * totalChars);
     let track = '';
     for (let i = 0; i < totalChars; i++) track += i < handlePos ? '=' : '-';
     ctx.fillText('|' + track.slice(0,handlePos) + '[]' + track.slice(handlePos) + '|', vx - cw, vy + 28);
     zViz.rect = { x: vx, y: vy+24, w: trackWidth, h: 28, left: vx, trackWidth };
-
     ctx.font = '16px "IBMVGA"';
     ctx.fillText('1.0 (CLOSE)', vx, vy+60);
     ctx.textAlign = 'right';
     ctx.fillText('3.0 (FAR)', vx+trackWidth, vy+60);
     ctx.textAlign = 'left';
-
     ctx.font = '18px "IBMVGA"';
     ctx.fillText(`z:     ${z.toFixed(3)}`, vx, vy+90);
     ctx.fillText(`scale: ${scale.toFixed(3)}`, vx, vy+112);
     ctx.fillText(`alpha: ${alpha.toFixed(3)}`, vx, vy+134);
-
     ctx.font = '14px "IBMVGA"';
     ctx.fillStyle = '#007a1f';
     ctx.fillText(`float: ${Z_FLOAT_MIN.toFixed(1)}-${Z_FLOAT_MAX.toFixed(1)}  pressed: ${Z_PRESSED.toFixed(1)}`, vx, vy+162);
@@ -362,12 +430,57 @@ function drawZViz() {
     ctx.strokeStyle = '#003d0f';
     ctx.lineWidth = 1;
     ctx.strokeRect(boxX, boxY, boxW, boxH);
+
+    // Draw VIZ_CHAR centered in box
+    const vizSize = 64 * scale;
+    const charW = otFont.getAdvanceWidth('M', vizSize);
+    const charDrawX = boxX + boxW/2 - charW/2;
+    const charDrawY = boxY + (boxH - vizSize) / 2; // top of slot
+    const charPath = otFont.getPath(VIZ_CHAR, charDrawX, charDrawY + vizSize, vizSize);
+    charPath.fill = '#00ff41';
     ctx.globalAlpha = alpha;
-    ctx.font = `${Math.round(64*scale)}px "IBMVGA"`;
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    ctx.fillStyle = '#00ff41';
-    ctx.fillText('M', boxX+boxW/2, boxY+boxH/2);
+    charPath.draw(ctx);
+
+    // Collision visualization — center dot + radius line
+    const col = getCharCollision(VIZ_CHAR, charDrawX, charDrawY, vizSize);
+    ctx.globalAlpha = 1;
+
+    // Center crosshair
+    ctx.strokeStyle = '#00ffff';
+    ctx.lineWidth = 1.5;
+    const cross = 5;
+    ctx.beginPath();
+    ctx.moveTo(col.cx - cross, col.cy);
+    ctx.lineTo(col.cx + cross, col.cy);
+    ctx.moveTo(col.cx, col.cy - cross);
+    ctx.moveTo(col.cx, col.cy - cross);
+    ctx.lineTo(col.cx, col.cy + cross);
+    ctx.stroke();
+
+    // Radius line pointing right
+    ctx.strokeStyle = '#ff00ff';
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.moveTo(col.cx, col.cy);
+    ctx.lineTo(col.cx + col.radius, col.cy);
+    ctx.stroke();
+
+    // Full collision circle
+    ctx.strokeStyle = '#ff00ff';
+    ctx.lineWidth = 1.5;
+    ctx.globalAlpha = 0.5;
+    ctx.beginPath();
+    ctx.arc(col.cx, col.cy, col.radius, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.globalAlpha = 1;
+
+    // Radius label
+    ctx.globalAlpha = 1;
+    ctx.fillStyle = '#ff00ff';
+    ctx.font = '14px "IBMVGA"';
+    ctx.textAlign = 'left';
+    ctx.fillText(`r=${col.radius.toFixed(1)}`, col.cx + col.radius + 4, col.cy - 8);
+    ctx.fillText(`char: ${VIZ_CHAR}`, boxX, boxY + boxH + 8);
 
     ctx.globalAlpha = 1;
     ctx.font = FONT;
@@ -375,57 +488,52 @@ function drawZViz() {
     ctx.textBaseline = 'top';
 }
 
-// ── Update ────────────────────────────────────────────────────────────────────
 let lastTime = performance.now();
 
 function updateZ(el, dt) {
     const r = el.fullRect || el.rect;
     const over = r && mouseX>=r.x && mouseX<=r.x+r.w && mouseY>=r.y && mouseY<=r.y+r.h;
     const isPressed = el === pressedButton && mouseIsDown && over;
-
     if (isPressed) {
         el.z = Math.min(Z_PRESSED, el.z + dt * Z_PRESS_SPEED);
     } else if (el.releasePhase === 'releasing') {
         el.z -= dt * Z_RETURN_SPEED;
-        if (el.z <= 1.0) {
-            el.z = 1.0;
-            el.releasePhase = 'glowing';
-            el.glowT = 0;
+        if (el.charRot) {
+            const rotSpeed = CHAR_ROT_MAX * 2 * CHAR_ROT_SPEED * dt / 1000 * 50;
+            for (let i = 0; i < el.charRot.length; i++) {
+                if (Math.abs(el.charRot[i]) <= rotSpeed) { el.charRot[i] = 0; }
+                else { el.charRot[i] += Math.sign(0 - el.charRot[i]) * rotSpeed; }
+            }
         }
+        if (el.z <= 1.0) { el.z = 1.0; el.releasePhase = 'glowing'; el.glowT = 0; }
     } else if (el.releasePhase === 'glowing') {
         el.glowT += dt * 0.001;
         if (el.glowT >= 1.0) {
-            el.glowT = 0;
-            el.releasePhase = 'returning';
-            el._fireClick = true;
-            if (el.charPhases) {
-                el.charZ = new Array(200).fill(1.0);
-            }
+            el.glowT = 0; el.releasePhase = 'returning'; el._fireClick = true;
+            if (el.charPhases) { el.charZ = new Array(200).fill(1.0); el.charRot = new Array(200).fill(0.0); }
         }
     } else if (el.releasePhase === 'returning') {
         if (el.charZ) {
             let allDone = true;
             const speed = (Z_FLOAT_MAX - Z_FLOAT_MIN) * Z_FLOAT_SPEED * dt / 1000;
+            const rotSpeed = CHAR_ROT_MAX * 2 * CHAR_ROT_SPEED * dt / 1000;
             for (let i = 0; i < el.charZ.length; i++) {
-                const target = getCharZ(el.charPhases[i], Z_FLOAT_MIN);
-                const diff = target - el.charZ[i];
-                if (Math.abs(diff) <= speed) {
-                    el.charZ[i] = target; // arrived — now just tracks the sine
-                } else {
-                    el.charZ[i] += Math.sign(diff) * speed;
-                    allDone = false;
+                const targetZ = getCharZ(el.charPhases[i], Z_FLOAT_MIN);
+                const diffZ = targetZ - el.charZ[i];
+                if (Math.abs(diffZ) <= speed) { el.charZ[i] = targetZ; }
+                else { el.charZ[i] += Math.sign(diffZ) * speed; allDone = false; }
+                if (el.charRot) {
+                    const targetRot = Math.sin(elapsed * CHAR_ROT_SPEED + el.charPhases[i] + Math.PI) * CHAR_ROT_MAX;
+                    const diffRot = targetRot - el.charRot[i];
+                    if (Math.abs(diffRot) <= rotSpeed) { el.charRot[i] = targetRot; }
+                    else { el.charRot[i] += Math.sign(diffRot) * rotSpeed; }
                 }
             }
-            if (allDone) {
-                el.z = Z_FLOAT_MIN;
-                el.releasePhase = null;
-                el.charZ = null;
-            }
+            if (allDone) { el.z = Z_FLOAT_MIN; el.releasePhase = null; el.charZ = null; el.charRot = null; }
         }
     } else {
-        if (el.z > Z_FLOAT_MIN + 0.01) {
+        if (el.z > Z_FLOAT_MIN + 0.01)
             el.z += (Z_FLOAT_MIN - el.z) * Math.min(1, dt * Z_RETURN_SPEED);
-        }
     }
 }
 
@@ -433,55 +541,32 @@ function update(now) {
     const dt = now - lastTime;
     lastTime = now;
     elapsed += dt / 1000;
-
     buttons.forEach(btn => {
         const inside = btn.rect && mouseX>=btn.rect.x && mouseX<=btn.rect.x+btn.rect.w && mouseY>=btn.rect.y && mouseY<=btn.rect.y+btn.rect.h;
         btn.hoverProgress = inside ? Math.min(1, btn.hoverProgress+dt/ANIM_DURATION) : Math.max(0, btn.hoverProgress-dt/ANIM_DURATION);
         updateZ(btn, dt);
-        if (btn._fireClick) {
-            btn._fireClick = false;
-            btn.onClick();
-        }
+        if (btn._fireClick) { btn._fireClick = false; btn.onClick(); }
     });
     inputs.forEach(inp => {
         updateZ(inp, dt);
-        if (inp.focused && now - inp.lastBlink > CURSOR_BLINK_RATE) {
-            inp.cursorVisible = !inp.cursorVisible;
-            inp.lastBlink = now;
-        }
+        if (inp.focused && now - inp.lastBlink > CURSOR_BLINK_RATE) { inp.cursorVisible = !inp.cursorVisible; inp.lastBlink = now; }
     });
     sliders.forEach(s => updateZ(s, dt));
 }
 
-// ── Loop ──────────────────────────────────────────────────────────────────────
 function loop() {
     const now = performance.now();
     update(now);
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     ctx.fillStyle = 'black';
     ctx.fillRect(0, 0, canvas.width, canvas.height);
-
     inputs.forEach(inp => drawInput(inp));
     buttons.forEach(btn => drawButton(btn));
     sliders.forEach(s => drawSlider(s));
     drawZViz();
-
-    if (clickedPopup) {
-        const age = performance.now() - clickedPopup.time;
-        if (age < 1000) {
-            ctx.globalAlpha = Math.max(0, 1-age/600);
-            ctx.font = '24px "IBMVGA"';
-            ctx.fillStyle = '#00ff41';
-            ctx.textAlign = 'center';
-            ctx.textBaseline = 'top';
-            ctx.fillText('[ '+clickedPopup.text+' CLICKED! ]', canvas.width/2, 40);
-            ctx.globalAlpha = 1;
-        } else { clickedPopup = null; }
-    }
     requestAnimationFrame(loop);
 }
 
-// ── Events ────────────────────────────────────────────────────────────────────
 canvas.addEventListener('mousemove', e => {
     const r = canvas.getBoundingClientRect();
     mouseX = e.clientX - r.left;
@@ -506,12 +591,10 @@ canvas.addEventListener('mousedown', e => {
     const mx = e.clientX-r.left, my = e.clientY-r.top;
     mouseIsDown = true;
     pressedButton = null;
-
     buttons.forEach(btn => {
         if (btn.rect && mx>=btn.rect.x && mx<=btn.rect.x+btn.rect.w && my>=btn.rect.y && my<=btn.rect.y+btn.rect.h)
             pressedButton = btn;
     });
-
     let clickedInput = null;
     inputs.forEach(inp => {
         if (inp.rect && mx>=inp.rect.x && mx<=inp.rect.x+inp.rect.w && my>=inp.rect.y && my<=inp.rect.y+inp.rect.h)
@@ -526,12 +609,10 @@ canvas.addEventListener('mousedown', e => {
         inp.cursorVisible = true; inp.lastBlink = performance.now();
     });
     focusedInput = clickedInput;
-
     sliders.forEach(s => {
         if (s.rect && mx>=s.rect.x && mx<=s.rect.x+s.rect.w && my>=s.rect.y && my<=s.rect.y+s.rect.h)
             dragging = s;
     });
-
     if (zViz.rect && mx>=zViz.rect.x && mx<=zViz.rect.x+zViz.rect.trackWidth && my>=zViz.rect.y && my<=zViz.rect.y+zViz.rect.h) {
         draggingZViz = true;
         zViz.value = zViz.min + Math.max(0,Math.min(1,(mx-zViz.rect.left)/zViz.rect.trackWidth))*(zViz.max-zViz.min);
@@ -549,6 +630,9 @@ canvas.addEventListener('mouseup', e => {
             btn.releasePhase = 'releasing';
             btn.glowT = 0;
             btn._fireClick = false;
+            if (btn.charPhases) {
+                btn.charRot = btn.charPhases.map(phase => Math.sin(elapsed * CHAR_ROT_SPEED + phase + Math.PI) * CHAR_ROT_MAX);
+            }
         }
         pressedButton = null;
     }
@@ -557,17 +641,39 @@ canvas.addEventListener('mouseup', e => {
     if (focusedInput) focusedInput.selecting = false;
 });
 
+canvas.addEventListener('dblclick', e => {
+    const r = canvas.getBoundingClientRect();
+    const mx = e.clientX - r.left, my = e.clientY - r.top;
+    inputs.forEach(inp => {
+        if (inp.rect && mx >= inp.rect.x && mx <= inp.rect.x + inp.rect.w && my >= inp.rect.y && my <= inp.rect.y + inp.rect.h) {
+            if (inp.value.length > 0) {
+                inp.selStart = 0;
+                inp.selEnd = inp.value.length;
+                inp.cursorPos = inp.value.length;
+            }
+        }
+    });
+});
+
 function getCharIndex(inp, mx) {
     if (!inp.rect) return 0;
-    ctx.font = FONT;
     const tx = inp.rect.textStartX;
-    let closest = 0, closestDist = Infinity;
-    for (let i = 0; i <= inp.value.length; i++) {
-        const x = tx + ctx.measureText(inp.value.slice(0,i)).width;
-        const d = Math.abs(mx-x);
-        if (d < closestDist) { closestDist = d; closest = i; }
+    const cw = charWidth();
+
+    // Check each character's actual bounds using glyph collision detection
+    for (let i = 0; i < inp.value.length; i++) {
+        const charX = tx + i * cw;
+        const col = getCharCollision(inp.value[i], charX, inp.rect.y + FONT_SIZE/2, FONT_SIZE);
+        const charLeft = col.cx - col.radius;
+        const charRight = col.cx + col.radius;
+
+        if (mx >= charLeft && mx <= charRight) {
+            return i;
+        }
     }
-    return closest;
+
+    // If not over any character, return nearest position
+    return Math.max(0, Math.min(inp.value.length, Math.round((mx - tx) / cw)));
 }
 
 window.addEventListener('keydown', e => {
@@ -575,14 +681,21 @@ window.addEventListener('keydown', e => {
     const inp = focusedInput;
     const hasSel = inp.selStart !== inp.selEnd;
     if (e.key === 'Backspace') {
-        if (hasSel) { const a=Math.min(inp.selStart,inp.selEnd),b=Math.max(inp.selStart,inp.selEnd); inp.value=inp.value.slice(0,a)+inp.value.slice(b); inp.cursorPos=a; inp.selStart=a; inp.selEnd=a; }
+        if (hasSel) { const a=Math.min(inp.selStart,inp.selEnd),b=Math.max(inp.selStart,inp.selEnd); inp.value=inp.value.slice(0,a)+inp.value.slice(b+1); inp.cursorPos=a; inp.selStart=a; inp.selEnd=a; }
         else if (inp.cursorPos>0) { inp.value=inp.value.slice(0,inp.cursorPos-1)+inp.value.slice(inp.cursorPos); inp.cursorPos--; inp.selStart=inp.cursorPos; inp.selEnd=inp.cursorPos; }
+        inp.cursorVisible=true; inp.lastBlink=performance.now();
+    } else if (e.key === 'Delete') {
+        if (hasSel) { const a=Math.min(inp.selStart,inp.selEnd),b=Math.max(inp.selStart,inp.selEnd); inp.value=inp.value.slice(0,a)+inp.value.slice(b+1); inp.cursorPos=a; inp.selStart=a; inp.selEnd=a; }
+        else if (inp.cursorPos<inp.value.length) { inp.value=inp.value.slice(0,inp.cursorPos)+inp.value.slice(inp.cursorPos+1); inp.selStart=inp.cursorPos; inp.selEnd=inp.cursorPos; }
+        inp.cursorVisible=true; inp.lastBlink=performance.now();
     } else if (e.key==='ArrowLeft') {
         e.preventDefault(); inp.cursorPos=Math.max(0,inp.cursorPos-1);
         if (e.shiftKey) inp.selEnd=inp.cursorPos; else { inp.selStart=inp.cursorPos; inp.selEnd=inp.cursorPos; }
+        inp.cursorVisible=true; inp.lastBlink=performance.now();
     } else if (e.key==='ArrowRight') {
         e.preventDefault(); inp.cursorPos=Math.min(inp.value.length,inp.cursorPos+1);
         if (e.shiftKey) inp.selEnd=inp.cursorPos; else { inp.selStart=inp.cursorPos; inp.selEnd=inp.cursorPos; }
+        inp.cursorVisible=true; inp.lastBlink=performance.now();
     } else if (e.key==='Tab'||e.key==='ArrowDown') {
         e.preventDefault(); const idx=inputs.indexOf(inp),next=inputs[(idx+1)%inputs.length];
         inp.focused=false; next.focused=true; next.cursorVisible=true; next.lastBlink=performance.now(); focusedInput=next;

@@ -170,10 +170,10 @@ export class LobbyScreen {
 
         let by = previewY + previewH + 55;
         if (this.isHost) {
-            this.ui.buttons.push(makeButton('START GAME', cx, by, () => this.onStart()));
+            this.ui.buttons.push(makeButton('START GAME', cx, by, () => this.onStart(), { blocksInput: true }));
             by += 95;
         }
-        this.ui.buttons.push(makeButton('MAIN MENU', cx, by, () => this.onMainMenu()));
+        this.ui.buttons.push(makeButton('MAIN MENU', cx, by, () => this.onMainMenu(), { blocksInput: true }));
     }
 
     draw() {

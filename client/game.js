@@ -7,6 +7,7 @@ import { SettingsScreen } from './screens/SettingsScreen.js';
 import { LobbyScreen } from './screens/LobbyScreen.js';
 import { GameScreen } from './screens/GameScreen.js';
 import { makeButton, drawButton } from './ui/Button.js';
+import { initFont } from './ui/Font.js';
 import { CRTEffect } from './CRTShader.js';
 import { DELMode } from './modes/DELmode.js';
 
@@ -141,13 +142,16 @@ async function tryReconnect() {
     } catch (e) {
         localStorage.removeItem('reconnectionToken');
         uiManager.blocked = false;
+        uiManager.lastTime = performance.now();
         showScreen('main');
     }
 }
 
 window.addEventListener('load', () => {
-    document.fonts.load('32px IBMVGA').then(() => {
+    initFont(FONT_SIZE).then(() => {
         tryReconnect();
+    }).catch(err => {
+        console.error('Font load failed:', err);
     });
 });
 
@@ -181,7 +185,7 @@ function onRoomJoined(r) {
     setupRoomMessages();
 }
 
-// --- Game Over Overlay (shared across all modes) ---
+// --- Game Over Overlay ---
 
 let gameOverBtns = { playAgain: null, returnToLobby: null };
 
@@ -196,7 +200,7 @@ function showGameOverOverlay(winner) {
     gameOverBtns.returnToLobby = makeButton('RETURN TO LOBBY', cx, cy + 155,
         () => room.send('voteReturnToLobby'));
     const mainMenuBtn = makeButton('MAIN MENU', cx, cy + 250,
-        () => { hideGameOverOverlay(); room.send('leaveToMenu'); });
+        () => { hideGameOverOverlay(); room.send('leaveToMenu'); }, { blocksInput: true });
 
     uiManager.buttons.push(gameOverBtns.playAgain);
     uiManager.buttons.push(gameOverBtns.returnToLobby);
@@ -274,7 +278,6 @@ function setupRoomMessages(isReconnecting = false) {
         gameOverBtns.returnToLobby.active = myVote;
     });
 
-    // Route all other messages to the active mode
     const modeMessages = [
         'roundCountdown', 'roundStart', 'gameState', 'charUpdate',
         'roundOver', 'timeUp', 'matchOver', 'gameOver', 'reconnected'
@@ -286,6 +289,7 @@ function setupRoomMessages(isReconnecting = false) {
                 currentScreen = 'game';
                 uiManager.clear();
                 uiManager.blocked = false;
+                uiManager.lastTime = performance.now();
                 resizeCanvas();
             }
             if (currentMode) currentMode.onMessage(type, data);
@@ -415,6 +419,7 @@ canvas.addEventListener('click', (e) => {
         if (hits(getModalOkRect())) {
             modalMessage = null;
             uiManager.blocked = false;
+            uiManager.lastTime = performance.now();
         }
         return;
     }

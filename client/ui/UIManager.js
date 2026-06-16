@@ -1,3 +1,5 @@
+import { updateButtonZ } from './Button.js';
+
 export class UIManager {
     constructor(canvas, ctx) {
         this.canvas = canvas;
@@ -13,6 +15,8 @@ export class UIManager {
         this.lastTime = performance.now();
         this.blocked = false;
         this.coordTransform = null;
+        this.pressedButton = null;
+        this.mouseIsDown = false;
 
         this._bindEvents();
     }
@@ -20,8 +24,7 @@ export class UIManager {
     _bindEvents() {
         this.canvas.addEventListener('mousemove', e => this._onMouseMove(e));
         this.canvas.addEventListener('mousedown', e => this._onMouseDown(e));
-        this.canvas.addEventListener('mouseup', () => this._onMouseUp());
-        this.canvas.addEventListener('click', e => this._onClick(e));
+        this.canvas.addEventListener('mouseup', e => this._onMouseUp(e));
         window.addEventListener('keydown', e => this._onKeyDown(e));
     }
 
@@ -57,6 +60,17 @@ export class UIManager {
         if (this.blocked) return;
 
         const { x, y } = this._getPos(e);
+        this.mouseIsDown = true;
+        this.pressedButton = null;
+
+        // Set pressedButton only if mousedown starts on a button
+        this.buttons.forEach(btn => {
+            if (btn.disabled) return;
+            if (btn.rect && this._hitTest(btn.rect, x, y)) {
+                this.pressedButton = btn;
+                btn._isPressed = true;
+            }
+        });
 
         let clickedInput = null;
         this.inputs.forEach(inp => {
@@ -87,22 +101,32 @@ export class UIManager {
         });
     }
 
-    _onMouseUp() {
+    _onMouseUp(e) {
+        const { x, y } = this._getPos(e);
+        this.mouseIsDown = false;
+
+        if (this.pressedButton) {
+            const btn = this.pressedButton;
+            const stillOver = btn.rect && this._hitTest(btn.rect, x, y);
+            if (stillOver && !btn.disabled) {
+                if (btn.plain) {
+                    btn.onClick();
+                } else {
+                    btn.releasePhase = 'releasing';
+                    btn.glowT = 0;
+                    btn._fireClick = false;
+                    if (btn.blocksInput) {
+                        this.blocked = true;
+                        this.lastTime = performance.now();
+                    }
+                }
+            }
+            btn._isPressed = false;
+            this.pressedButton = null;
+        }
+
         this.draggingSlider = null;
         if (this.focusedInput) this.focusedInput.selecting = false;
-    }
-
-    _onClick(e) {
-        console.log('click fired', this.blocked, this.buttons.length);
-        if (this.blocked) return;
-
-        const { x, y } = this._getPos(e);
-        this.buttons.forEach(btn => {
-            if (btn.disabled) return;
-            if (btn.rect && this._hitTest(btn.rect, x, y)) {
-                btn.onClick();
-            }
-        });
     }
 
     _onKeyDown(e) {
@@ -179,21 +203,13 @@ export class UIManager {
         } else if (e.key === 'ArrowLeft') {
             e.preventDefault();
             inp.cursorPos = Math.max(0, inp.cursorPos - 1);
-            if (e.shiftKey) {
-                inp.selEnd = inp.cursorPos;
-            } else {
-                inp.selStart = inp.cursorPos;
-                inp.selEnd = inp.cursorPos;
-            }
+            if (e.shiftKey) { inp.selEnd = inp.cursorPos; }
+            else { inp.selStart = inp.cursorPos; inp.selEnd = inp.cursorPos; }
         } else if (e.key === 'ArrowRight') {
             e.preventDefault();
             inp.cursorPos = Math.min(inp.value.length, inp.cursorPos + 1);
-            if (e.shiftKey) {
-                inp.selEnd = inp.cursorPos;
-            } else {
-                inp.selStart = inp.cursorPos;
-                inp.selEnd = inp.cursorPos;
-            }
+            if (e.shiftKey) { inp.selEnd = inp.cursorPos; }
+            else { inp.selStart = inp.cursorPos; inp.selEnd = inp.cursorPos; }
         } else if (e.key === 'Tab' || e.key === 'ArrowDown') {
             e.preventDefault();
             this._focusNextInput(1);
@@ -201,13 +217,10 @@ export class UIManager {
             e.preventDefault();
             this._focusNextInput(-1);
         } else if (e.key === 'Enter') {
-            // Trigger focused button if any
             const btn = this.buttons.find(b => b.isDefault);
             if (btn) btn.onClick();
         } else if (e.key.length === 1 && !e.ctrlKey && !e.metaKey) {
-            if (hasSelection) {
-                this._deleteSelection(inp);
-            }
+            if (hasSelection) this._deleteSelection(inp);
             if (inp.value.length < inp.maxLength) {
                 inp.value = inp.value.slice(0, inp.cursorPos) + e.key.toUpperCase() + inp.value.slice(inp.cursorPos);
                 inp.cursorPos++;
@@ -246,41 +259,48 @@ export class UIManager {
     _getCharIndex(inp, mx) {
         if (!inp.rect) return 0;
         const textStartX = inp.rect.textStartX;
-        let closest = 0;
-        let closestDist = Infinity;
+        let closest = 0, closestDist = Infinity;
         for (let i = 0; i <= inp.value.length; i++) {
             const x = textStartX + this.ctx.measureText(inp.value.slice(0, i)).width;
             const dist = Math.abs(mx - x);
-            if (dist < closestDist) {
-                closestDist = dist;
-                closest = i;
-            }
+            if (dist < closestDist) { closestDist = dist; closest = i; }
         }
         return closest;
     }
 
     update(now) {
-        if (this.blocked) return;
-
         const dt = now - this.lastTime;
         this.lastTime = now;
+
         this.elapsed += dt / 1000;
 
         this.buttons.forEach(btn => {
             if (btn.disabled) { btn.hoverProgress = 0; return; }
             const inside = btn.rect && this._hitTest(btn.rect, this.mouseX, this.mouseY);
-            if (inside) {
-                btn.hoverProgress = Math.min(1, btn.hoverProgress + dt / 333);
-            } else {
-                btn.hoverProgress = Math.max(0, btn.hoverProgress - dt / 333);
+            btn.hoverProgress = inside
+                ? Math.min(1, btn.hoverProgress + dt / 333)
+                : Math.max(0, btn.hoverProgress - dt / 333);
+
+            updateButtonZ(btn, dt, this.elapsed, this.pressedButton, this.mouseIsDown, this.mouseX, this.mouseY);
+
+            if (btn._fireClick) {
+                btn._fireClick = false;
+                btn.onClick();
             }
         });
+
+        if (this.blocked) return;
 
         this.inputs.forEach(inp => {
             if (inp.focused && now - inp.lastBlink > 500) {
                 inp.cursorVisible = !inp.cursorVisible;
                 inp.lastBlink = now;
             }
+            updateButtonZ(inp, dt, this.elapsed, null, false, this.mouseX, this.mouseY);
+        });
+
+        this.sliders.forEach(s => {
+            updateButtonZ(s, dt, this.elapsed, null, false, this.mouseX, this.mouseY);
         });
     }
 
@@ -290,5 +310,9 @@ export class UIManager {
         this.inputs = [];
         this.focusedInput = null;
         this.draggingSlider = null;
+        this.pressedButton = null;
+        this.mouseIsDown = false;
+        this.blocked = false;
+        this.lastTime = performance.now();
     }
 }

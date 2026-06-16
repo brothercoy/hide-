@@ -1,3 +1,6 @@
+import { otFont, charWidth } from './Font.js';
+import { getCharZ, drawChar, Z_FLOAT_MIN } from './Button.js';
+
 export function makeInput(placeholder, x, y, maxLength) {
     return {
         placeholder, x, y, maxLength,
@@ -10,83 +13,83 @@ export function makeInput(placeholder, x, y, maxLength) {
         cursorPos: 0,
         selStart: 0,
         selEnd: 0,
-        selecting: false
+        selecting: false,
+        z: Z_FLOAT_MIN,
+        zPressed: false
     };
 }
 
 export function drawInput(ctx, inp, elapsed, FONT_SIZE) {
-    const FONT = `${FONT_SIZE}px "IBMVGA"`;
-    ctx.font = FONT;
+    if (!otFont) return;
 
-    const charWidth = ctx.measureText('M').width;
-    const refTextWidth = ctx.measureText(inp.placeholder).width;
-    const padX = charWidth * 2;
-    const innerWidth = refTextWidth + padX * 2;
-    const borderWidth = innerWidth + charWidth * 2;
+    const cw = charWidth(FONT_SIZE);
+    const refW = inp.placeholder.length * cw;
+    const padX = cw * 2;
+    const innerWidth = refW + padX * 2;
+    const borderWidth = innerWidth + cw * 2;
+    const lh = FONT_SIZE;
+    const totalHeight = lh * 2.5;
+    const sl = inp.x - borderWidth / 2;
+    const st = inp.y - totalHeight / 2;
+    const textY = st + lh;
+    const centerX = sl + borderWidth / 2;
+    const dashCount = Math.floor(innerWidth / cw);
+    const topB = '+' + '-'.repeat(dashCount) + '+';
+    const botB = '+' + '-'.repeat(dashCount) + '+';
+    const borderColor = inp.focused ? '#00ff41' : '#007a1f';
 
-    const lineHeight = FONT_SIZE;
-    const totalHeight = lineHeight * 2.5;
-
-    const yOffset = Math.sin(elapsed * 0.8 + inp.phase) * 0;
-    const cy = inp.y + yOffset;
-    const left = inp.x - borderWidth / 2;
-    const top = cy - totalHeight / 2;
-
-    const dashCount = Math.floor(innerWidth / charWidth);
-    const topBorder    = '+' + '-'.repeat(dashCount) + '+';
-    const bottomBorder = '+' + '-'.repeat(dashCount) + '+';
-
-    ctx.textAlign = 'left';
-    ctx.textBaseline = 'top';
-
-    ctx.fillStyle = inp.focused ? '#00ff41' : '#007a1f';
-    ctx.fillText(topBorder, left, top);
-    ctx.fillText('|', left, top + lineHeight);
-    ctx.fillText('|', left + borderWidth - charWidth, top + lineHeight);
-    ctx.fillText(bottomBorder, left, top + lineHeight * 2);
-
-    const textY = top + lineHeight;
-    const totalTextWidth = ctx.measureText(inp.value).width;
-    const centerX = left + borderWidth / 2;
-    const textStartX = inp.value.length === 0
-        ? centerX - charWidth / 2
-        : centerX - totalTextWidth / 2;
+    let ci = 0;
+    for (let i = 0; i < topB.length; i++, ci++)
+        drawChar(ctx, topB[i], sl + i * cw, st, getCharZ(inp.phase + ci * 0.7, inp.z, elapsed), borderColor, FONT_SIZE);
+    drawChar(ctx, '|', sl, textY, getCharZ(inp.phase + ci * 0.7, inp.z, elapsed), borderColor, FONT_SIZE); ci++;
+    drawChar(ctx, '|', sl + borderWidth - cw, textY, getCharZ(inp.phase + ci * 0.7, inp.z, elapsed), borderColor, FONT_SIZE); ci++;
+    for (let i = 0; i < botB.length; i++, ci++)
+        drawChar(ctx, botB[i], sl + i * cw, st + lh * 2, getCharZ(inp.phase + ci * 0.7, inp.z, elapsed), borderColor, FONT_SIZE);
 
     const hasSelection = inp.selStart !== inp.selEnd;
+    const totalTextWidth = inp.value.length * cw;
+    const textStartX = inp.value.length === 0 ? centerX - cw / 2 : centerX - totalTextWidth / 2;
 
-    if (hasSelection && inp.focused) {
+    if (inp.value.length === 0 && !inp.focused) {
+        const phW = inp.placeholder.length * cw;
+        const phX = centerX - phW / 2;
+        for (let i = 0; i < inp.placeholder.length; i++, ci++)
+            drawChar(ctx, inp.placeholder[i], phX + i * cw, textY, getCharZ(inp.phase + ci * 0.7, inp.z, elapsed), '#003d0f', FONT_SIZE);
+    } else if (hasSelection && inp.focused) {
         const selMin = Math.min(inp.selStart, inp.selEnd);
         const selMax = Math.max(inp.selStart, inp.selEnd);
-        const selX = textStartX + ctx.measureText(inp.value.slice(0, selMin)).width;
-        const selW = ctx.measureText(inp.value.slice(selMin, selMax)).width;
+        const selX = textStartX + selMin * cw;
+        const selW = (selMax - selMin) * cw;
+        ctx.globalAlpha = 1;
         ctx.fillStyle = '#00ff41';
         ctx.fillRect(selX, textY, selW, FONT_SIZE - 4);
-        ctx.fillStyle = 'black';
-        ctx.fillText(inp.value.slice(selMin, selMax), selX, textY);
-        ctx.fillStyle = '#00ff41';
-        ctx.fillText(inp.value.slice(0, selMin), textStartX, textY);
-        ctx.fillText(inp.value.slice(selMax), selX + selW, textY);
-    } else if (inp.value.length === 0 && !inp.focused) {
-        ctx.fillStyle = '#003d0f';
-        ctx.textAlign = 'center';
-        ctx.fillText(inp.placeholder, centerX, textY);
-        ctx.textAlign = 'left';
+        for (let i = 0; i < inp.value.length; i++, ci++) {
+            const isSel = i >= selMin && i < selMax;
+            drawChar(ctx, inp.value[i], textStartX + i * cw, textY,
+                getCharZ(inp.phase + ci * 0.7, inp.z, elapsed),
+                isSel ? 'black' : '#00ff41', FONT_SIZE);
+        }
     } else {
-        ctx.fillStyle = inp.focused ? '#00ff41' : '#007a1f';
-        ctx.fillText(inp.value, textStartX, textY);
+        const color = inp.focused ? '#00ff41' : '#007a1f';
+        for (let i = 0; i < inp.value.length; i++, ci++)
+            drawChar(ctx, inp.value[i], textStartX + i * cw, textY,
+                getCharZ(inp.phase + ci * 0.7, inp.z, elapsed), color, FONT_SIZE);
     }
 
     if (inp.focused && inp.cursorVisible && !hasSelection) {
-        const cursorX = textStartX + ctx.measureText(inp.value.slice(0, inp.cursorPos)).width;
-        const cursorW = charWidth - 3;
+        const cursorX = textStartX + inp.cursorPos * cw;
+        ctx.globalAlpha = 1;
         ctx.fillStyle = '#00ff41';
-        ctx.fillRect(cursorX, textY, cursorW, FONT_SIZE - 4);
+        ctx.fillRect(cursorX, textY, cw - 2, FONT_SIZE - 4);
         const charUnder = inp.value[inp.cursorPos];
         if (charUnder) {
-            ctx.fillStyle = 'black';
-            ctx.fillText(charUnder, cursorX, textY);
+            const path = otFont.getPath(charUnder, cursorX, textY + FONT_SIZE, FONT_SIZE);
+            path.fill = 'black';
+            ctx.globalAlpha = 1;
+            path.draw(ctx);
         }
     }
 
-    inp.rect = { x: left, y: top, w: borderWidth, h: totalHeight, textStartX, charWidth };
+    ctx.globalAlpha = 1;
+    inp.rect = { x: sl, y: st, w: borderWidth, h: totalHeight, textStartX, charWidth: cw };
 }
