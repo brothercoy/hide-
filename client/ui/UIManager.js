@@ -1,4 +1,4 @@
-import { updateButtonZ } from './Button.js';
+import { updateButtonZ, CHAR_ROT_SPEED, CHAR_ROT_MAX } from './Button.js';
 
 export class UIManager {
     constructor(canvas, ctx) {
@@ -25,6 +25,7 @@ export class UIManager {
         this.canvas.addEventListener('mousemove', e => this._onMouseMove(e));
         this.canvas.addEventListener('mousedown', e => this._onMouseDown(e));
         this.canvas.addEventListener('mouseup', e => this._onMouseUp(e));
+        this.canvas.addEventListener('dblclick', e => this._onDoubleClick(e));
         window.addEventListener('keydown', e => this._onKeyDown(e));
     }
 
@@ -115,6 +116,9 @@ export class UIManager {
                     btn.releasePhase = 'releasing';
                     btn.glowT = 0;
                     btn._fireClick = false;
+                    if (btn.charPhases) {
+                        btn.charRot = btn.charPhases.map(phase => Math.sin(this.elapsed * CHAR_ROT_SPEED + phase + Math.PI) * CHAR_ROT_MAX);
+                    }
                     if (btn.blocksInput) {
                         this.blocked = true;
                         this.lastTime = performance.now();
@@ -127,6 +131,19 @@ export class UIManager {
 
         this.draggingSlider = null;
         if (this.focusedInput) this.focusedInput.selecting = false;
+    }
+
+    _onDoubleClick(e) {
+        const { x, y } = this._getPos(e);
+        this.inputs.forEach(inp => {
+            if (inp.rect && this._hitTest(inp.rect, x, y)) {
+                if (inp.value.length > 0) {
+                    inp.selStart = 0;
+                    inp.selEnd = inp.value.length;
+                    inp.cursorPos = inp.value.length;
+                }
+            }
+        });
     }
 
     _onKeyDown(e) {
@@ -192,6 +209,8 @@ export class UIManager {
                 inp.selStart = inp.cursorPos;
                 inp.selEnd = inp.cursorPos;
             }
+            inp.cursorVisible = true;
+            inp.lastBlink = performance.now();
         } else if (e.key === 'Delete') {
             if (hasSelection) {
                 this._deleteSelection(inp);
@@ -200,16 +219,22 @@ export class UIManager {
                 inp.selStart = inp.cursorPos;
                 inp.selEnd = inp.cursorPos;
             }
+            inp.cursorVisible = true;
+            inp.lastBlink = performance.now();
         } else if (e.key === 'ArrowLeft') {
             e.preventDefault();
             inp.cursorPos = Math.max(0, inp.cursorPos - 1);
             if (e.shiftKey) { inp.selEnd = inp.cursorPos; }
             else { inp.selStart = inp.cursorPos; inp.selEnd = inp.cursorPos; }
+            inp.cursorVisible = true;
+            inp.lastBlink = performance.now();
         } else if (e.key === 'ArrowRight') {
             e.preventDefault();
             inp.cursorPos = Math.min(inp.value.length, inp.cursorPos + 1);
             if (e.shiftKey) { inp.selEnd = inp.cursorPos; }
             else { inp.selStart = inp.cursorPos; inp.selEnd = inp.cursorPos; }
+            inp.cursorVisible = true;
+            inp.lastBlink = performance.now();
         } else if (e.key === 'Tab' || e.key === 'ArrowDown') {
             e.preventDefault();
             this._focusNextInput(1);
@@ -235,7 +260,7 @@ export class UIManager {
     _deleteSelection(inp) {
         const selMin = Math.min(inp.selStart, inp.selEnd);
         const selMax = Math.max(inp.selStart, inp.selEnd);
-        inp.value = inp.value.slice(0, selMin) + inp.value.slice(selMax);
+        inp.value = inp.value.slice(0, selMin) + inp.value.slice(selMax + 1);
         inp.cursorPos = selMin;
         inp.selStart = selMin;
         inp.selEnd = selMin;

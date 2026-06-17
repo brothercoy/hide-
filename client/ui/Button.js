@@ -1,11 +1,16 @@
 import { otFont, charWidth } from './Font.js';
 
 export const Z_FLOAT_MIN = 1.3;
-export const Z_FLOAT_MAX = 1.8;
+export const Z_FLOAT_MAX = 1.3;
 export const Z_PRESSED   = 2.5;
-export const Z_FLOAT_SPEED = 1.2;
+export const Z_FLOAT_SPEED = 0;
 export const Z_PRESS_SPEED = 0.007;
 export const Z_RETURN_SPEED = 0.009;
+export const GLOW_SPEED = 0.0013;
+export const ENABLE_GLOW_COLOR = true;
+export const CHAR_ROT_MAX = 0.0;
+export const CHAR_ROT_SPEED = 0.4;
+const USE_VECTOR = false;
 
 export function zToScale(z) {
     const t = (z - 1.0) / (3.0 - 1.0);
@@ -32,9 +37,14 @@ export function getCharZWithReturn(btn, ci, elapsed) {
     return getCharZ(btn.charPhases[ci], btn.z, elapsed);
 }
 
-// Returns { cx, cy, radius } — visual center and collision radius for a character
-// drawn at (drawX, drawY) top-left of slot at given fontSize.
-// Cache keyed by char+fontSize since getBoundingBox is constant per glyph.
+export function getCharRotWithReturn(btn, ci, elapsed) {
+    if ((btn.releasePhase === 'releasing' || btn.releasePhase === 'glowing' || btn.releasePhase === 'returning') && btn.charRot) {
+        return btn.charRot[ci];
+    }
+    if (!btn.charPhases) return 0;
+    return Math.sin(elapsed * CHAR_ROT_SPEED + btn.charPhases[ci] + Math.PI) * CHAR_ROT_MAX;
+}
+
 const _collisionCache = new Map();
 export function getCharCollision(char, drawX, drawY, fontSize) {
     const key = char + fontSize;
@@ -51,7 +61,6 @@ export function getCharCollision(char, drawX, drawY, fontSize) {
         cached = { offsetCX, offsetCY, radius };
         _collisionCache.set(key, cached);
     }
-    // Apply to actual draw position — baseline is drawY + fontSize
     const baseline = drawY + fontSize;
     return {
         cx: drawX + cached.offsetCX,
@@ -60,35 +69,54 @@ export function getCharCollision(char, drawX, drawY, fontSize) {
     };
 }
 
-export function drawChar(ctx, char, x, y, z, color, FONT_SIZE) {
-    if (!otFont) return;
+export function drawChar(ctx, char, x, y, z, color, FONT_SIZE, rotAngle) {
     const scale = zToScale(z);
     const alpha = zToAlpha(z);
-    const scaledSize = FONT_SIZE * scale;
 
-    const glyph = otFont.charToGlyph(char);
-    const fullScale = FONT_SIZE / otFont.unitsPerEm;
-    const sScale = scaledSize / otFont.unitsPerEm;
-    const bbox = glyph.getBoundingBox();
-
-    // Fixed visual center at full size
-    const fullCX = x + (bbox.x1 + bbox.x2) / 2 * fullScale;
-    const fullCY = (y + FONT_SIZE) - (bbox.y1 + bbox.y2) / 2 * fullScale;
-
-    // Scaled glyph center offset from its own origin
-    const scaledCX = (bbox.x1 + bbox.x2) / 2 * sScale;
-    const scaledCY = (bbox.y1 + bbox.y2) / 2 * sScale;
-
-    // Draw so scaled glyph center aligns with fixed full-size center
-    const drawX = fullCX - scaledCX;
-    const drawY = fullCY + scaledCY;
-
-    const path = otFont.getPath(char, drawX, drawY, scaledSize);
-    path.fill = color || '#00ff41';
-    ctx.save();
-    ctx.globalAlpha = alpha;
-    path.draw(ctx);
-    ctx.restore();
+    if (USE_VECTOR && otFont) {
+        const scaledSize = FONT_SIZE * scale;
+        const glyph = otFont.charToGlyph(char);
+        const fullScale = FONT_SIZE / otFont.unitsPerEm;
+        const sScale = scaledSize / otFont.unitsPerEm;
+        const bbox = glyph.getBoundingBox();
+        const fullCX = x + (bbox.x1 + bbox.x2) / 2 * fullScale;
+        const fullCY = (y + FONT_SIZE) - (bbox.y1 + bbox.y2) / 2 * fullScale;
+        const scaledCX = (bbox.x1 + bbox.x2) / 2 * sScale;
+        const scaledCY = (bbox.y1 + bbox.y2) / 2 * sScale;
+        const path = otFont.getPath(char, fullCX - scaledCX, fullCY + scaledCY, scaledSize);
+        path.fill = color || '#00ff41';
+        ctx.save();
+        ctx.globalAlpha = alpha;
+        if (rotAngle) {
+            ctx.translate(fullCX, fullCY);
+            ctx.rotate(rotAngle);
+            ctx.translate(-fullCX, -fullCY);
+        }
+        path.draw(ctx);
+        ctx.restore();
+    } else {
+        ctx.font = `${FONT_SIZE}px "IBMVGA"`;
+        const fw = ctx.measureText('M').width;
+        ctx.font = `${FONT_SIZE * scale}px "IBMVGA"`;
+        const sw = ctx.measureText('M').width;
+        const xShift = (fw - sw) / 2;
+        const yShift = (FONT_SIZE - FONT_SIZE * scale) * 0.5;
+        const cx = x + fw / 2;
+        const cy = y + FONT_SIZE / 2;
+        ctx.save();
+        ctx.globalAlpha = alpha;
+        ctx.fillStyle = color || '#00ff41';
+        ctx.textAlign = 'left';
+        ctx.textBaseline = 'top';
+        if (rotAngle) {
+            ctx.translate(cx, cy);
+            ctx.rotate(rotAngle);
+            ctx.translate(-cx, -cy);
+        }
+        ctx.fillText(char, x + xShift, y + yShift);
+        ctx.restore();
+        ctx.font = `${FONT_SIZE}px "IBMVGA"`;
+    }
 }
 
 export function makeButton(label, x, y, onClick, options = {}) {
@@ -109,6 +137,7 @@ export function makeButton(label, x, y, onClick, options = {}) {
         glowT: 0,
         _fireClick: false,
         charZ: null,
+        charRot: null,
     };
 }
 
@@ -121,25 +150,34 @@ export function updateButtonZ(btn, dt, elapsed, pressedButton, mouseIsDown, mous
         btn.z = Math.min(Z_PRESSED, btn.z + dt * Z_PRESS_SPEED);
     } else if (btn.releasePhase === 'releasing') {
         btn.z -= dt * Z_RETURN_SPEED;
+        if (btn.charRot) {
+            const rotSpeed = CHAR_ROT_MAX * 2 * CHAR_ROT_SPEED * dt / 1000 * 50;
+            for (let i = 0; i < btn.charRot.length; i++) {
+                if (Math.abs(btn.charRot[i]) <= rotSpeed) { btn.charRot[i] = 0; }
+                else { btn.charRot[i] += Math.sign(0 - btn.charRot[i]) * rotSpeed; }
+            }
+        }
         if (btn.z <= 1.0) {
             btn.z = 1.0;
             btn.releasePhase = 'glowing';
             btn.glowT = 0;
         }
     } else if (btn.releasePhase === 'glowing') {
-        btn.glowT += dt * 0.001;
+        btn.glowT += dt * GLOW_SPEED;
         if (btn.glowT >= 1.0) {
             btn.glowT = 0;
             btn.releasePhase = 'returning';
             btn._fireClick = true;
             if (btn.charPhases) {
                 btn.charZ = new Array(200).fill(1.0);
+                btn.charRot = new Array(200).fill(0.0);
             }
         }
     } else if (btn.releasePhase === 'returning') {
         if (btn.charZ) {
             let allDone = true;
-            const speed = (Z_FLOAT_MAX - Z_FLOAT_MIN) * Z_FLOAT_SPEED * dt / 1000;
+            const speed = Math.max(0.001, (Z_FLOAT_MAX - Z_FLOAT_MIN) * Z_FLOAT_SPEED * dt / 1000);
+            const rotSpeed = CHAR_ROT_MAX * 2 * CHAR_ROT_SPEED * dt / 1000;
             for (let i = 0; i < btn.charZ.length; i++) {
                 const target = getCharZ(btn.charPhases[i], Z_FLOAT_MIN, elapsed);
                 const diff = target - btn.charZ[i];
@@ -149,11 +187,18 @@ export function updateButtonZ(btn, dt, elapsed, pressedButton, mouseIsDown, mous
                     btn.charZ[i] += Math.sign(diff) * speed;
                     allDone = false;
                 }
+                if (btn.charRot) {
+                    const targetRot = Math.sin(elapsed * CHAR_ROT_SPEED + btn.charPhases[i] + Math.PI) * CHAR_ROT_MAX;
+                    const diffRot = targetRot - btn.charRot[i];
+                    if (Math.abs(diffRot) <= rotSpeed) { btn.charRot[i] = targetRot; }
+                    else { btn.charRot[i] += Math.sign(diffRot) * rotSpeed; }
+                }
             }
             if (allDone) {
                 btn.z = Z_FLOAT_MIN;
                 btn.releasePhase = null;
                 btn.charZ = null;
+                btn.charRot = null;
             }
         }
     } else {
@@ -164,7 +209,9 @@ export function updateButtonZ(btn, dt, elapsed, pressedButton, mouseIsDown, mous
 }
 
 export function drawButton(ctx, btn, elapsed, FONT_SIZE) {
-    if (!otFont) return;
+    if (!USE_VECTOR) {
+        // bitmap plain buttons use ctx directly
+    }
 
     if (btn.plain) {
         const cw = charWidth(FONT_SIZE);
@@ -173,9 +220,17 @@ export function drawButton(ctx, btn, elapsed, FONT_SIZE) {
         const top = btn.y - FONT_SIZE / 2;
         ctx.globalAlpha = 1;
         const color = btn.disabled ? '#007a1f' : (btn.hoverProgress > 0.05 ? '#00ff41' : '#00aa2a');
-        const path = otFont.getPath(btn.label, left, top + FONT_SIZE, FONT_SIZE);
-        path.fill = color;
-        path.draw(ctx);
+        if (USE_VECTOR && otFont) {
+            const path = otFont.getPath(btn.label, left, top + FONT_SIZE, FONT_SIZE);
+            path.fill = color;
+            path.draw(ctx);
+        } else {
+            ctx.font = `${FONT_SIZE}px "IBMVGA"`;
+            ctx.fillStyle = color;
+            ctx.textAlign = 'left';
+            ctx.textBaseline = 'top';
+            ctx.fillText(btn.label, left, top);
+        }
         btn.rect = { x: left, y: top, w, h: FONT_SIZE };
         return;
     }
@@ -211,7 +266,7 @@ export function drawButton(ctx, btn, elapsed, FONT_SIZE) {
     }
 
     let glowColor = btn.disabled ? '#007a1f' : '#00ff41';
-    if (btn.releasePhase === 'glowing' && btn.glowT > 0) {
+    if (ENABLE_GLOW_COLOR && btn.releasePhase === 'glowing' && btn.glowT > 0) {
         const g = btn.glowT < 0.5 ? btn.glowT * 2 : (1 - btn.glowT) * 2;
         glowColor = `rgb(${Math.round(g * 170)}, 255, ${Math.round(65 + g * 121)})`;
     }
@@ -220,13 +275,13 @@ export function drawButton(ctx, btn, elapsed, FONT_SIZE) {
 
     let ci = 0;
     for (let i = 0; i < topB.length; i++, ci++)
-        drawChar(ctx, topB[i], sl + i * cw, st, useFixed ? btn.z : getCharZWithReturn(btn, ci, elapsed), glowColor, FONT_SIZE);
-    drawChar(ctx, ls, sl, st + lh, useFixed ? btn.z : getCharZWithReturn(btn, ci++, elapsed), glowColor, FONT_SIZE);
+        drawChar(ctx, topB[i], sl + i * cw, st, useFixed ? btn.z : getCharZWithReturn(btn, ci, elapsed), glowColor, FONT_SIZE, getCharRotWithReturn(btn, ci, elapsed));
+    drawChar(ctx, ls, sl, st + lh, useFixed ? btn.z : getCharZWithReturn(btn, ci++, elapsed), glowColor, FONT_SIZE, getCharRotWithReturn(btn, ci - 1, elapsed));
     for (let i = 0; i < btn.label.length; i++, ci++)
-        drawChar(ctx, btn.label[i], sl + cw + padX + i * cw, st + lh, useFixed ? btn.z : getCharZWithReturn(btn, ci, elapsed), glowColor, FONT_SIZE);
-    drawChar(ctx, rs, sl + borderWidth - cw, st + lh, useFixed ? btn.z : getCharZWithReturn(btn, ci++, elapsed), glowColor, FONT_SIZE);
+        drawChar(ctx, btn.label[i], sl + cw + padX + i * cw, st + lh, useFixed ? btn.z : getCharZWithReturn(btn, ci, elapsed), glowColor, FONT_SIZE, getCharRotWithReturn(btn, ci, elapsed));
+    drawChar(ctx, rs, sl + borderWidth - cw, st + lh, useFixed ? btn.z : getCharZWithReturn(btn, ci++, elapsed), glowColor, FONT_SIZE, getCharRotWithReturn(btn, ci - 1, elapsed));
     for (let i = 0; i < botB.length; i++, ci++)
-        drawChar(ctx, botB[i], sl + i * cw, st + lh * 2, useFixed ? btn.z : getCharZWithReturn(btn, ci, elapsed), glowColor, FONT_SIZE);
+        drawChar(ctx, botB[i], sl + i * cw, st + lh * 2, useFixed ? btn.z : getCharZWithReturn(btn, ci, elapsed), glowColor, FONT_SIZE, getCharRotWithReturn(btn, ci, elapsed));
 
     ctx.globalAlpha = 1;
     btn.rect = btn.fullRect = { x: sl, y: st, w: borderWidth, h: totalHeight };

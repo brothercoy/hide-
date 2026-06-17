@@ -1,5 +1,5 @@
 import { otFont, charWidth } from './Font.js';
-import { getCharZ, drawChar, Z_FLOAT_MIN } from './Button.js';
+import { getCharZ, drawChar, Z_FLOAT_MIN, CHAR_ROT_MAX, CHAR_ROT_SPEED } from './Button.js';
 
 export function makeSlider(label, x, y, min, max, defaultValue, onChange, disabled = false, unit = '') {
     return {
@@ -47,8 +47,9 @@ export function drawSlider(ctx, s, elapsed, FONT_SIZE) {
     const trackStartX = left - cw;
     for (let i = 0; i < chars.length; i++) {
         const color = s.disabled ? '#007a1f' : '#00ff41';
+        const rotAngle = Math.sin(elapsed * CHAR_ROT_SPEED + s.phase + i * 0.7 + Math.PI) * CHAR_ROT_MAX;
         drawChar(ctx, chars[i], trackStartX + i * cw, s.y,
-            getCharZ(s.phase + i * 0.7, s.z, elapsed), color, FONT_SIZE);
+            getCharZ(s.phase + i * 0.7, s.z, elapsed), color, FONT_SIZE, rotAngle);
     }
 
     ctx.globalAlpha = 1;
