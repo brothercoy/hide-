@@ -9,6 +9,7 @@ import { GameScreen } from './screens/GameScreen.js';
 import { makeButton, drawButton } from './ui/Button.js';
 import { initFont } from './ui/Font.js';
 import { CRTEffect } from './CRTShader.js';
+import { Transition } from './ui/Transition.js';
 import { DELMode } from './modes/DELmode.js';
 
 const colyseusClient = new Client(
@@ -28,6 +29,8 @@ let playerName = '';
 let isHost = false;
 let playerList = [];
 let currentScreen = null;
+let fontReady = false;
+let lastDrawTime = 0;
 let modalMessage = null;
 let settingsPanelOpen = false;
 let winnerId = null;
@@ -41,9 +44,16 @@ function resizeCanvas() {
 }
 
 resizeCanvas();
-window.addEventListener('resize', resizeCanvas);
+window.addEventListener('resize', () => {
+    if (transition.isActive()) transition.cancelToEnd();
+    resizeCanvas();
+});
 
 const uiManager = new UIManager(canvas, ctx);
+const transition = new Transition(canvas, ctx);
+
+// Map screen names to their objects so the transition can drive them generically.
+const screens = {};
 
 const mainMenu = new MainMenu(canvas, ctx, uiManager,
     () => showScreen('play'),
@@ -77,6 +87,11 @@ const lobbyScreen = new LobbyScreen(canvas, ctx, uiManager,
 
 const gameScreen = new GameScreen(canvas, ctx, isMobile);
 
+screens.main = mainMenu;
+screens.play = playScreen;
+screens.settings = settingsScreen;
+screens.lobby = lobbyScreen;
+
 const crt = new CRTEffect(canvas);
 canvas.style.opacity = '0';
 canvas.style.display = 'block';
@@ -99,12 +114,47 @@ function curveInverse(canvasRelX, canvasRelY) {
     };
 }
 
-function showScreen(name) {
-    currentScreen = name;
-    if (name === 'main') mainMenu.enter();
-    else if (name === 'play') playScreen.enter();
-    else if (name === 'settings') settingsScreen.enter();
-    else if (name === 'lobby') lobbyScreen.enter();
+function enterScreen(name) {
+    const s = screens[name];
+    if (s) s.enter();
+}
+
+function showScreen(name, opts = {}) {
+    // Instant path: first paint, explicit request, or font not ready.
+    if (currentScreen === null || opts.instant || !fontReady) {
+        currentScreen = name;
+        enterScreen(name);
+        return;
+    }
+
+    // Snap any in-flight transition to its end before starting a new one.
+    if (transition.isActive()) transition.cancelToEnd();
+
+    // `canvas` currently holds the outgoing screen's last frame — snapshot it
+    // inside transition.begin/beginScrollOnly before enter() clears anything.
+    const incoming = screens[name];
+    const onComplete = () => {
+        // MainMenu owns its own unblock timer; never clobber an open modal.
+        if (currentScreen !== 'main' && !modalMessage) {
+            uiManager.blocked = false;
+            uiManager.lastTime = performance.now();
+        }
+    };
+
+    if (name === 'main' || !incoming || typeof incoming.getTypeables !== 'function') {
+        // Scroll the outgoing screen off; the incoming screen draws itself
+        // (and plays its own intro, e.g. MainMenu) underneath.
+        transition.beginScrollOnly({ onComplete });
+        currentScreen = name;
+        uiManager.blocked = true;
+        enterScreen(name);
+    } else {
+        // Type the incoming screen in while the outgoing scrolls up.
+        currentScreen = name;
+        uiManager.blocked = true;
+        enterScreen(name);
+        transition.begin({ typeables: incoming.getTypeables(), onComplete });
+    }
 }
 
 function handleCreateRoom(name) {
@@ -149,6 +199,7 @@ async function tryReconnect() {
 
 window.addEventListener('load', () => {
     initFont(FONT_SIZE).then(() => {
+        fontReady = true;
         tryReconnect();
     }).catch(err => {
         console.error('Font load failed:', err);
@@ -244,6 +295,7 @@ function setupRoomMessages(isReconnecting = false) {
     });
 
     room.onMessage('gameStarted', (data) => {
+        if (transition.isActive()) transition.cancelToEnd();
         currentMode = createMode(data.mode, data);
         currentScreen = 'game';
         uiManager.clear();
@@ -251,6 +303,7 @@ function setupRoomMessages(isReconnecting = false) {
     });
 
     room.onMessage('gameRestarted', (data) => {
+        if (transition.isActive()) transition.cancelToEnd();
         if (currentMode) currentMode.reset();
         if (data.mode) currentMode = createMode(data.mode, data);
         currentScreen = 'game';
@@ -285,6 +338,7 @@ function setupRoomMessages(isReconnecting = false) {
     modeMessages.forEach(type => {
         room.onMessage(type, (data) => {
             if (type === 'reconnected' && data.gameStarted) {
+                if (transition.isActive()) transition.cancelToEnd();
                 if (!currentMode) currentMode = createMode(data.mode || 'redacted', data);
                 currentScreen = 'game';
                 uiManager.clear();
@@ -374,30 +428,39 @@ function drawPersistentHUD() {
 
 // --- Draw Loop ---
 
+// Render a single screen's content into the canvas (no clear, no HUD).
+function drawScreenInto(name) {
+    if (name === 'main') mainMenu.draw();
+    else if (name === 'play') playScreen.draw();
+    else if (name === 'settings') settingsScreen.draw();
+    else if (name === 'lobby') lobbyScreen.draw();
+    else if (name === 'game') {
+        if (currentMode) currentMode.draw(gameScreen);
+        if (winnerId) uiManager.buttons.forEach(btn => drawButton(ctx, btn, uiManager.elapsed, FONT_SIZE));
+    }
+}
+
 function draw() {
+    const now = performance.now();
+    const dt = now - (lastDrawTime || now);
+    lastDrawTime = now;
+
+    // Keep clocks/animations advancing even during a transition.
+    uiManager.update(now);
+
+    if (transition.isActive()) {
+        transition.update(dt);
+        // For scroll-only, the incoming screen draws itself underneath.
+        transition.render(uiManager.elapsed, () => drawScreenInto(currentScreen));
+        drawPersistentHUD();
+        return;
+    }
+
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     ctx.fillStyle = 'black';
     ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-    if (currentScreen === 'main') {
-        uiManager.update(performance.now());
-        mainMenu.draw();
-    } else if (currentScreen === 'play') {
-        uiManager.update(performance.now());
-        playScreen.draw();
-    } else if (currentScreen === 'settings') {
-        uiManager.update(performance.now());
-        settingsScreen.draw();
-    } else if (currentScreen === 'lobby') {
-        uiManager.update(performance.now());
-        lobbyScreen.draw();
-    } else if (currentScreen === 'game') {
-        if (currentMode) currentMode.draw(gameScreen);
-        if (winnerId) {
-            uiManager.update(performance.now());
-            uiManager.buttons.forEach(btn => drawButton(ctx, btn, uiManager.elapsed, FONT_SIZE));
-        }
-    }
+    drawScreenInto(currentScreen);
 
     drawPersistentHUD();
 }
@@ -405,6 +468,8 @@ function draw() {
 // --- Click Handler ---
 
 canvas.addEventListener('click', (e) => {
+    if (transition.isActive()) return; // ignore clicks mid-transition
+
     const rect = canvas.getBoundingClientRect();
     const { x: mx, y: my } = curveInverse(
         e.clientX - rect.left,

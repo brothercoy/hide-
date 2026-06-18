@@ -96,3 +96,112 @@ export function drawInput(ctx, inp, elapsed, FONT_SIZE) {
     ctx.globalAlpha = 1;
     inp.rect = { x: sl, y: st, w: borderWidth, h: totalHeight, textStartX, charWidth: cw };
 }
+
+// Total typed characters in an input's frame (border + side bars + placeholder).
+export function inputCharCount(inp, FONT_SIZE) {
+    const cw = charWidth(FONT_SIZE);
+    const refW = inp.placeholder.length * cw;
+    const padX = cw * 2;
+    const innerWidth = refW + padX * 2;
+    const dashCount = Math.floor(innerWidth / cw);
+    return (dashCount + 2) * 2 + 2 + inp.placeholder.length;
+}
+
+// Draw a single row of an input's frame, first `n` chars left-to-right.
+// rowIndex: 0 = top border, 1 = middle (| placeholder |), 2 = bottom border.
+export function drawInputRow(ctx, inp, rowIndex, n, FONT_SIZE) {
+    if (!otFont || n <= 0) return;
+
+    const cw = charWidth(FONT_SIZE);
+    const refW = inp.placeholder.length * cw;
+    const padX = cw * 2;
+    const innerWidth = refW + padX * 2;
+    const borderWidth = innerWidth + cw * 2;
+    const lh = FONT_SIZE;
+    const totalHeight = lh * 2.5;
+    const sl = inp.x - borderWidth / 2;
+    const st = inp.y - totalHeight / 2;
+    const textY = st + lh;
+    const centerX = sl + borderWidth / 2;
+    const dashCount = Math.floor(innerWidth / cw);
+    const borderColor = '#007a1f';
+
+    inp.rect = { x: sl, y: st, w: borderWidth, h: totalHeight, textStartX: centerX - cw / 2, charWidth: cw };
+
+    if (rowIndex === 1) {
+        let drawn = 0;
+        if (drawn < n) { drawChar(ctx, '|', sl, textY, Z_FLOAT_MIN, borderColor, FONT_SIZE); drawn++; }
+        const phX = centerX - (inp.placeholder.length * cw) / 2;
+        for (let i = 0; i < inp.placeholder.length && drawn < n; i++, drawn++)
+            drawChar(ctx, inp.placeholder[i], phX + i * cw, textY, Z_FLOAT_MIN, '#003d0f', FONT_SIZE);
+        if (drawn < n) { drawChar(ctx, '|', sl + borderWidth - cw, textY, Z_FLOAT_MIN, borderColor, FONT_SIZE); drawn++; }
+    } else {
+        const border = '+' + '-'.repeat(dashCount) + '+';
+        const y = rowIndex === 0 ? st : st + lh * 2;
+        for (let i = 0; i < border.length && i < n; i++)
+            drawChar(ctx, border[i], sl + i * cw, y, Z_FLOAT_MIN, borderColor, FONT_SIZE);
+    }
+
+    ctx.globalAlpha = 1;
+}
+
+// Decompose an input into its 3 typeable rows for the transition feed.
+export function inputRows(inp, FONT_SIZE) {
+    const cw = charWidth(FONT_SIZE);
+    const refW = inp.placeholder.length * cw;
+    const padX = cw * 2;
+    const innerWidth = refW + padX * 2;
+    const borderWidth = innerWidth + cw * 2;
+    const lh = FONT_SIZE;
+    const totalHeight = lh * 2.5;
+    const sl = inp.x - borderWidth / 2;
+    const st = inp.y - totalHeight / 2;
+    const dashCount = Math.floor(innerWidth / cw);
+    const borderLen = dashCount + 2;
+    const midLen = inp.placeholder.length + 2;
+
+    return [
+        { y: st,          x: sl, cost: borderLen, draw: (ctx, n) => drawInputRow(ctx, inp, 0, n, FONT_SIZE) },
+        { y: st + lh,     x: sl, cost: midLen,    draw: (ctx, n) => drawInputRow(ctx, inp, 1, n, FONT_SIZE) },
+        { y: st + lh * 2, x: sl, cost: borderLen, draw: (ctx, n) => drawInputRow(ctx, inp, 2, n, FONT_SIZE) },
+    ];
+}
+
+// Draw the first `n` characters of an input's frame, revealed in draw order
+// (top border, side bars, bottom border, placeholder). Used by the transition
+// feed; the live drawInput takes over once the screen is interactive.
+export function drawInputPartial(ctx, inp, n, elapsed, FONT_SIZE) {
+    if (!otFont || n <= 0) return;
+
+    const cw = charWidth(FONT_SIZE);
+    const refW = inp.placeholder.length * cw;
+    const padX = cw * 2;
+    const innerWidth = refW + padX * 2;
+    const borderWidth = innerWidth + cw * 2;
+    const lh = FONT_SIZE;
+    const totalHeight = lh * 2.5;
+    const sl = inp.x - borderWidth / 2;
+    const st = inp.y - totalHeight / 2;
+    const textY = st + lh;
+    const centerX = sl + borderWidth / 2;
+    const dashCount = Math.floor(innerWidth / cw);
+    const topB = '+' + '-'.repeat(dashCount) + '+';
+    const botB = '+' + '-'.repeat(dashCount) + '+';
+    const borderColor = '#007a1f';
+
+    inp.rect = { x: sl, y: st, w: borderWidth, h: totalHeight, textStartX: centerX - cw / 2, charWidth: cw };
+
+    let drawn = 0;
+    for (let i = 0; i < topB.length && drawn < n; i++, drawn++)
+        drawChar(ctx, topB[i], sl + i * cw, st, Z_FLOAT_MIN, borderColor, FONT_SIZE);
+    if (drawn < n) { drawChar(ctx, '|', sl, textY, Z_FLOAT_MIN, borderColor, FONT_SIZE); drawn++; }
+    if (drawn < n) { drawChar(ctx, '|', sl + borderWidth - cw, textY, Z_FLOAT_MIN, borderColor, FONT_SIZE); drawn++; }
+    for (let i = 0; i < botB.length && drawn < n; i++, drawn++)
+        drawChar(ctx, botB[i], sl + i * cw, st + lh * 2, Z_FLOAT_MIN, borderColor, FONT_SIZE);
+
+    const phX = centerX - (inp.placeholder.length * cw) / 2;
+    for (let i = 0; i < inp.placeholder.length && drawn < n; i++, drawn++)
+        drawChar(ctx, inp.placeholder[i], phX + i * cw, textY, Z_FLOAT_MIN, '#003d0f', FONT_SIZE);
+
+    ctx.globalAlpha = 1;
+}

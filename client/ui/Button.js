@@ -286,3 +286,137 @@ export function drawButton(ctx, btn, elapsed, FONT_SIZE) {
     ctx.globalAlpha = 1;
     btn.rect = btn.fullRect = { x: sl, y: st, w: borderWidth, h: totalHeight };
 }
+
+// Total number of typed characters in a button (draw order:
+// top border, left bar, label, right bar, bottom border).
+export function buttonCharCount(btn, FONT_SIZE) {
+    const cw = charWidth(FONT_SIZE);
+    const labelW = btn.label.length * cw;
+    const padX = cw * 2;
+    const innerWidth = labelW + padX * 2;
+    const dashCount = Math.floor(innerWidth / cw);
+    return (dashCount + 2) * 2 + 2 + btn.label.length;
+}
+
+// Draw a single row of a button, revealing its first `n` characters
+// left-to-right. rowIndex: 0 = top border, 1 = middle (| label |), 2 = bottom.
+// Used by the row-based screen transition.
+export function drawButtonRow(ctx, btn, rowIndex, n, FONT_SIZE) {
+    if (n <= 0) return;
+
+    ctx.font = `${FONT_SIZE}px "IBMVGA"`;
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'top';
+
+    const cw = charWidth(FONT_SIZE);
+    const labelW = btn.label.length * cw;
+    const padX = cw * 2;
+    const innerWidth = labelW + padX * 2;
+    const borderWidth = innerWidth + cw * 2;
+    const lh = FONT_SIZE;
+    const totalHeight = lh * 2.5;
+    const sl = btn.x - borderWidth / 2;
+    const st = btn.y - totalHeight / 2;
+    const dashCount = Math.floor(innerWidth / cw);
+
+    btn.rect = btn.fullRect = { x: sl, y: st, w: borderWidth, h: totalHeight };
+
+    const color = btn.disabled ? '#007a1f' : '#00ff41';
+
+    if (rowIndex === 1) {
+        let drawn = 0;
+        if (drawn < n) { drawChar(ctx, '|', sl, st + lh, Z_FLOAT_MIN, color, FONT_SIZE); drawn++; }
+        for (let i = 0; i < btn.label.length && drawn < n; i++, drawn++)
+            drawChar(ctx, btn.label[i], sl + cw + padX + i * cw, st + lh, Z_FLOAT_MIN, color, FONT_SIZE);
+        if (drawn < n) { drawChar(ctx, '|', sl + borderWidth - cw, st + lh, Z_FLOAT_MIN, color, FONT_SIZE); drawn++; }
+    } else {
+        const plusCount = Math.floor((dashCount / 2) * (btn.active ? 1 : btn.hoverProgress));
+        let borderLine = '';
+        for (let i = 0; i < dashCount; i++) {
+            const fl = i, fr = dashCount - 1 - i;
+            borderLine += (fl < plusCount || fr < plusCount ||
+                (dashCount % 2 === 1 && i === Math.floor(dashCount / 2) && plusCount >= Math.floor(dashCount / 2)))
+                ? '+' : '-';
+        }
+        const border = '+' + borderLine + '+';
+        const y = rowIndex === 0 ? st : st + lh * 2;
+        for (let i = 0; i < border.length && i < n; i++)
+            drawChar(ctx, border[i], sl + i * cw, y, Z_FLOAT_MIN, color, FONT_SIZE);
+    }
+
+    ctx.globalAlpha = 1;
+}
+
+// Decompose a button into its 3 typeable rows (top border, middle, bottom
+// border), each { y, x, cost, draw } for the row-based transition feed.
+export function buttonRows(btn, FONT_SIZE) {
+    const cw = charWidth(FONT_SIZE);
+    const labelW = btn.label.length * cw;
+    const padX = cw * 2;
+    const innerWidth = labelW + padX * 2;
+    const borderWidth = innerWidth + cw * 2;
+    const lh = FONT_SIZE;
+    const totalHeight = lh * 2.5;
+    const sl = btn.x - borderWidth / 2;
+    const st = btn.y - totalHeight / 2;
+    const dashCount = Math.floor(innerWidth / cw);
+    const borderLen = dashCount + 2;
+    const midLen = btn.label.length + 2;
+
+    return [
+        { y: st,            x: sl, cost: borderLen, draw: (ctx, n) => drawButtonRow(ctx, btn, 0, n, FONT_SIZE) },
+        { y: st + lh,       x: sl, cost: midLen,    draw: (ctx, n) => drawButtonRow(ctx, btn, 1, n, FONT_SIZE) },
+        { y: st + lh * 2,   x: sl, cost: borderLen, draw: (ctx, n) => drawButtonRow(ctx, btn, 2, n, FONT_SIZE) },
+    ];
+}
+
+// Draw only the first `n` characters of a button, revealed in draw order.
+// Used by the typeout intro and the screen-transition feed. Characters sit at
+// the resting depth (Z_FLOAT_MIN); hover plus-marks animate live so the border
+// state is continuous with drawButton once fully revealed.
+export function drawButtonPartial(ctx, btn, n, elapsed, FONT_SIZE) {
+    if (n <= 0) return;
+
+    ctx.font = `${FONT_SIZE}px "IBMVGA"`;
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'top';
+
+    const cw = charWidth(FONT_SIZE);
+    const labelW = btn.label.length * cw;
+    const padX = cw * 2;
+    const innerWidth = labelW + padX * 2;
+    const borderWidth = innerWidth + cw * 2;
+    const lh = FONT_SIZE;
+    const totalHeight = lh * 2.5;
+    const sl = btn.x - borderWidth / 2;
+    const st = btn.y - totalHeight / 2;
+    const dashCount = Math.floor(innerWidth / cw);
+
+    btn.rect = btn.fullRect = { x: sl, y: st, w: borderWidth, h: totalHeight };
+
+    const plusCount = Math.floor((dashCount / 2) * (btn.active ? 1 : btn.hoverProgress));
+    let borderLine = '';
+    for (let i = 0; i < dashCount; i++) {
+        const fl = i, fr = dashCount - 1 - i;
+        borderLine += (fl < plusCount || fr < plusCount ||
+            (dashCount % 2 === 1 && i === Math.floor(dashCount / 2) && plusCount >= Math.floor(dashCount / 2)))
+            ? '+' : '-';
+    }
+    const topB = '+' + borderLine + '+';
+    const botB = '+' + borderLine + '+';
+    const color = btn.disabled ? '#007a1f' : '#00ff41';
+
+    let drawn = 0;
+    for (let i = 0; i < topB.length && drawn < n; i++, drawn++)
+        drawChar(ctx, topB[i], sl + i * cw, st, Z_FLOAT_MIN, color, FONT_SIZE);
+
+    if (drawn < n) { drawChar(ctx, '|', sl, st + lh, Z_FLOAT_MIN, color, FONT_SIZE); drawn++; }
+    for (let i = 0; i < btn.label.length && drawn < n; i++, drawn++)
+        drawChar(ctx, btn.label[i], sl + cw + padX + i * cw, st + lh, Z_FLOAT_MIN, color, FONT_SIZE);
+    if (drawn < n) { drawChar(ctx, '|', sl + borderWidth - cw, st + lh, Z_FLOAT_MIN, color, FONT_SIZE); drawn++; }
+
+    for (let i = 0; i < botB.length && drawn < n; i++, drawn++)
+        drawChar(ctx, botB[i], sl + i * cw, st + lh * 2, Z_FLOAT_MIN, color, FONT_SIZE);
+
+    ctx.globalAlpha = 1;
+}

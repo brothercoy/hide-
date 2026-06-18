@@ -1,6 +1,7 @@
-import { makeButton, drawButton } from '../ui/Button.js';
-import { makeInput, drawInput } from '../ui/Input.js';
+import { makeButton, drawButton, buttonRows } from '../ui/Button.js';
+import { makeInput, drawInput, inputRows } from '../ui/Input.js';
 import { charWidth } from '../ui/Font.js';
+import { textRow } from '../ui/Transition.js';
 
 const NAME_FONT_SIZE = 80;  // font size for the name input — bigger than rest
 const FONT_SIZE = 54;       // font size for everything else
@@ -88,6 +89,23 @@ export class PlayScreen {
         this.colonX = rowLeft + codeW + COLON_GAP;
         this.colonY = codeRowY;
         this.codeRowY = codeRowY;
+    }
+
+    // Flat list of row segments for the transition feed. Segments sharing a Y
+    // (e.g. QUICK JOIN + CREATE ROOM borders) are grouped into one row and typed
+    // left-to-right by the Transition engine.
+    getTypeables() {
+        const [quickJoin, createRoom, joinRoom] = this.ui.buttons;
+        // Group the colon with the middle row of the code input / JOIN ROOM button.
+        const codeMidY = this.codeRowY - (FONT_SIZE * 2.5) / 2 + FONT_SIZE;
+        return [
+            ...inputRows(this.nameInput, NAME_FONT_SIZE),
+            ...buttonRows(quickJoin, FONT_SIZE),
+            ...buttonRows(createRoom, FONT_SIZE),
+            ...inputRows(this.codeInput, FONT_SIZE),
+            textRow(':', this.colonX, this.codeRowY + 9, `${FONT_SIZE}px "IBMVGA"`, 'left', 'middle', '#00ff41', codeMidY),
+            ...buttonRows(joinRoom, FONT_SIZE),
+        ];
     }
 
     draw() {

@@ -1,5 +1,6 @@
-import { makeButton, drawButton } from '../ui/Button.js';
-import { makeSlider, drawSlider } from '../ui/Slider.js';
+import { makeButton, drawButton, buttonRows } from '../ui/Button.js';
+import { makeSlider, drawSlider, sliderRows } from '../ui/Slider.js';
+import { textRow } from '../ui/Transition.js';
 
 const FONT_SIZE = 32;
 
@@ -22,6 +23,16 @@ export class SettingsScreen {
         this.ui.sliders.push(makeSlider('MUSIC VOLUME', cx, cy + 80, 0, 100, 50));
 
         this.ui.buttons.push(makeButton('BACK', cx, cy + 200, () => this.onBack(), { blocksInput: true }));
+    }
+
+    // Flat list of row segments for the screen-transition feed (grouped by Y).
+    getTypeables() {
+        const cx = this.canvas.width / 2;
+        return [
+            textRow('SETTINGS', cx, 80, `96px "IBMVGA"`, 'center', 'top', '#00ff41'),
+            ...this.ui.sliders.flatMap(s => sliderRows(s, FONT_SIZE)),
+            ...this.ui.buttons.flatMap(b => buttonRows(b, FONT_SIZE)),
+        ];
     }
 
     draw() {

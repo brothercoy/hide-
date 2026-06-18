@@ -1,4 +1,4 @@
-import { makeButton, drawButton, drawChar, GLOW_SPEED, zToScale, Z_FLOAT_MIN } from '../ui/Button.js';
+import { makeButton, drawButton, drawButtonPartial, drawChar, GLOW_SPEED, zToScale, Z_FLOAT_MIN } from '../ui/Button.js';
 import { charWidth } from '../ui/Font.js';
 
 const FONT_SIZE = 54;
@@ -10,12 +10,12 @@ const HIDE_Y = 130;
 const HIDE_Z = 1.0;
 
 // @$©!! row
-const SPECIAL_SIZE = 72;
+const SPECIAL_SIZE = 46;
 const SPECIAL_SPACING = 230;
 const SPECIAL_Y = 250;
-const SPECIAL_Z = 2.5;          // resting depth
-const SPECIAL_Z_PRESSED = 2.9;  // depth when held
-const SPECIAL_Z_GLOW    = 2.5;  // overshoot target on release — glow fires here, then returns to SPECIAL_Z
+const SPECIAL_Z = 1.3;          // resting depth
+const SPECIAL_Z_PRESSED = 2.5;  // depth when held
+const SPECIAL_Z_GLOW    = 1.0;  // overshoot target on release — glow fires here, then returns to SPECIAL_Z
 const SPECIAL_PRESS_SPEED  = 0.005; // z units per ms while held
 const SPECIAL_RETURN_SPEED = 0.005; // z units per ms when returning
 
@@ -320,63 +320,6 @@ export class MainMenu {
         ctx.globalAlpha = 1;
     }
 
-    // Draw a button with only visibleChars revealed, rest invisible
-    _drawButtonPartial(ctx, btn, visibleChars) {
-        if (visibleChars <= 0) return;
-
-        ctx.font = `${FONT_SIZE}px "IBMVGA"`;
-        ctx.textAlign = 'left';
-        ctx.textBaseline = 'top';
-
-        const cw = charWidth(FONT_SIZE);
-        const labelW = btn.label.length * cw;
-        const padX = cw * 2;
-        const innerWidth = labelW + padX * 2;
-        const borderWidth = innerWidth + cw * 2;
-        const lh = FONT_SIZE;
-        const sl = btn.x - borderWidth / 2;
-        const st = btn.y - FONT_SIZE * 2.5 / 2;
-        const dashCount = Math.floor(innerWidth / cw);
-
-        btn.rect = btn.fullRect = { x: sl, y: st, w: borderWidth, h: FONT_SIZE * 2.5 };
-
-        // Build the border with live hover plus-marks (mirrors drawButton) so the
-        // hover state animates in real time as the button types out.
-        const plusCount = Math.floor((dashCount / 2) * (btn.active ? 1 : btn.hoverProgress));
-        let borderLine = '';
-        for (let i = 0; i < dashCount; i++) {
-            const fl = i, fr = dashCount - 1 - i;
-            borderLine += (fl < plusCount || fr < plusCount ||
-                (dashCount % 2 === 1 && i === Math.floor(dashCount / 2) && plusCount >= Math.floor(dashCount / 2)))
-                ? '+' : '-';
-        }
-        const topB = '+' + borderLine + '+';
-        const botB = '+' + borderLine + '+';
-        const label = btn.label;
-
-        let drawn = 0;
-        const color = '#00ff41';
-
-        for (let i = 0; i < topB.length && drawn < visibleChars; i++, drawn++)
-            drawChar(ctx, topB[i], sl + i * cw, st, Z_FLOAT_MIN, color, FONT_SIZE);
-
-        if (drawn < visibleChars) {
-            drawChar(ctx, '|', sl, st + lh, Z_FLOAT_MIN, color, FONT_SIZE);
-            drawn++;
-        }
-        for (let i = 0; i < label.length && drawn < visibleChars; i++, drawn++)
-            drawChar(ctx, label[i], sl + cw + padX + i * cw, st + lh, Z_FLOAT_MIN, color, FONT_SIZE);
-        if (drawn < visibleChars) {
-            drawChar(ctx, '|', sl + borderWidth - cw, st + lh, Z_FLOAT_MIN, color, FONT_SIZE);
-            drawn++;
-        }
-
-        for (let i = 0; i < botB.length && drawn < visibleChars; i++, drawn++)
-            drawChar(ctx, botB[i], sl + i * cw, st + lh * 2, Z_FLOAT_MIN, color, FONT_SIZE);
-
-        ctx.globalAlpha = 1;
-    }
-
     draw() {
         const ctx = this.ctx;
         const cx = this.canvas.width / 2;
@@ -421,7 +364,7 @@ export class MainMenu {
             if (elapsed_since < 0) return;
 
             const visibleChars = Math.floor(elapsed_since / BTN_CHAR_DELAY);
-            this._drawButtonPartial(ctx, btn, visibleChars);
+            drawButtonPartial(ctx, btn, visibleChars, elapsed, FONT_SIZE);
         });
     }
 }
