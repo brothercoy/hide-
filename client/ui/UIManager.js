@@ -284,13 +284,8 @@ export class UIManager {
     _getCharIndex(inp, mx) {
         if (!inp.rect) return 0;
         const textStartX = inp.rect.textStartX;
-        let closest = 0, closestDist = Infinity;
-        for (let i = 0; i <= inp.value.length; i++) {
-            const x = textStartX + this.ctx.measureText(inp.value.slice(0, i)).width;
-            const dist = Math.abs(mx - x);
-            if (dist < closestDist) { closestDist = dist; closest = i; }
-        }
-        return closest;
+        const cw = inp.rect.charWidth;
+        return Math.max(0, Math.min(inp.value.length, Math.floor((mx - textStartX) / cw)));
     }
 
     update(now) {

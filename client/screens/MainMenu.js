@@ -1,4 +1,5 @@
-import { makeButton, drawButton, drawChar, GLOW_SPEED, zToScale } from '../ui/Button.js';
+import { makeButton, drawButton, drawChar, GLOW_SPEED, zToScale, Z_FLOAT_MIN } from '../ui/Button.js';
+import { charWidth } from '../ui/Font.js';
 
 const FONT_SIZE = 54;
 
@@ -12,26 +13,53 @@ const HIDE_Z = 1.0;
 const SPECIAL_SIZE = 72;
 const SPECIAL_SPACING = 230;
 const SPECIAL_Y = 250;
-const SPECIAL_Z = 2.5;
+const SPECIAL_Z = 2.5;          // resting depth
+const SPECIAL_Z_PRESSED = 2.9;  // depth when held
+const SPECIAL_Z_GLOW    = 2.5;  // overshoot target on release — glow fires here, then returns to SPECIAL_Z
+const SPECIAL_PRESS_SPEED  = 0.005; // z units per ms while held
+const SPECIAL_RETURN_SPEED = 0.005; // z units per ms when returning
 
 // intro animation
-const INTRO_DURATION = 3.0;
 const HIDE_INTRO_DURATION = 1.2;
 const MIN_STAGGER_RATIO = 0.1;
-const INTRO_DELAY = 0.5;
-const INTRO_Z_START = 3.0;
+const INTRO_DELAY = 0.5;       // pause after hide before buttons start typing
+const BTN_CHAR_DELAY = 0.02;    // seconds per character — tune for terminal speed
+const SPECIAL_INTRO_DURATION = 1.5; // total seconds for all special chars to finish appearing
+const SPECIAL_MIN_STAGGER_RATIO = 0.1; // minimum gap between chars as fraction of total
+const SPECIAL_GLOW_SPEED = 0.0013;   // glow cycle speed for special chars — lower = slower
 
 function easeOut(t) {
     return 1 - Math.pow(1 - t, 3);
 }
 
+function moveToward(current, target, step) {
+    if (Math.abs(target - current) <= step) return target;
+    return current + Math.sign(target - current) * step;
+}
+
 function makeSpecialChar(char) {
     return {
         char,
-        releasePhase: null,
+        releasePhase: null, // null | 'releasing' | 'glowing' | 'returning'
         glowT: 0,
         rect: null,
+        z: SPECIAL_Z,
+        introComplete: false,
     };
+}
+
+// Returns the full ordered character sequence for a button, matching drawButton's draw order
+function getBtnChars(btn) {
+    const cw = charWidth(FONT_SIZE);
+    const labelW = btn.label.length * cw;
+    const padX = cw * 2;
+    const innerWidth = labelW + padX * 2;
+    const dashCount = Math.floor(innerWidth / cw);
+
+    const topB = '+' + '-'.repeat(dashCount) + '+';
+    const botB = '+' + '-'.repeat(dashCount) + '+';
+    const mid = ['|', ...btn.label.split(''), '|'];
+    return [...topB.split(''), ...mid, ...botB.split('')];
 }
 
 export class MainMenu {
@@ -44,7 +72,13 @@ export class MainMenu {
         this.introStart = null;
         this.introDone = false;
         this.specialChars = ['@', '$', '©', '!', '!'].map(makeSpecialChar);
-        this._bindSpecialClick = this._onCanvasClick.bind(this);
+        this._bindSpecialClick   = this._onCanvasClick.bind(this);
+        this._bindSpecialRelease = this._onCanvasRelease.bind(this);
+        this._bindSpecialMove    = this._onCanvasMove.bind(this);
+        this._mouseDown = false;
+        this._mouseX = 0;
+        this._mouseY = 0;
+        this._pressedSpecialChar = null;
     }
 
     enter() {
@@ -54,17 +88,24 @@ export class MainMenu {
         this.releasedDuringIntro = new Set();
         this.ui.blocked = true;
 
-        // Reset special char glow state
         this.specialChars.forEach(sc => {
             sc.releasePhase = null;
             sc.glowT = 0;
             sc.rect = null;
+            sc.z = SPECIAL_Z;
+            sc.introComplete = false;
         });
+        this._mouseDown = false;
+        this._pressedSpecialChar = null;
 
-        // Remove any previous listener before adding new one
         this.canvas.removeEventListener('mousedown', this._bindSpecialClick);
+        this.canvas.removeEventListener('mouseup',   this._bindSpecialRelease);
+        this.canvas.removeEventListener('mousemove', this._bindSpecialMove);
         this.canvas.addEventListener('mousedown', this._bindSpecialClick);
+        this.canvas.addEventListener('mouseup',   this._bindSpecialRelease);
+        this.canvas.addEventListener('mousemove', this._bindSpecialMove);
 
+        // Precompute hide timestamps
         const chars = 4;
         const minGap = HIDE_INTRO_DURATION * MIN_STAGGER_RATIO;
         const reserved = minGap * (chars - 1);
@@ -86,6 +127,12 @@ export class MainMenu {
             this.hideTimestamps.push(this.hideTimestamps[i] + gaps[i]);
         }
 
+        // Each special char gets a random start offset within SPECIAL_INTRO_DURATION
+        const maxStart = SPECIAL_INTRO_DURATION * (1 - SPECIAL_MIN_STAGGER_RATIO);
+        this.specialOffsets = this.specialChars.map(() =>
+            SPECIAL_INTRO_DURATION * SPECIAL_MIN_STAGGER_RATIO + Math.random() * maxStart
+        );
+
         const cx = this.canvas.width / 2;
         const cy = this.canvas.height / 2;
         const btnHeight = FONT_SIZE * 2.5;
@@ -95,53 +142,100 @@ export class MainMenu {
 
         this.ui.buttons.push(makeButton('PLAY', cx, startY, () => this.onPlay(), { blocksInput: true }));
         this.ui.buttons.push(makeButton('SETTINGS', cx, startY + btnSpacing, () => this.onSettings(), { blocksInput: true }));
+
+        this.btnTypeStart = [];
+        this.btnCharCount = [];
+        let cursor = HIDE_INTRO_DURATION + INTRO_DELAY;
+        this.ui.buttons.forEach(btn => {
+            this.btnTypeStart.push(cursor);
+            const count = getBtnChars(btn).length;
+            this.btnCharCount.push(count);
+            cursor += count * BTN_CHAR_DELAY;
+        });
+        this.allBtnsFinishTime = cursor;
     }
 
-    _onCanvasClick(e) {
+    _getEventPos(e) {
         const rect = this.canvas.getBoundingClientRect();
         let mx = e.clientX - rect.left;
         let my = e.clientY - rect.top;
-        // Apply coord transform if present (CRT curve correction)
-        if (this.ui.coordTransform) {
-            ({ x: mx, y: my } = this.ui.coordTransform(mx, my));
-        }
+        if (this.ui.coordTransform) ({ x: mx, y: my } = this.ui.coordTransform(mx, my));
+        return { mx, my };
+    }
+
+    _onCanvasClick(e) {
+        const { mx, my } = this._getEventPos(e);
+        this._mouseDown = true;
+        this._mouseX = mx;
+        this._mouseY = my;
+        this._pressedSpecialChar = null;
         this.specialChars.forEach(sc => {
-            if (!sc.rect) return;
+            if (!sc.rect || !sc.introComplete) return;
             if (mx >= sc.rect.x && mx <= sc.rect.x + sc.rect.w &&
                 my >= sc.rect.y && my <= sc.rect.y + sc.rect.h) {
-                // Start glow — same as button release into glowing
-                sc.releasePhase = 'glowing';
+                this._pressedSpecialChar = sc;
+                sc.releasePhase = null;
                 sc.glowT = 0;
             }
         });
     }
 
-    _updateSpecialChars(dt) {
-        this.specialChars.forEach(sc => {
-            if (sc.releasePhase === 'glowing') {
-                sc.glowT += dt * GLOW_SPEED;
-                if (sc.glowT >= 1.0) {
-                    sc.glowT = 0;
-                    sc.releasePhase = null;
-                }
-            }
-        });
+    _onCanvasMove(e) {
+        const { mx, my } = this._getEventPos(e);
+        this._mouseX = mx;
+        this._mouseY = my;
     }
 
-    _introZ(targetZ, elapsed) {
-        if (this.introDone) return targetZ;
-        if (this.introStart === null) return INTRO_Z_START;
-        const restStart = HIDE_INTRO_DURATION + INTRO_DELAY;
-        const t = elapsed - this.introStart;
-        const localT = Math.max(0, Math.min(1, (t - restStart) / INTRO_DURATION));
-        return INTRO_Z_START + (targetZ - INTRO_Z_START) * easeOut(localT);
+    _onCanvasRelease(e) {
+        const { mx, my } = this._getEventPos(e);
+        this._mouseDown = false;
+        const sc = this._pressedSpecialChar;
+        this._pressedSpecialChar = null;
+        if (sc && sc.rect &&
+            mx >= sc.rect.x && mx <= sc.rect.x + sc.rect.w &&
+            my >= sc.rect.y && my <= sc.rect.y + sc.rect.h) {
+            sc.releasePhase = 'releasing';
+        }
+        // released off-char: z drifts back to SPECIAL_Z naturally in _updateSpecialChars
+    }
+
+    _updateSpecialChars(dt) {
+        this.specialChars.forEach(sc => {
+            if (!sc.introComplete) return;
+
+            const isOver = sc.rect &&
+                this._mouseX >= sc.rect.x && this._mouseX <= sc.rect.x + sc.rect.w &&
+                this._mouseY >= sc.rect.y && this._mouseY <= sc.rect.y + sc.rect.h;
+            const isActivelyPressed = this._mouseDown && sc === this._pressedSpecialChar && isOver;
+
+            if (isActivelyPressed) {
+                sc.z = moveToward(sc.z, SPECIAL_Z_PRESSED, dt * SPECIAL_PRESS_SPEED);
+            } else if (sc.releasePhase === 'releasing') {
+                sc.z = moveToward(sc.z, SPECIAL_Z_GLOW, dt * SPECIAL_RETURN_SPEED);
+                if (sc.z === SPECIAL_Z_GLOW) {
+                    sc.releasePhase = 'glowing';
+                    sc.glowT = 0;
+                }
+            } else if (sc.releasePhase === 'glowing') {
+                sc.glowT += dt * SPECIAL_GLOW_SPEED;
+                if (sc.glowT >= 1.0) {
+                    sc.glowT = 0;
+                    sc.releasePhase = 'returning';
+                }
+            } else if (sc.releasePhase === 'returning') {
+                sc.z = moveToward(sc.z, SPECIAL_Z, dt * SPECIAL_RETURN_SPEED);
+                if (sc.z === SPECIAL_Z) sc.releasePhase = null;
+            } else if (sc.z !== SPECIAL_Z) {
+                // released off-char — drift back
+                sc.z = moveToward(sc.z, SPECIAL_Z, dt * SPECIAL_RETURN_SPEED);
+            }
+        });
     }
 
     _checkIntroDone(elapsed) {
         if (this.introDone) return;
         if (this.introStart === null) return;
-        const restStart = HIDE_INTRO_DURATION + INTRO_DELAY;
-        if (elapsed - this.introStart > restStart + INTRO_DURATION) {
+        if (elapsed - this.introStart > this.allBtnsFinishTime) {
             this.introDone = true;
         }
     }
@@ -176,10 +270,22 @@ export class MainMenu {
         const totalW = this.specialChars.length * charW + (this.specialChars.length - 1) * SPECIAL_SPACING;
         let x = cx - totalW / 2;
 
-        this.specialChars.forEach((sc, i) => {
-            const z = this._introZ(SPECIAL_Z, elapsed);
+        const specialStart = HIDE_INTRO_DURATION + INTRO_DELAY;
+        const t = this.introStart === null ? 0 : (elapsed - this.introStart) - specialStart;
 
-            // Glow color — same formula as drawButton
+        this.specialChars.forEach((sc, i) => {
+            sc.rect = { x, y: SPECIAL_Y, w: charW, h: SPECIAL_SIZE };
+
+            // Drive sc.z from the intro easeOut until complete
+            if (!sc.introComplete) {
+                const offset = this.specialOffsets ? this.specialOffsets[i] : 0;
+                const localT = Math.max(0, Math.min(1, (t - offset) / SPECIAL_INTRO_DURATION));
+                sc.z = 3.0 + (SPECIAL_Z - 3.0) * easeOut(localT);
+                if (localT >= 1) { sc.introComplete = true; sc.z = SPECIAL_Z; }
+            }
+
+            const z = sc.z;
+
             let color = '#00ff41';
             if (sc.releasePhase === 'glowing' && sc.glowT > 0) {
                 const g = sc.glowT < 0.5 ? sc.glowT * 2 : (1 - sc.glowT) * 2;
@@ -189,7 +295,6 @@ export class MainMenu {
             drawChar(ctx, sc.char, x, SPECIAL_Y, z, color, SPECIAL_SIZE);
             ctx.font = `${SPECIAL_SIZE}px "IBMVGA"`;
 
-            // Glow overlay — drawn on top at boosted alpha, full size, no z scaling
             if (sc.releasePhase === 'glowing' && sc.glowT > 0) {
                 const g = sc.glowT < 0.5 ? sc.glowT * 2 : (1 - sc.glowT) * 2;
                 const glowColor = `rgb(${Math.round(g * 170)}, 255, ${Math.round(65 + g * 121)})`;
@@ -202,7 +307,7 @@ export class MainMenu {
                 const xShift = (fw - sw) / 2;
                 const yShift = (SPECIAL_SIZE - scaledSize) * 0.5;
                 ctx.save();
-                ctx.globalAlpha = g * 0.133;
+                ctx.globalAlpha = g * 0.3;
                 ctx.fillStyle = glowColor;
                 ctx.textAlign = 'left';
                 ctx.textBaseline = 'top';
@@ -210,11 +315,65 @@ export class MainMenu {
                 ctx.restore();
             }
 
-            // Store hit rect for click detection — full slot width, full char height
-            sc.rect = { x, y: SPECIAL_Y, w: charW, h: SPECIAL_SIZE };
-
             x += charW + SPECIAL_SPACING;
         });
+        ctx.globalAlpha = 1;
+    }
+
+    // Draw a button with only visibleChars revealed, rest invisible
+    _drawButtonPartial(ctx, btn, visibleChars) {
+        if (visibleChars <= 0) return;
+
+        ctx.font = `${FONT_SIZE}px "IBMVGA"`;
+        ctx.textAlign = 'left';
+        ctx.textBaseline = 'top';
+
+        const cw = charWidth(FONT_SIZE);
+        const labelW = btn.label.length * cw;
+        const padX = cw * 2;
+        const innerWidth = labelW + padX * 2;
+        const borderWidth = innerWidth + cw * 2;
+        const lh = FONT_SIZE;
+        const sl = btn.x - borderWidth / 2;
+        const st = btn.y - FONT_SIZE * 2.5 / 2;
+        const dashCount = Math.floor(innerWidth / cw);
+
+        btn.rect = btn.fullRect = { x: sl, y: st, w: borderWidth, h: FONT_SIZE * 2.5 };
+
+        // Build the border with live hover plus-marks (mirrors drawButton) so the
+        // hover state animates in real time as the button types out.
+        const plusCount = Math.floor((dashCount / 2) * (btn.active ? 1 : btn.hoverProgress));
+        let borderLine = '';
+        for (let i = 0; i < dashCount; i++) {
+            const fl = i, fr = dashCount - 1 - i;
+            borderLine += (fl < plusCount || fr < plusCount ||
+                (dashCount % 2 === 1 && i === Math.floor(dashCount / 2) && plusCount >= Math.floor(dashCount / 2)))
+                ? '+' : '-';
+        }
+        const topB = '+' + borderLine + '+';
+        const botB = '+' + borderLine + '+';
+        const label = btn.label;
+
+        let drawn = 0;
+        const color = '#00ff41';
+
+        for (let i = 0; i < topB.length && drawn < visibleChars; i++, drawn++)
+            drawChar(ctx, topB[i], sl + i * cw, st, Z_FLOAT_MIN, color, FONT_SIZE);
+
+        if (drawn < visibleChars) {
+            drawChar(ctx, '|', sl, st + lh, Z_FLOAT_MIN, color, FONT_SIZE);
+            drawn++;
+        }
+        for (let i = 0; i < label.length && drawn < visibleChars; i++, drawn++)
+            drawChar(ctx, label[i], sl + cw + padX + i * cw, st + lh, Z_FLOAT_MIN, color, FONT_SIZE);
+        if (drawn < visibleChars) {
+            drawChar(ctx, '|', sl + borderWidth - cw, st + lh, Z_FLOAT_MIN, color, FONT_SIZE);
+            drawn++;
+        }
+
+        for (let i = 0; i < botB.length && drawn < visibleChars; i++, drawn++)
+            drawChar(ctx, botB[i], sl + i * cw, st + lh * 2, Z_FLOAT_MIN, color, FONT_SIZE);
+
         ctx.globalAlpha = 1;
     }
 
@@ -242,16 +401,27 @@ export class MainMenu {
         this._drawHide(ctx, cx, elapsed);
         this._drawSpecial(ctx, cx, elapsed);
 
+        const t = this.introStart === null ? 0 : elapsed - this.introStart;
+
         this.ui.buttons.forEach((btn, i) => {
-            if (!this.introDone && !this.releasedDuringIntro.has(i)) {
-                if (btn._isPressed || btn.releasePhase !== null) {
-                    this.releasedDuringIntro.add(i);
-                }
+            if (this.introDone || this.releasedDuringIntro.has(i)) {
+                drawButton(ctx, btn, elapsed, FONT_SIZE);
+                return;
             }
-            if (!this.introDone && !this.releasedDuringIntro.has(i)) {
-                btn.z = this._introZ(1.3, elapsed);
+
+            if (btn._isPressed || btn.releasePhase !== null) {
+                this.releasedDuringIntro.add(i);
+                drawButton(ctx, btn, elapsed, FONT_SIZE);
+                return;
             }
-            drawButton(ctx, btn, elapsed, FONT_SIZE);
+
+            const typeStart = this.btnTypeStart[i];
+            const elapsed_since = t - typeStart;
+
+            if (elapsed_since < 0) return;
+
+            const visibleChars = Math.floor(elapsed_since / BTN_CHAR_DELAY);
+            this._drawButtonPartial(ctx, btn, visibleChars);
         });
     }
 }

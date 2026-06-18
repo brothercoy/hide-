@@ -1,7 +1,16 @@
 import { makeButton, drawButton } from '../ui/Button.js';
 import { makeInput, drawInput } from '../ui/Input.js';
+import { charWidth } from '../ui/Font.js';
 
-const FONT_SIZE = 32;
+const NAME_FONT_SIZE = 80;  // font size for the name input — bigger than rest
+const FONT_SIZE = 54;       // font size for everything else
+
+// Layout constants — tweak to adjust positioning
+const NAME_Y       = 260;  // vertical center of name input
+const BTN_ROW_GAP  = 100;   // gap between name input bottom and QUICK JOIN / CREATE ROOM row
+const BTN_PAIR_GAP = 60;   // horizontal gap between QUICK JOIN and CREATE ROOM
+const CODE_ROW_GAP = 40;   // gap between button row bottom and ROOM CODE / JOIN ROOM row
+const COLON_GAP    = 20;   // horizontal gap on each side of the : separator
 
 export class PlayScreen {
     constructor(canvas, ctx, uiManager, onQuickJoin, onCreateRoom, onJoinRoom, onBack) {
@@ -16,40 +25,91 @@ export class PlayScreen {
         this.codeInput = null;
     }
 
+    _btnWidth(label) {
+        const cw = charWidth(FONT_SIZE);
+        const labelW = label.length * cw;
+        const padX = cw * 2;
+        const innerWidth = labelW + padX * 2;
+        return innerWidth + cw * 2;
+    }
+
+    _inputWidth(placeholder, fontSize) {
+        const cw = charWidth(fontSize);
+        const refW = placeholder.length * cw;
+        const padX = cw * 2;
+        const innerWidth = refW + padX * 2;
+        return innerWidth + cw * 2;
+    }
+
     enter() {
         this.ui.clear();
 
         const cx = this.canvas.width / 2;
-        const cy = this.canvas.height / 2;
+        const btnH = FONT_SIZE * 2.5;
+        const nameH = NAME_FONT_SIZE * 2.5;
 
-        this.nameInput = makeInput('ENTER NAME', cx, cy - 200, 12);
-        this.codeInput = makeInput('ROOM CODE', cx, cy + 80, 6);
-
+        // Name input — larger font
+        this.nameInput = makeInput('ENTER NAME', cx, NAME_Y, 12);
+        this.nameInput.fontSize = NAME_FONT_SIZE;
         this.ui.inputs.push(this.nameInput);
+
+        // QUICK JOIN + CREATE ROOM side by side, centered
+        const qjW = this._btnWidth('QUICK JOIN');
+        const crW = this._btnWidth('CREATE ROOM');
+        const btnRowY = NAME_Y + nameH / 2 + btnH / 2 + BTN_ROW_GAP;
+
+        // Gap between buttons is centered on cx
+        const qjX = cx - BTN_PAIR_GAP / 2 - qjW / 2;
+        const crX = cx + BTN_PAIR_GAP / 2 + crW / 2;
+
+        this.ui.buttons.push(makeButton('QUICK JOIN',  qjX, btnRowY, () => this.onQuickJoin(this.nameInput.value),  { blocksInput: true }));
+        this.ui.buttons.push(makeButton('CREATE ROOM', crX, btnRowY, () => this.onCreateRoom(this.nameInput.value), { blocksInput: true }));
+
+        // ROOM CODE input + JOIN ROOM button side by side with : between them
+        const codeW = this._inputWidth('ROOM CODE', FONT_SIZE);
+        const jrW   = this._btnWidth('JOIN ROOM');
+        const cw    = charWidth(FONT_SIZE);
+        const colonW = cw; // : is one character wide
+        const rowTotalW = codeW + COLON_GAP + colonW + COLON_GAP + jrW;
+        const rowLeft = cx - rowTotalW / 2;
+        const codeRowY = btnRowY + btnH / 2 + btnH / 2 + CODE_ROW_GAP;
+
+        const codeX = rowLeft + codeW / 2;
+        const joinX = rowLeft + codeW + COLON_GAP + colonW + COLON_GAP + jrW / 2;
+
+        this.codeInput = makeInput('ROOM CODE', codeX, codeRowY, 6);
         this.ui.inputs.push(this.codeInput);
 
-        this.ui.buttons.push(makeButton('QUICK JOIN', cx, cy - 80, () => this.onQuickJoin(this.nameInput.value), { blocksInput: true }));
-        this.ui.buttons.push(makeButton('CREATE ROOM', cx, cy, () => this.onCreateRoom(this.nameInput.value), { blocksInput: true }));
-        this.ui.buttons.push(makeButton('JOIN ROOM', cx, cy + 160, () => this.onJoinRoom(this.nameInput.value, this.codeInput.value), { blocksInput: true }));
-        this.ui.buttons.push(makeButton('BACK', cx, cy + 280, () => this.onBack(), { blocksInput: true }));
+        this.ui.buttons.push(makeButton('JOIN ROOM', joinX, codeRowY, () => this.onJoinRoom(this.nameInput.value, this.codeInput.value), { blocksInput: true }));
+
+
+
+        // Store colon position for drawing
+        this.colonX = rowLeft + codeW + COLON_GAP;
+        this.colonY = codeRowY;
+        this.codeRowY = codeRowY;
     }
 
     draw() {
         const ctx = this.ctx;
-        const cx = this.canvas.width / 2;
 
-        ctx.fillStyle = '#00ff41';
-        ctx.textAlign = 'center';
-        ctx.textBaseline = 'top';
-        ctx.font = `96px "IBMVGA"`;
-        ctx.fillText('HIDE', cx, 80);
+        // Draw name input at its own font size
+        const nameInp = this.nameInput;
+        if (nameInp) drawInput(ctx, nameInp, this.ui.elapsed, NAME_FONT_SIZE);
 
-        this.ui.inputs.forEach(inp => {
-            drawInput(ctx, inp, this.ui.elapsed, FONT_SIZE);
-        });
+        // Draw code input at standard font size
+        if (this.codeInput) drawInput(ctx, this.codeInput, this.ui.elapsed, FONT_SIZE);
 
-        this.ui.buttons.forEach(btn => {
-            drawButton(ctx, btn, this.ui.elapsed, FONT_SIZE);
-        });
+        // Draw : between code input and join room button
+        if (this.colonX !== undefined) {
+            ctx.globalAlpha = 1;
+            ctx.fillStyle = '#00ff41';
+            ctx.font = `${FONT_SIZE}px "IBMVGA"`;
+            ctx.textAlign = 'left';
+            ctx.textBaseline = 'middle';
+            ctx.fillText(':', this.colonX, this.codeRowY + 9); // increase offset to lower colon
+        }
+
+        this.ui.buttons.forEach(btn => drawButton(ctx, btn, this.ui.elapsed, FONT_SIZE));
     }
 }

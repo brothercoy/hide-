@@ -42,18 +42,12 @@ export function drawInput(ctx, inp, elapsed, FONT_SIZE) {
     const totalTextWidth = inp.value.length * cw;
     const textStartX = inp.value.length === 0 ? centerX - cw/2 : centerX - totalTextWidth/2;
 
-    // Draw cursor rectangle before text (like selection rectangle)
+    // Cursor rect — drawn before text so text renders on top
     if (inp.focused && inp.cursorVisible && !hasSelection) {
         const cursorX = textStartX + inp.cursorPos * cw;
-        const refGlyph = otFont.charToGlyph('M');
-        const refScale = FONT_SIZE / otFont.unitsPerEm;
-        const refBbox = refGlyph.getBoundingBox();
-        const glyphTop = (textY + FONT_SIZE) - refBbox.y2 * refScale;
-        const glyphH = (refBbox.y2 - refBbox.y1) * refScale;
-        const extendAmount = 6;
         ctx.globalAlpha = 1;
         ctx.fillStyle = '#00ff41';
-        ctx.fillRect(cursorX, glyphTop - extendAmount, cw - 2, glyphH + extendAmount * 2);
+        ctx.fillRect(cursorX, textY, cw - 2, FONT_SIZE - 4);
     }
 
     let ci = 0;
@@ -82,15 +76,9 @@ export function drawInput(ctx, inp, elapsed, FONT_SIZE) {
         const selMax = Math.max(inp.selStart, inp.selEnd);
         const selX = textStartX + selMin * cw;
         const selW = (selMax - selMin + 1) * cw;
-        const refGlyph2 = otFont.charToGlyph('M');
-        const refScale2 = FONT_SIZE / otFont.unitsPerEm;
-        const refBbox2 = refGlyph2.getBoundingBox();
-        const selTop = (textY + FONT_SIZE) - refBbox2.y2 * refScale2;
-        const selH = (refBbox2.y2 - refBbox2.y1) * refScale2;
-        const extendAmount = 6;
         ctx.globalAlpha = 1;
         ctx.fillStyle = '#00ff41';
-        ctx.fillRect(selX, selTop - extendAmount, selW, selH + extendAmount * 2);
+        ctx.fillRect(selX, textY, selW, FONT_SIZE - 4);
         for (let i = 0; i < inp.value.length; i++, ci++) {
             const isSel = i >= selMin && i <= selMax;
             rotAngle = Math.sin(elapsed * CHAR_ROT_SPEED + inp.phase + ci * 0.7 + Math.PI) * CHAR_ROT_MAX;
