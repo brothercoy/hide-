@@ -6,7 +6,7 @@ import { PlayScreen } from './screens/PlayScreen.js';
 import { SettingsScreen } from './screens/SettingsScreen.js';
 import { LobbyScreen } from './screens/LobbyScreen.js';
 import { GameScreen } from './screens/GameScreen.js';
-import { makeButton, drawButton } from './ui/Button.js';
+import { makeButton, drawButton, zToAlpha } from './ui/Button.js';
 import { initFont } from './ui/Font.js';
 import { CRTEffect } from './CRTShader.js';
 import { Transition } from './ui/Transition.js';
@@ -114,9 +114,9 @@ function curveInverse(canvasRelX, canvasRelY) {
     };
 }
 
-function enterScreen(name) {
+function enterScreen(name, opts) {
     const s = screens[name];
-    if (s) s.enter();
+    if (s) s.enter(opts);
 }
 
 function showScreen(name, opts = {}) {
@@ -134,26 +134,27 @@ function showScreen(name, opts = {}) {
     // inside transition.begin/beginScrollOnly before enter() clears anything.
     const incoming = screens[name];
     const onComplete = () => {
-        // MainMenu owns its own unblock timer; never clobber an open modal.
-        if (currentScreen !== 'main' && !modalMessage) {
+        if (!modalMessage) {
             uiManager.blocked = false;
             uiManager.lastTime = performance.now();
         }
     };
 
-    if (name === 'main' || !incoming || typeof incoming.getTypeables !== 'function') {
+    if (!incoming || typeof incoming.getTypeables !== 'function') {
         // Scroll the outgoing screen off; the incoming screen draws itself
-        // (and plays its own intro, e.g. MainMenu) underneath.
-        transition.beginScrollOnly({ onComplete });
+        // underneath. The HUD types in as a tail once the scroll finishes.
         currentScreen = name;
         uiManager.blocked = true;
         enterScreen(name);
+        transition.beginScrollOnly({ tail: getHudRows(), onComplete });
     } else {
-        // Type the incoming screen in while the outgoing scrolls up.
+        // Type the incoming screen in (its row feed) while the outgoing scrolls
+        // up; the HUD is appended as the final (bottom-most) row. `typed: true`
+        // tells MainMenu to skip its bespoke first-load intro.
         currentScreen = name;
         uiManager.blocked = true;
-        enterScreen(name);
-        transition.begin({ typeables: incoming.getTypeables(), onComplete });
+        enterScreen(name, { typed: true });
+        transition.begin({ typeables: [...incoming.getTypeables(), ...getHudRows()], onComplete });
     }
 }
 
@@ -373,11 +374,208 @@ function showModal(message) {
     uiManager.buttons.forEach(btn => btn.hoverProgress = 0);
 }
 
-function getHUDRects() {
-    return {
-        fullscreen: { x: canvas.width - 80,  y: canvas.height - 56, w: 40, h: 28 },
-        gear:       { x: canvas.width - 160, y: canvas.height - 56, w: 40, h: 28 }
-    };
+// --- Persistent ASCII HUD (bottom-right) ---
+// Real elements with hover animation + button-like press/release/glow. Hit rects
+// are fixed (independent of the hover animation) so hovering doesn't toggle.
+// The *action* fires from the click handler (keeps fullscreen's user-gesture and
+// avoids the settings-panel double-toggle); the press/glow here is visual only.
+const HUD_FONT = 28;
+const HUD_Z_REST = 1.3;        // resting depth (full opacity)
+const HUD_Z_PRESSED = 2.5;     // held — fades back
+const HUD_Z_GLOW = 1.0;        // overshoot on release — glow fires here
+const HUD_PRESS_SPEED = 0.005; // z per ms while held
+const HUD_RETURN_SPEED = 0.005;// z per ms when returning
+const HUD_GLOW_SPEED = 0.0013; // glow cycle speed
+
+// Fullscreen bracket snap animation (discrete, while hovered):
+// [ ] -> [  ] -> [   ] -> (snap back) [ ] -> ... looping.
+const HUD_BRACKET_BASE = 9;    // rest half-gap from center to each bracket
+const HUD_SNAP_STEP = 4;       // px each bracket jumps outward per snap level
+const HUD_SNAP_HOLD_MS = 430;  // how long each snap state holds
+const HUD_SNAP_PAUSE_MS = 300; // extra rest after each "snap snap return" cycle
+
+function hudMoveToward(current, target, step) {
+    return Math.abs(target - current) <= step ? target : current + Math.sign(target - current) * step;
+}
+
+let hudMouseDown = false;
+let hudPressedItem = null;
+
+const hudItems = [
+    {
+        id: 'settings',
+        hover: 0, z: HUD_Z_REST, releasePhase: null, glowT: 0, _rect: null,
+        typeChars: '(*)',
+        getRect() { return { x: canvas.width - 200, y: canvas.height - 90, w: 60, h: 40 }; },
+        render(ctx, r, hover, alpha, color) {
+            ctx.globalAlpha = alpha;
+            ctx.fillStyle = color;
+            ctx.font = `${HUD_FONT}px "IBMVGA"`;
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            // TODO: placeholder — replace with a proper ASCII "gear" glyph.
+            ctx.fillText('(*)', r.x + r.w / 2, r.y + r.h / 2);
+            ctx.globalAlpha = 1;
+        },
+        // Type-in reveal for the transition feed (first n chars, ending centered).
+        drawTyped(ctx, r, n) {
+            ctx.globalAlpha = 1;
+            ctx.fillStyle = '#00ff41';
+            ctx.font = `${HUD_FONT}px "IBMVGA"`;
+            ctx.textAlign = 'left';
+            ctx.textBaseline = 'middle';
+            const left = r.x + r.w / 2 - ctx.measureText(this.typeChars).width / 2;
+            ctx.fillText(this.typeChars.slice(0, n), left, r.y + r.h / 2);
+        },
+        onClick() { settingsPanelOpen = !settingsPanelOpen; }
+    },
+    {
+        id: 'fullscreen',
+        hover: 0, z: HUD_Z_REST, releasePhase: null, glowT: 0, _rect: null,
+        _animT: 0, _spread: 0,
+        typeChars: '[]',
+        getRect() { return { x: canvas.width - 120, y: canvas.height - 90, w: 70, h: 40 }; },
+        // Inactive (windowed): rests closed, hover snaps OUT twice then returns.
+        // Active (fullscreen): rests expanded, hover snaps IN twice then reverts.
+        tick(dt, over) {
+            const active = !!document.fullscreenElement;
+            const EXPANDED = HUD_SNAP_STEP * 2;
+            const rest = active ? EXPANDED : 0;
+            if (over) {
+                this._animT += dt;
+                const H = HUD_SNAP_HOLD_MS;
+                const cycle = 3 * H + HUD_SNAP_PAUSE_MS;
+                const t = this._animT % cycle;
+                if (active) {
+                    this._spread = t < H ? HUD_SNAP_STEP : t < 2 * H ? 0 : EXPANDED;
+                } else {
+                    this._spread = t < H ? HUD_SNAP_STEP : t < 2 * H ? EXPANDED : 0;
+                }
+            } else {
+                this._animT = 0;
+                this._spread = rest;
+            }
+        },
+        render(ctx, r, hover, alpha, color) {
+            ctx.globalAlpha = alpha;
+            ctx.fillStyle = color;
+            ctx.font = `${HUD_FONT}px "IBMVGA"`;
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            const cx = r.x + r.w / 2;
+            const cy = r.y + r.h / 2;
+            // Both brackets snap outward symmetrically from the center.
+            const half = HUD_BRACKET_BASE + this._spread;
+            ctx.fillText('[', cx - half, cy);
+            ctx.fillText(']', cx + half, cy);
+            ctx.globalAlpha = 1;
+        },
+        // Type-in reveal: '[' then ']' at the resting spread.
+        drawTyped(ctx, r, n) {
+            ctx.globalAlpha = 1;
+            ctx.fillStyle = '#00ff41';
+            ctx.font = `${HUD_FONT}px "IBMVGA"`;
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            const cx = r.x + r.w / 2, cy = r.y + r.h / 2;
+            const half = HUD_BRACKET_BASE + (document.fullscreenElement ? HUD_SNAP_STEP * 2 : 0);
+            if (n >= 1) ctx.fillText('[', cx - half, cy);
+            if (n >= 2) ctx.fillText(']', cx + half, cy);
+        },
+        onClick() {
+            if (!document.fullscreenElement) document.documentElement.requestFullscreen();
+            else document.exitFullscreen();
+        }
+    }
+];
+
+function updateHUD(dt) {
+    const mx = uiManager.mouseX, my = uiManager.mouseY;
+    for (const it of hudItems) {
+        const r = it.getRect();
+        it._rect = r;
+        const over = mx >= r.x && mx <= r.x + r.w && my >= r.y && my <= r.y + r.h;
+        it.hover = over ? Math.min(1, it.hover + dt / 150) : Math.max(0, it.hover - dt / 150);
+        if (it.tick) it.tick(dt, over);
+
+        const pressed = hudMouseDown && it === hudPressedItem && over;
+        if (pressed) {
+            it.z = hudMoveToward(it.z, HUD_Z_PRESSED, dt * HUD_PRESS_SPEED);
+        } else if (it.releasePhase === 'releasing') {
+            it.z = hudMoveToward(it.z, HUD_Z_GLOW, dt * HUD_RETURN_SPEED);
+            if (it.z === HUD_Z_GLOW) { it.releasePhase = 'glowing'; it.glowT = 0; }
+        } else if (it.releasePhase === 'glowing') {
+            it.glowT += dt * HUD_GLOW_SPEED;
+            if (it.glowT >= 1.0) { it.glowT = 0; it.releasePhase = 'returning'; }
+        } else if (it.releasePhase === 'returning') {
+            it.z = hudMoveToward(it.z, HUD_Z_REST, dt * HUD_RETURN_SPEED);
+            if (it.z === HUD_Z_REST) it.releasePhase = null;
+        } else if (it.z !== HUD_Z_REST) {
+            it.z = hudMoveToward(it.z, HUD_Z_REST, dt * HUD_RETURN_SPEED);
+        }
+    }
+}
+
+function drawHUDItems() {
+    for (const it of hudItems) {
+        const r = it.getRect();
+        it._rect = r;
+        let color = '#00ff41';
+        if (it.releasePhase === 'glowing' && it.glowT > 0) {
+            const g = it.glowT < 0.5 ? it.glowT * 2 : (1 - it.glowT) * 2;
+            color = `rgb(${Math.round(g * 170)}, 255, ${Math.round(65 + g * 121)})`;
+        }
+        it.render(ctx, r, it.hover, zToAlpha(it.z), color);
+    }
+}
+
+// Row segments so the HUD types in as the final row of a screen transition.
+// Both items share a Y, so they group into one row typed left-to-right.
+function getHudRows() {
+    return hudItems.map(it => {
+        const r = it.getRect();
+        return {
+            y: r.y + r.h / 2,
+            x: r.x,
+            cost: it.typeChars.length,
+            draw: (ctx, n) => it.drawTyped(ctx, r, n)
+        };
+    });
+}
+
+// Press/release visual lifecycle (action itself fires from the click handler).
+function hudOnMouseDown(mx, my) {
+    hudMouseDown = true;
+    hudPressedItem = null;
+    for (const it of hudItems) {
+        const r = it._rect || it.getRect();
+        if (mx >= r.x && mx <= r.x + r.w && my >= r.y && my <= r.y + r.h) {
+            hudPressedItem = it;
+            it.releasePhase = null;
+            it.glowT = 0;
+            break;
+        }
+    }
+}
+
+function hudOnMouseUp(mx, my) {
+    hudMouseDown = false;
+    const it = hudPressedItem;
+    hudPressedItem = null;
+    if (!it) return;
+    const r = it._rect || it.getRect();
+    if (mx >= r.x && mx <= r.x + r.w && my >= r.y && my <= r.y + r.h) {
+        it.releasePhase = 'releasing'; // triggers overshoot -> glow
+        it.glowT = 0;
+    }
+}
+
+function hudHit(mx, my) {
+    for (const it of hudItems) {
+        const r = it._rect || it.getRect();
+        if (mx >= r.x && mx <= r.x + r.w && my >= r.y && my <= r.y + r.h) return it;
+    }
+    return null;
 }
 
 function getSettingsPanelRect() {
@@ -389,13 +587,7 @@ function getModalOkRect() {
 }
 
 function drawPersistentHUD() {
-    ctx.font = '20px "IBMVGA"';
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    ctx.fillStyle = '#00ff41';
-    const r = getHUDRects();
-    ctx.fillText('⚙', r.gear.x + r.gear.w / 2, r.gear.y + r.gear.h / 2);
-    ctx.fillText('⛶', r.fullscreen.x + r.fullscreen.w / 2, r.fullscreen.y + r.fullscreen.h / 2);
+    drawHUDItems();
 
     if (settingsPanelOpen) {
         const p = getSettingsPanelRect();
@@ -447,12 +639,13 @@ function draw() {
 
     // Keep clocks/animations advancing even during a transition.
     uiManager.update(now);
+    updateHUD(dt);
 
     if (transition.isActive()) {
         transition.update(dt);
-        // For scroll-only, the incoming screen draws itself underneath.
+        // For scroll-only, the incoming screen draws itself underneath. The HUD
+        // is NOT drawn pinned here — it types in via the transition feed/tail.
         transition.render(uiManager.elapsed, () => drawScreenInto(currentScreen));
-        drawPersistentHUD();
         return;
     }
 
@@ -466,6 +659,22 @@ function draw() {
 }
 
 // --- Click Handler ---
+
+function hudEventPos(e) {
+    const rect = canvas.getBoundingClientRect();
+    return curveInverse(e.clientX - rect.left, e.clientY - rect.top);
+}
+
+canvas.addEventListener('mousedown', (e) => {
+    if (transition.isActive() || modalMessage) return;
+    const { x, y } = hudEventPos(e);
+    hudOnMouseDown(x, y);
+});
+
+canvas.addEventListener('mouseup', (e) => {
+    const { x, y } = hudEventPos(e);
+    hudOnMouseUp(x, y);
+});
 
 canvas.addEventListener('click', (e) => {
     if (transition.isActive()) return; // ignore clicks mid-transition
@@ -501,19 +710,8 @@ canvas.addEventListener('click', (e) => {
         return;
     }
 
-    const hudRects = getHUDRects();
-    if (hits(hudRects.gear)) {
-        settingsPanelOpen = !settingsPanelOpen;
-        return;
-    }
-    if (hits(hudRects.fullscreen)) {
-        if (!document.fullscreenElement) {
-            document.documentElement.requestFullscreen();
-        } else {
-            document.exitFullscreen();
-        }
-        return;
-    }
+    const hudItem = hudHit(mx, my);
+    if (hudItem) { hudItem.onClick(); return; }
 
     if (currentScreen !== 'game') return;
 

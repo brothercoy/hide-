@@ -13,11 +13,20 @@
 // orders them left-to-right within a row, `cost` is the segment's char count,
 // and `draw` renders its first `n` characters at natural layout coordinates.
 
-const TYPE_CHAR_MS = 20;       // ms per character while typing a row
+const TYPE_CHAR_MS = 20;       // base ms per character while typing a row
+const MAX_TYPE_MS = 3000;      // cap on total typing time; only screens that would
+                               // exceed it (e.g. Play) type faster to fit. Screens
+                               // under it keep the base TYPE_CHAR_MS unchanged.
 const ROW_PX = 30;             // pixels per "enter" step — smaller = more bumps per gap
 const SCROLL_PER_ROW_MS = 10;  // ms per enter step (one bump: move + pause)
 const STEP_MOVE_FRAC = 0.1;    // fraction of each step spent moving (rest is a pause)
 const SCROLL_ONLY_MS = 600;    // duration of a plain scroll-off (e.g. into MainMenu)
+
+// Per-char type speed for a given total character count: the base rate, sped up
+// only enough to keep the whole typing pass within MAX_TYPE_MS.
+function typeCharMsFor(totalChars) {
+    return Math.min(TYPE_CHAR_MS, MAX_TYPE_MS / Math.max(1, totalChars));
+}
 
 function easeInOut(t) {
     return t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2;
@@ -55,9 +64,13 @@ export class Transition {
         this.scrollOnly = false;
         this.elapsedMs = 0;
         this.totalDur = 0;
+        this.scrollDur = 0;
         this.H = 0;
         this.rows = [];      // [{ y, cost, segs:[{x,cost,draw}] }] sorted by y
         this.phases = [];    // ordered { kind:'scroll'|'type', start, dur, ... }
+        this.tailRows = [];  // rows typed at offset 0 after a scroll-only scroll
+        this.tailPhases = [];
+        this.typeCharMs = TYPE_CHAR_MS; // effective per-char speed for this run
         this.onComplete = null;
     }
 
@@ -93,9 +106,15 @@ export class Transition {
         const H = this.H;
 
         this.rows = this._buildRows(typeables || []);
+        this.tailRows = [];
+        this.tailPhases = [];
         this.scrollOnly = false;
         this.onComplete = onComplete || null;
         this.elapsedMs = 0;
+
+        // Adaptive per-char speed: capped so dense screens don't run long.
+        const totalChars = this.rows.reduce((s, r) => s + r.cost, 0);
+        this.typeCharMs = typeCharMsFor(totalChars);
 
         // Feed line sits at the last (bottom-most) row's Y so the final row is
         // typed exactly where it belongs (offset 0). Each row types at the feed
@@ -117,7 +136,7 @@ export class Transition {
             this.phases.push({ kind: 'scroll', from: prevOffset, to: r.offset, start: cursor, dur: sdur, steps });
             cursor += sdur;
 
-            const tdur = Math.max(1, r.cost * TYPE_CHAR_MS);
+            const tdur = Math.max(1, r.cost * this.typeCharMs);
             this.phases.push({ kind: 'type', row: k, start: cursor, dur: tdur });
             cursor += tdur;
 
@@ -128,15 +147,28 @@ export class Transition {
     }
 
     // Scroll A off the top over a fixed duration, revealing whatever the
-    // incoming screen draws underneath (its own intro animation).
-    beginScrollOnly({ durationMs, onComplete } = {}) {
+    // incoming screen draws underneath (its own intro animation). An optional
+    // `tail` (row segments) types in at offset 0 once the scroll finishes.
+    beginScrollOnly({ durationMs, tail, onComplete } = {}) {
         this._snapshot();
         this.rows = [];
         this.phases = [];
         this.scrollOnly = true;
-        this.totalDur = durationMs || SCROLL_ONLY_MS;
+        this.scrollDur = durationMs || SCROLL_ONLY_MS;
         this.onComplete = onComplete || null;
         this.elapsedMs = 0;
+
+        // Tail rows type sequentially after the scroll completes.
+        this.tailRows = this._buildRows(tail || []);
+        this.typeCharMs = TYPE_CHAR_MS; // tail (HUD) is tiny — keep the base rate
+        this.tailPhases = [];
+        let cursor = this.scrollDur;
+        for (let k = 0; k < this.tailRows.length; k++) {
+            const dur = Math.max(1, this.tailRows[k].cost * this.typeCharMs);
+            this.tailPhases.push({ row: k, start: cursor, dur });
+            cursor += dur;
+        }
+        this.totalDur = cursor;
         this.active = true;
     }
 
@@ -187,7 +219,7 @@ export class Transition {
         if (!p) return 0;
         const e = this.elapsedMs;
         if (e >= p.start + p.dur) return this.rows[k].cost;
-        if (e >= p.start) return Math.floor((e - p.start) / TYPE_CHAR_MS);
+        if (e >= p.start) return Math.floor((e - p.start) / this.typeCharMs);
         return 0;
     }
 
@@ -201,9 +233,22 @@ export class Transition {
 
         let offset;
         if (this.scrollOnly) {
-            const feed = Math.min(1, this.elapsedMs / this.totalDur);
+            const feed = Math.min(1, this.elapsedMs / this.scrollDur);
             offset = H * (1 - feed);
             if (drawSteady) drawSteady();
+            // Tail (HUD) types in at its natural position once the scroll ends.
+            for (let k = 0; k < this.tailRows.length; k++) {
+                const p = this.tailPhases[k];
+                let reveal = this.elapsedMs >= p.start + p.dur ? this.tailRows[k].cost
+                    : this.elapsedMs >= p.start ? Math.floor((this.elapsedMs - p.start) / this.typeCharMs) : 0;
+                if (reveal <= 0) continue;
+                for (const seg of this.tailRows[k].segs) {
+                    if (reveal <= 0) break;
+                    const n = Math.min(seg.cost, reveal);
+                    seg.draw(ctx, n, elapsed);
+                    reveal -= n;
+                }
+            }
         } else {
             offset = this._sampleOffset();
             ctx.save();

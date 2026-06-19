@@ -13,8 +13,8 @@ export const CHAR_ROT_SPEED = 0.4;
 const USE_VECTOR = false;
 
 export function zToScale(z) {
-    const t = (z - 1.0) / (3.0 - 1.0);
-    return Math.max(0.5, 1.0 - t * 0.5);
+    // Size no longer changes with z — depth is conveyed by opacity only.
+    return 1.0;
 }
 
 export function zToAlpha(z) {

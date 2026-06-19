@@ -32,7 +32,7 @@ export class CRTEffect {
             rgbShift: 0.0,
             adaptiveIntensity: 3.0,
             vignetteStrength: 0.93,
-            curvature: 0.15,
+            curvature: 0.2,
             flickerStrength: 0.03
         };
 
