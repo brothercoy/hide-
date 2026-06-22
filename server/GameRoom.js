@@ -200,7 +200,7 @@ class GameRoom extends Room {
             if (client.sessionId !== Object.keys(this.players)[0]) return;
             const connected = this.getConnectedPlayers();
             if (connected.length < this.settings.minPlayers) {
-                client.send('startError', { message: `Need at least ${this.settings.minPlayers} players to start.` });
+                client.send('startError', { message: `?INVALID PLAYER COUNT` });
                 return;
             }
 

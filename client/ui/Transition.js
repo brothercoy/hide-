@@ -12,6 +12,7 @@
 // { y, x, cost, draw(ctx, n, elapsed) }: `y` groups segments into rows, `x`
 // orders them left-to-right within a row, `cost` is the segment's char count,
 // and `draw` renders its first `n` characters at natural layout coordinates.
+import { theme } from './colors.js';
 
 const TYPE_CHAR_MS = 20;       // base ms per character while typing a row
 const MAX_TYPE_MS = 3000;      // cap on total typing time; only screens that would
@@ -45,7 +46,7 @@ export function textRow(text, x, y, font, align, baseline, color, groupY) {
             ctx.font = font;
             ctx.textAlign = align || 'left';
             ctx.textBaseline = baseline || 'top';
-            ctx.fillStyle = color || '#00ff41';
+            ctx.fillStyle = color || theme.fg;
             ctx.globalAlpha = 1;
             ctx.fillText(text.slice(0, n), x, y);
         }
@@ -191,6 +192,14 @@ export class Transition {
         this._finish();
     }
 
+    // Current vertical offset the incoming elements are drawn at — used to make
+    // input hit-testing offset-aware during a typeout transition. Scroll-only
+    // transitions keep input blocked, so 0 is fine there.
+    currentOffsetY() {
+        if (!this.active || this.scrollOnly) return 0;
+        return this._sampleOffset();
+    }
+
     // Current vertical offset of the incoming screen at the current time.
     _sampleOffset() {
         const e = this.elapsedMs;
@@ -228,7 +237,7 @@ export class Transition {
         const H = this.H;
 
         ctx.setTransform(1, 0, 0, 1, 0, 0);
-        ctx.fillStyle = 'black';
+        ctx.fillStyle = theme.bg;
         ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
 
         let offset;

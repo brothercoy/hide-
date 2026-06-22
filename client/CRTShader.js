@@ -1,3 +1,5 @@
+import { theme } from './ui/colors.js';
+
 export class CRTEffect {
     constructor(sourceCanvas) {
         this.sourceCanvas = sourceCanvas;
@@ -78,6 +80,7 @@ export class CRTEffect {
             uniform float vignetteStrength;
             uniform float curvature;
             uniform float flickerStrength;
+            uniform vec3 phosphor;   // theme foreground (normalized) — phosphor tint
 
             varying vec2 vUv;
 
@@ -169,7 +172,7 @@ export class CRTEffect {
 
                 // Phosphor noise glow: grainy in bright areas, fades to dark in dark areas
                 float noiseGlow = noiseVal * nearBright;
-                pixel.rgb += vec3(0.0, noiseGlow, noiseGlow * 0.255) * bloomIntensity * 0.8;
+                pixel.rgb += noiseGlow * phosphor * bloomIntensity * 0.8;
 
                 if (rgbShift > 0.005) {
                     float shift = rgbShift * RGB_SHIFT_SCALE;
@@ -208,17 +211,17 @@ export class CRTEffect {
                 lumField = smoothstep(0.0, 0.3, lumField);
 
                 float staticNoise = rand(uv * vec2(1601.0, 901.0) + vec2(fract(time * 17.3), fract(time * 13.7)));
-                pixel.rgb += vec3(0.0, staticNoise, staticNoise * 0.255) * lumField * 0.5;
+                pixel.rgb += staticNoise * phosphor * lumField * 0.5;
 
                 // Radial vignette for noise — bright center, fades to edges
                 vec2 noiseCenter = uv - 0.5;
                 float radialFade = 1.0 - smoothstep(0.0, 0.7, length(noiseCenter));
 
                 float screenNoise = rand(uv * vec2(1601.0, 901.0) + vec2(fract(time * 17.3), fract(time * 13.7)));
-                pixel.rgb += vec3(0.0, screenNoise, screenNoise * 0.255) * radialFade * 0.3;
+                pixel.rgb += screenNoise * phosphor * radialFade * 0.3;
 
                 pixel.rgb = applyRasterization(uv, pixel.rgb);
-                pixel.rgb += vec3(0.0, 0.09, 0.018);
+                pixel.rgb += 0.09 * phosphor;
 
                 // Vignette applied last — no color distortion
                 float vigStart = vignetteStrength;          // 0.0–1.0, how far in it starts
@@ -248,9 +251,18 @@ export class CRTEffect {
         const uniformNames = Object.keys(this.uniforms);
         uniformNames.push('tDiffuse');
         uniformNames.push('bloomTex');
+        uniformNames.push('phosphor');
         uniformNames.forEach(name => {
             this.uniformLocations[name] = gl.getUniformLocation(this.program, name);
         });
+    }
+
+    // theme.fg as a normalized vec3 (brightest channel = 1) for the phosphor tint.
+    _phosphor() {
+        const n = parseInt(theme.fg.slice(1), 16);
+        const r = (n >> 16) & 255, g = (n >> 8) & 255, b = n & 255;
+        const max = Math.max(r, g, b) || 1;
+        return [r / max, g / max, b / max];
     }
 
     _compile(type, src) {
@@ -434,6 +446,11 @@ export class CRTEffect {
         gl.activeTexture(gl.TEXTURE1);
         gl.bindTexture(gl.TEXTURE_2D, this.bloomFBOs[1].tex);
         gl.uniform1i(this.uniformLocations['bloomTex'], 1);
+
+        // Phosphor tint from the theme foreground (normalized so the brightest
+        // channel is 1, keeping the glow intensity consistent across themes).
+        const [pr, pg, pb] = this._phosphor();
+        gl.uniform3f(this.uniformLocations['phosphor'], pr, pg, pb);
 
         this.uniforms.time = time;
         Object.entries(this.uniforms).forEach(([name, value]) => {

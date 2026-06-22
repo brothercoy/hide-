@@ -1,3 +1,5 @@
+import { theme, bgAlpha } from '../ui/colors.js';
+
 const TICK_RATE = 50;
 
 export class GameScreen {
@@ -62,7 +64,7 @@ export class GameScreen {
         const cy = this.canvas.height / 2;
 
         // draw box
-        ctx.strokeStyle = '#00ff41';
+        ctx.strokeStyle = theme.fg;
         ctx.lineWidth = 2;
         ctx.strokeRect(cx - this.boxW / 2, cy - this.boxH / 2, this.boxW, this.boxH);
 
@@ -87,7 +89,7 @@ export class GameScreen {
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
         ctx.font = '32px "IBMVGA"';
-        ctx.fillStyle = '#00ff41';
+        ctx.fillStyle = theme.fg;
         ctx.fillText('Find:', cx, cy - 60);
         ctx.font = '96px "IBMVGA"';
         ctx.fillText(targetChar, cx, cy + 40);
@@ -112,7 +114,7 @@ export class GameScreen {
         const halfH = this.boxH / 2;
 
         ctx.font = `${FS}px "IBMVGA"`;
-        ctx.fillStyle = '#00ff41';
+        ctx.fillStyle = theme.fg;
         ctx.textBaseline = 'alphabetic';
 
         // draw all characters using setTransform instead of save/restore
@@ -141,7 +143,7 @@ export class GameScreen {
         playerList.forEach(p => {
             ctx.globalAlpha = p.tapped ? 1 : 0.3;
             if (!p.alive) ctx.globalAlpha = 0.1;
-            ctx.fillStyle = '#00ff41';
+            ctx.fillStyle = theme.fg;
             const winsText = totalMatches > 1 ? ` (${p.matchWins || 0})` : '';
             const disconnectText = !p.connected ? ' %' : '';
             const livesText = p.lives !== null && p.lives !== undefined
@@ -154,7 +156,7 @@ export class GameScreen {
 
         // round / timer / target
         ctx.font = '32px "IBMVGA"';
-        ctx.fillStyle = '#00ff41';
+        ctx.fillStyle = theme.fg;
         ctx.textAlign = 'center';
         ctx.textBaseline = 'alphabetic';
         if (totalMatches > 1) {
@@ -167,16 +169,16 @@ export class GameScreen {
 
         // overlays
         if (winnerId) {
-            ctx.fillStyle = 'rgba(0,0,0,0.85)';
+            ctx.fillStyle = bgAlpha(0.85);
             ctx.fillRect(cx - 200, cy - 60, 400, 120);
-            ctx.fillStyle = '#00ff41';
+            ctx.fillStyle = theme.fg;
             ctx.font = '32px "IBMVGA"';
             ctx.textAlign = 'center';
             ctx.fillText('Winner: ' + winnerId, cx, cy + 10);
         } else if (showMatchOver && matchOverData) {
-            ctx.fillStyle = 'rgba(0,0,0,0.85)';
+            ctx.fillStyle = bgAlpha(0.85);
             ctx.fillRect(cx - 200, cy - 80, 400, 160);
-            ctx.fillStyle = '#00ff41';
+            ctx.fillStyle = theme.fg;
             ctx.font = '32px "IBMVGA"';
             ctx.textAlign = 'center';
             ctx.fillText(`Match ${matchOverData.match} Over!`, cx, cy - 40);
@@ -187,9 +189,9 @@ export class GameScreen {
                 scoreY += 24;
             });
         } else if (showRoundOver) {
-            ctx.fillStyle = 'rgba(0,0,0,0.85)';
+            ctx.fillStyle = bgAlpha(0.85);
             ctx.fillRect(cx - 200, cy - 60, 400, 120);
-            ctx.fillStyle = '#00ff41';
+            ctx.fillStyle = theme.fg;
             ctx.font = '32px "IBMVGA"';
             ctx.textAlign = 'center';
             ctx.fillText(eliminatedName, cx, cy + 10);

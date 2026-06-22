@@ -2,6 +2,7 @@ import { makeButton, drawButton, buttonRows } from '../ui/Button.js';
 import { makeInput, drawInput, inputRows } from '../ui/Input.js';
 import { charWidth } from '../ui/Font.js';
 import { textRow } from '../ui/Transition.js';
+import { theme } from '../ui/colors.js';
 
 const NAME_FONT_SIZE = 80;  // font size for the name input — bigger than rest
 const FONT_SIZE = 54;       // font size for everything else
@@ -49,9 +50,15 @@ export class PlayScreen {
         const btnH = FONT_SIZE * 2.5;
         const nameH = NAME_FONT_SIZE * 2.5;
 
-        // Name input — larger font
+        // Name input — larger font. Pre-fill with the name saved for this browser
+        // instance (sessionStorage), so returning here keeps it filled.
         this.nameInput = makeInput('ENTER NAME', cx, NAME_Y, 12);
         this.nameInput.fontSize = NAME_FONT_SIZE;
+        const savedName = sessionStorage.getItem('playerName');
+        if (savedName) {
+            this.nameInput.value = savedName.slice(0, this.nameInput.maxLength);
+            this.nameInput.cursorPos = this.nameInput.value.length;
+        }
         this.ui.inputs.push(this.nameInput);
 
         // QUICK JOIN + CREATE ROOM side by side, centered
@@ -103,7 +110,7 @@ export class PlayScreen {
             ...buttonRows(quickJoin, FONT_SIZE),
             ...buttonRows(createRoom, FONT_SIZE),
             ...inputRows(this.codeInput, FONT_SIZE),
-            textRow(':', this.colonX, this.codeRowY + 9, `${FONT_SIZE}px "IBMVGA"`, 'left', 'middle', '#00ff41', codeMidY),
+            textRow(':', this.colonX, this.codeRowY + 9, `${FONT_SIZE}px "IBMVGA"`, 'left', 'middle', theme.fg, codeMidY),
             ...buttonRows(joinRoom, FONT_SIZE),
         ];
     }
@@ -121,7 +128,7 @@ export class PlayScreen {
         // Draw : between code input and join room button
         if (this.colonX !== undefined) {
             ctx.globalAlpha = 1;
-            ctx.fillStyle = '#00ff41';
+            ctx.fillStyle = theme.fg;
             ctx.font = `${FONT_SIZE}px "IBMVGA"`;
             ctx.textAlign = 'left';
             ctx.textBaseline = 'middle';

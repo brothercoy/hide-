@@ -7,6 +7,7 @@ import { SettingsScreen } from './screens/SettingsScreen.js';
 import { LobbyScreen } from './screens/LobbyScreen.js';
 import { GameScreen } from './screens/GameScreen.js';
 import { makeButton, drawButton, zToAlpha } from './ui/Button.js';
+import { theme, bgAlpha, glow } from './ui/colors.js';
 import { initFont } from './ui/Font.js';
 import { CRTEffect } from './CRTShader.js';
 import { Transition } from './ui/Transition.js';
@@ -34,6 +35,7 @@ let lastDrawTime = 0;
 let modalMessage = null;
 let settingsPanelOpen = false;
 let winnerId = null;
+let leaveDestination = 'main'; // where to land after leaving a room (BACK from lobby → 'play')
 
 const canvas = document.getElementById('gameCanvas');
 const ctx = canvas.getContext('2d', { alpha: false });
@@ -79,10 +81,11 @@ const lobbyScreen = new LobbyScreen(canvas, ctx, uiManager,
     },
     (targetId) => { if (room) room.send('makeHost', { targetId }); },
     () => {
-        if (!selectedMode) { showModal('Please select a game mode.'); return; }
+        if (!selectedMode) { showModal('?INVALID GAME MODE'); return; }
         room.send('startGame', { mode: selectedMode, settings: selectedSettings });
     },
-    () => { if (room) room.send('leaveToMenu'); }
+    () => { leaveDestination = 'play'; if (room) room.send('leaveToMenu'); },
+    (message) => showModal(message)
 );
 
 const gameScreen = new GameScreen(canvas, ctx, isMobile);
@@ -122,10 +125,18 @@ function enterScreen(name, opts) {
 function showScreen(name, opts = {}) {
     // Instant path: first paint, explicit request, or font not ready.
     if (currentScreen === null || opts.instant || !fontReady) {
+        const firstPaint = currentScreen === null;
         currentScreen = name;
         enterScreen(name);
+        // On the genuine first load into the menu, type the HUD in after the
+        // main-menu intro (instead of showing it immediately).
+        if (firstPaint && name === 'main') { hudIntroPending = true; hudIntroStart = null; }
         return;
     }
+
+    // Navigating away cancels the first-load HUD type-in; the transition tail and
+    // persistent HUD take over from here.
+    hudIntroPending = false;
 
     // Snap any in-flight transition to its end before starting a new one.
     if (transition.isActive()) transition.cancelToEnd();
@@ -150,26 +161,31 @@ function showScreen(name, opts = {}) {
     } else {
         // Type the incoming screen in (its row feed) while the outgoing scrolls
         // up; the HUD is appended as the final (bottom-most) row. `typed: true`
-        // tells MainMenu to skip its bespoke first-load intro.
+        // tells MainMenu to skip its bespoke first-load intro. Input stays
+        // UNBLOCKED so the elements are interactive (offset-aware) while scrolling.
         currentScreen = name;
-        uiManager.blocked = true;
         enterScreen(name, { typed: true });
+        uiManager.blocked = false; // override MainMenu.enter()'s block
         transition.begin({ typeables: [...incoming.getTypeables(), ...getHudRows()], onComplete });
     }
 }
 
 function handleCreateRoom(name) {
-    if (!name) { showModal('PLEASE ENTER YOUR NAME'); return; }
+    if (!name) { showModal('?INVALID NAME'); return; }
     playerName = name;
-    uiManager.clear();
+    sessionStorage.setItem('playerName', name); // remember for this browser instance
+
+    // Keep the Play screen intact during the async join — on success showScreen
+    // ('lobby') scrolls it off; on failure the modal sits over the live screen.
     joinGame('create');
 }
 
 function handleJoinRoom(name, code) {
-    if (!name) { showModal('PLEASE ENTER YOUR NAME'); return; }
-    if (!code) { showModal('PLEASE ENTER A ROOM CODE'); return; }
+    if (!name) { showModal('?INVALID NAME'); return; }
+    if (!code) { showModal('?INVALID CODE'); return; }
     playerName = name;
-    uiManager.clear();
+    sessionStorage.setItem('playerName', name); // remember for this browser instance
+
     joinGame('join', code);
 }
 
@@ -218,10 +234,10 @@ function joinGame(type, code) {
                 if (data.roomId) {
                     colyseusClient.joinById(data.roomId, options).then(onRoomJoined);
                 } else {
-                    showModal('Room not found. Check the code and try again.');
+                    showModal('?INVALID CODE');
                 }
             })
-            .catch(() => showModal('Room not found. Check the code and try again.'));
+            .catch(() => showModal('?INVALID CODE'));
     }
 }
 
@@ -230,7 +246,8 @@ function onRoomJoined(r) {
     localStorage.setItem('reconnectionToken', room.reconnectionToken);
     room.onLeave(() => {
         localStorage.removeItem('reconnectionToken');
-        showScreen('main');
+        showScreen(leaveDestination);
+        leaveDestination = 'main';
         if (currentMode) currentMode.reset();
     });
     showScreen('lobby');
@@ -367,11 +384,93 @@ function createMode(modeId, data) {
 }
 
 // --- Modal ---
+const MODAL_FONT = 32;
+const MODAL_PAD_X = 4;            // chars of horizontal padding inside the box
+// Border glyphs (ASCII only) — swap these to change the window look. Avoid +,-,|
+// so it doesn't read as a button. e.g. '*' box, or H='=' V=':' C='=' for a rule box.
+const MODAL_BORDER_H = '#';      // top/bottom fill
+const MODAL_BORDER_C = '#';      // corners
+const MODAL_BORDER_L = '#';      // left side
+const MODAL_BORDER_R = '#';      // right side
+const MODAL_OK_REST = 40;        // px from "OK" center to each bracket at rest
+const MODAL_OK_SNAP_STEP = 10;   // px the brackets flash inward
+const MODAL_OK_FLASH_IN = 600;   // ms the brackets stay snapped in
+const MODAL_OK_FLASH_OUT = 600;  // ms at rest between flashes
+
+const modalOk = { hover: 0, animT: 0, snap: 0, over: false, rect: null };
 
 function showModal(message) {
     modalMessage = message;
     uiManager.blocked = true;
     uiManager.buttons.forEach(btn => btn.hoverProgress = 0);
+    modalOk.hover = 0; modalOk.animT = 0; modalOk.snap = 0; modalOk.rect = null;
+}
+
+// On hover, the OK brackets flash inward (a single snap that pulses in/out) —
+// quieter than the fullscreen button's snap-snap-revert.
+function updateModal(dt) {
+    if (!modalMessage) { modalOk.snap = 0; return; }
+    const r = modalOk.rect;
+    const over = r && uiManager.mouseX >= r.x && uiManager.mouseX <= r.x + r.w &&
+                 uiManager.mouseY >= r.y && uiManager.mouseY <= r.y + r.h;
+    modalOk.over = over;
+    if (over) {
+        modalOk.animT += dt;
+        const cycle = MODAL_OK_FLASH_IN + MODAL_OK_FLASH_OUT;
+        const t = modalOk.animT % cycle;
+        modalOk.snap = t < MODAL_OK_FLASH_IN ? 0 : MODAL_OK_SNAP_STEP;
+    } else {
+        modalOk.animT = 0;
+        modalOk.snap = 0;
+    }
+}
+
+// ASCII-box modal: a +--+ / | bordered window with the message and a } OK {
+// confirm whose brackets snap inward on hover.
+function drawModal() {
+    if (!modalMessage) return;
+    const msg = modalMessage.toUpperCase();
+
+    ctx.fillStyle = bgAlpha(0.8);
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+    ctx.font = `${MODAL_FONT}px "IBMVGA"`;
+    ctx.textBaseline = 'top';
+    const cw = ctx.measureText('M').width;
+    const lh = MODAL_FONT;
+    const cx = canvas.width / 2;
+
+    const innerChars = msg.length + MODAL_PAD_X * 2; // dashes between the corners
+    const boxChars = innerChars + 2;                 // incl. '+' corners
+    const boxLeft = cx - (boxChars * cw) / 2;
+
+    const rows = 7; // top, pad, message, pad, ok, pad, bottom
+    const boxTop = canvas.height / 2 - (rows * lh) / 2;
+    const top = MODAL_BORDER_C + MODAL_BORDER_H.repeat(innerChars) + MODAL_BORDER_C;
+    const mid = MODAL_BORDER_L + ' '.repeat(innerChars) + MODAL_BORDER_R;
+
+    ctx.fillStyle = theme.fg;
+    ctx.textAlign = 'left';
+    const frame = [top, mid, mid, mid, mid, mid, top];
+    for (let i = 0; i < frame.length; i++) ctx.fillText(frame[i], boxLeft, boxTop + i * lh);
+
+    // Message (row 2), centered
+    ctx.textAlign = 'center';
+    ctx.fillText(msg, cx, boxTop + 2 * lh);
+
+    // OK (row 4) — brackets face OUTWARD at rest ( { OK } ); on hover they swap
+    // to inward ( } OK { ) and flash tight→spread.
+    const okY = boxTop + 4 * lh;
+    const gap = MODAL_OK_REST - modalOk.snap;
+    ctx.fillText('OK', cx, okY);
+    ctx.fillText(modalOk.over ? '}' : '{', cx - gap, okY);
+    ctx.fillText(modalOk.over ? '{' : '}', cx + gap, okY);
+
+    // Hit rect uses the REST spread (widest extent) so hovering doesn't shrink it
+    // and flicker the hover state.
+    const reach = MODAL_OK_REST + cw;
+    modalOk.rect = { x: cx - reach, y: okY, w: reach * 2, h: lh };
+    ctx.textAlign = 'left';
 }
 
 // --- Persistent ASCII HUD (bottom-right) ---
@@ -379,7 +478,7 @@ function showModal(message) {
 // are fixed (independent of the hover animation) so hovering doesn't toggle.
 // The *action* fires from the click handler (keeps fullscreen's user-gesture and
 // avoids the settings-panel double-toggle); the press/glow here is visual only.
-const HUD_FONT = 28;
+const HUD_FONT = 36;
 const HUD_Z_REST = 1.3;        // resting depth (full opacity)
 const HUD_Z_PRESSED = 2.5;     // held — fades back
 const HUD_Z_GLOW = 1.0;        // overshoot on release — glow fires here
@@ -394,6 +493,14 @@ const HUD_SNAP_STEP = 4;       // px each bracket jumps outward per snap level
 const HUD_SNAP_HOLD_MS = 430;  // how long each snap state holds
 const HUD_SNAP_PAUSE_MS = 300; // extra rest after each "snap snap return" cycle
 
+// Settings glyph: rests on '%'; on hover it rapidly cycles through three chars
+// then pauses back on '%' — i.e. % -> - -> \ -> ; -> % (the cycle chars, swap
+// speed, and pause are all tweakable here).
+const SETTINGS_REST_CHAR = '%';
+const SETTINGS_CYCLE_CHARS = ['-', '\\', ';'];
+const SETTINGS_SWAP_MS = 90;   // ms on each cycle char during the hover swap
+const SETTINGS_PAUSE_MS = 730; // ms paused on '%' between cycles
+
 function hudMoveToward(current, target, step) {
     return Math.abs(target - current) <= step ? target : current + Math.sign(target - current) * step;
 }
@@ -401,31 +508,51 @@ function hudMoveToward(current, target, step) {
 let hudMouseDown = false;
 let hudPressedItem = null;
 
+// First-load HUD type-in: the HUD stays hidden through the main-menu intro, then
+// types in (like it does as a transition tail) once that intro fully reveals.
+const HUD_TYPE_DELAY = 0.05; // seconds per character
+let hudIntroPending = false;
+let hudIntroStart = null;
+
 const hudItems = [
     {
         id: 'settings',
         hover: 0, z: HUD_Z_REST, releasePhase: null, glowT: 0, _rect: null,
-        typeChars: '(*)',
+        _animT: 0, _char: SETTINGS_REST_CHAR,
+        typeChars: SETTINGS_REST_CHAR,
         getRect() { return { x: canvas.width - 200, y: canvas.height - 90, w: 60, h: 40 }; },
+        // Rests on '%'; on hover it immediately swaps - -> \ -> ; then pauses back
+        // on '%' (swap first so the animation starts at once, like the brackets).
+        tick(dt, over) {
+            if (over) {
+                this._animT += dt;
+                const swapTotal = SETTINGS_CYCLE_CHARS.length * SETTINGS_SWAP_MS;
+                const t = this._animT % (swapTotal + SETTINGS_PAUSE_MS);
+                this._char = t < swapTotal
+                    ? SETTINGS_CYCLE_CHARS[Math.floor(t / SETTINGS_SWAP_MS)]
+                    : SETTINGS_REST_CHAR;
+            } else {
+                this._animT = 0;
+                this._char = SETTINGS_REST_CHAR;
+            }
+        },
         render(ctx, r, hover, alpha, color) {
             ctx.globalAlpha = alpha;
             ctx.fillStyle = color;
             ctx.font = `${HUD_FONT}px "IBMVGA"`;
             ctx.textAlign = 'center';
             ctx.textBaseline = 'middle';
-            // TODO: placeholder — replace with a proper ASCII "gear" glyph.
-            ctx.fillText('(*)', r.x + r.w / 2, r.y + r.h / 2);
+            ctx.fillText(this._char, r.x + r.w / 2, r.y + r.h / 2);
             ctx.globalAlpha = 1;
         },
-        // Type-in reveal for the transition feed (first n chars, ending centered).
+        // Type-in reveal for the transition feed (the resting '%', centered).
         drawTyped(ctx, r, n) {
             ctx.globalAlpha = 1;
-            ctx.fillStyle = '#00ff41';
+            ctx.fillStyle = theme.fg;
             ctx.font = `${HUD_FONT}px "IBMVGA"`;
-            ctx.textAlign = 'left';
+            ctx.textAlign = 'center';
             ctx.textBaseline = 'middle';
-            const left = r.x + r.w / 2 - ctx.measureText(this.typeChars).width / 2;
-            ctx.fillText(this.typeChars.slice(0, n), left, r.y + r.h / 2);
+            if (n >= 1) ctx.fillText(SETTINGS_REST_CHAR, r.x + r.w / 2, r.y + r.h / 2);
         },
         onClick() { settingsPanelOpen = !settingsPanelOpen; }
     },
@@ -473,7 +600,7 @@ const hudItems = [
         // Type-in reveal: '[' then ']' at the resting spread.
         drawTyped(ctx, r, n) {
             ctx.globalAlpha = 1;
-            ctx.fillStyle = '#00ff41';
+            ctx.fillStyle = theme.fg;
             ctx.font = `${HUD_FONT}px "IBMVGA"`;
             ctx.textAlign = 'center';
             ctx.textBaseline = 'middle';
@@ -520,10 +647,10 @@ function drawHUDItems() {
     for (const it of hudItems) {
         const r = it.getRect();
         it._rect = r;
-        let color = '#00ff41';
+        let color = theme.fg;
         if (it.releasePhase === 'glowing' && it.glowT > 0) {
             const g = it.glowT < 0.5 ? it.glowT * 2 : (1 - it.glowT) * 2;
-            color = `rgb(${Math.round(g * 170)}, 255, ${Math.round(65 + g * 121)})`;
+            color = glow(g);
         }
         it.render(ctx, r, it.hover, zToAlpha(it.z), color);
     }
@@ -583,7 +710,41 @@ function getSettingsPanelRect() {
 }
 
 function getModalOkRect() {
-    return { x: canvas.width / 2 - 60, y: canvas.height / 2 + 16, w: 120, h: 36 };
+    return modalOk.rect || { x: 0, y: 0, w: 0, h: 0 };
+}
+
+// Draw the HUD progressively typed in (first n chars across both items, in order).
+function drawHUDTyped(n) {
+    let remaining = n;
+    for (const it of hudItems) {
+        const r = it.getRect();
+        it._rect = r;
+        const take = Math.max(0, Math.min(it.typeChars.length, remaining));
+        if (take > 0) it.drawTyped(ctx, r, take);
+        remaining -= it.typeChars.length;
+    }
+}
+
+// First-load HUD intro: stay hidden until the main-menu intro fully reveals, then
+// type in. Returns true while still animating (so the full HUD is suppressed).
+function drawHUDIntro() {
+    if (hudIntroStart === null) {
+        // Type in right after the PLAY/SETTINGS buttons finish; the special chars
+        // are then released to pop in after the HUD.
+        if (currentScreen === 'main' && mainMenu.buttonsDone()) {
+            hudIntroStart = uiManager.elapsed;
+        } else {
+            return; // not started yet — HUD stays hidden
+        }
+    }
+    const total = hudItems.reduce((s, it) => s + it.typeChars.length, 0);
+    const revealed = Math.floor((uiManager.elapsed - hudIntroStart) / HUD_TYPE_DELAY);
+    if (revealed >= total) {
+        hudIntroPending = false;     // done — full HUD takes over next frame
+        mainMenu.releaseSpecials();  // now the special chars pop in
+        return;
+    }
+    drawHUDTyped(revealed);
 }
 
 function drawPersistentHUD() {
@@ -591,31 +752,15 @@ function drawPersistentHUD() {
 
     if (settingsPanelOpen) {
         const p = getSettingsPanelRect();
-        ctx.strokeStyle = '#00ff41';
+        ctx.strokeStyle = theme.fg;
         ctx.lineWidth = 2;
         ctx.strokeRect(p.x, p.y, p.w, p.h);
-        ctx.fillStyle = '#00ff41';
+        ctx.fillStyle = theme.fg;
         ctx.font = '20px "IBMVGA"';
         ctx.fillText('MAIN MENU', p.x + p.w / 2, p.y + p.h / 2);
     }
 
-    if (modalMessage) {
-        ctx.fillStyle = 'rgba(0,0,0,0.8)';
-        ctx.fillRect(0, 0, canvas.width, canvas.height);
-        const bw = 600, bh = 180;
-        const bx = canvas.width / 2 - bw / 2;
-        const by = canvas.height / 2 - bh / 2;
-        ctx.strokeStyle = '#00ff41';
-        ctx.lineWidth = 2;
-        ctx.strokeRect(bx, by, bw, bh);
-        ctx.fillStyle = '#00ff41';
-        ctx.font = '24px "IBMVGA"';
-        ctx.textAlign = 'center';
-        ctx.textBaseline = 'middle';
-        ctx.fillText(modalMessage, canvas.width / 2, canvas.height / 2 - 20);
-        const ok = getModalOkRect();
-        ctx.fillText('[ OK ]', canvas.width / 2, ok.y + ok.h / 2);
-    }
+    drawModal();
 }
 
 // --- Draw Loop ---
@@ -637,25 +782,38 @@ function draw() {
     const dt = now - (lastDrawTime || now);
     lastDrawTime = now;
 
-    // Keep clocks/animations advancing even during a transition.
-    uiManager.update(now);
-    updateHUD(dt);
-
+    // Advance an already-running transition and expose its offset BEFORE the UI
+    // update, so hit-testing is offset-aware this frame.
     if (transition.isActive()) {
         transition.update(dt);
-        // For scroll-only, the incoming screen draws itself underneath. The HUD
-        // is NOT drawn pinned here — it types in via the transition feed/tail.
+        uiManager.offsetY = transition.currentOffsetY();
+    } else {
+        uiManager.offsetY = 0;
+    }
+
+    // A button's onClick may START a new transition here (navigation).
+    uiManager.update(now);
+    updateHUD(dt);
+    updateModal(dt);
+
+    if (transition.isActive()) {
+        // Re-sample in case a transition just began this frame — it's at elapsed 0
+        // (offset = H), so it renders the OUTGOING snapshot, not a flash of the
+        // incoming screen. The HUD types in via the feed/tail, not pinned here.
+        uiManager.offsetY = transition.currentOffsetY();
         transition.render(uiManager.elapsed, () => drawScreenInto(currentScreen));
         return;
     }
 
     ctx.clearRect(0, 0, canvas.width, canvas.height);
-    ctx.fillStyle = 'black';
+    ctx.fillStyle = theme.bg;
     ctx.fillRect(0, 0, canvas.width, canvas.height);
 
     drawScreenInto(currentScreen);
 
-    drawPersistentHUD();
+    if (hudIntroPending) drawHUDIntro(); // hidden until the menu intro reveals, then types in
+    if (hudIntroPending) drawModal();    // still typing — just the modal overlay (none here, but safe)
+    else drawPersistentHUD();            // full interactive HUD (also draws the modal)
 }
 
 // --- Click Handler ---
@@ -666,7 +824,7 @@ function hudEventPos(e) {
 }
 
 canvas.addEventListener('mousedown', (e) => {
-    if (transition.isActive() || modalMessage) return;
+    if (transition.isActive() || modalMessage || hudIntroPending) return;
     const { x, y } = hudEventPos(e);
     hudOnMouseDown(x, y);
 });
@@ -710,8 +868,10 @@ canvas.addEventListener('click', (e) => {
         return;
     }
 
-    const hudItem = hudHit(mx, my);
-    if (hudItem) { hudItem.onClick(); return; }
+    if (!hudIntroPending) {
+        const hudItem = hudHit(mx, my);
+        if (hudItem) { hudItem.onClick(); return; }
+    }
 
     if (currentScreen !== 'game') return;
 

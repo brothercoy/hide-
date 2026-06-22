@@ -1,5 +1,6 @@
 import { makeButton, drawButton, drawButtonPartial, buttonRows, drawChar, GLOW_SPEED, Z_FLOAT_MIN } from '../ui/Button.js';
 import { charWidth } from '../ui/Font.js';
+import { theme, glow } from '../ui/colors.js';
 
 const FONT_SIZE = 54;
 
@@ -24,13 +25,9 @@ const HIDE_INTRO_DURATION = 1.2;
 const MIN_STAGGER_RATIO = 0.1;
 const INTRO_DELAY = 0.5;       // pause after hide before buttons start typing
 const BTN_CHAR_DELAY = 0.02;    // seconds per character — tune for terminal speed
-const SPECIAL_INTRO_DURATION = 3.0; // total seconds for all special chars to finish appearing
-const SPECIAL_MIN_STAGGER_RATIO = 0.1; // minimum gap between chars as fraction of total
+const SPECIAL_AFTER_GAP = 0.3;     // seconds after the HUD types in before specials start
+const SPECIAL_POP_STAGGER = 0;  // seconds between each special char popping in
 const SPECIAL_GLOW_SPEED = 0.0013;   // glow cycle speed for special chars — lower = slower
-
-function easeOut(t) {
-    return 1 - Math.pow(1 - t, 3);
-}
 
 function moveToward(current, target, step) {
     if (Math.abs(target - current) <= step) return target;
@@ -102,6 +99,7 @@ export class MainMenu {
         });
         this._mouseDown = false;
         this._pressedSpecialChar = null;
+        this.specialsStart = null; // introStart-relative time the specials begin popping (set once the HUD types in)
 
         this.canvas.removeEventListener('mousedown', this._bindSpecialClick);
         this.canvas.removeEventListener('mouseup',   this._bindSpecialRelease);
@@ -153,12 +151,6 @@ export class MainMenu {
             this.hideTimestamps.push(this.hideTimestamps[i] + gaps[i]);
         }
 
-        // Each special char gets a random start offset within SPECIAL_INTRO_DURATION
-        const maxStart = SPECIAL_INTRO_DURATION * (1 - SPECIAL_MIN_STAGGER_RATIO);
-        this.specialOffsets = this.specialChars.map(() =>
-            SPECIAL_INTRO_DURATION * SPECIAL_MIN_STAGGER_RATIO + Math.random() * maxStart
-        );
-
         this.btnTypeStart = [];
         this.btnCharCount = [];
         let cursor = HIDE_INTRO_DURATION + INTRO_DELAY;
@@ -169,6 +161,22 @@ export class MainMenu {
             cursor += count * BTN_CHAR_DELAY;
         });
         this.allBtnsFinishTime = cursor;
+    }
+
+    // True once the PLAY/SETTINGS buttons have finished typing. The HUD's
+    // first-load type-in waits on this; the special chars then follow the HUD.
+    buttonsDone() {
+        if (this.typed) return true;
+        if (this.introStart === null) return false;
+        return (this.ui.elapsed - this.introStart) >= this.allBtnsFinishTime;
+    }
+
+    // Begin the special-char pop-in. Called once the HUD has finished typing so
+    // the specials are the last thing to appear on first load (after the buttons,
+    // then the bottom-right HUD, then these).
+    releaseSpecials() {
+        if (this.typed || this.specialsStart != null || this.introStart === null) return;
+        this.specialsStart = (this.ui.elapsed - this.introStart) + SPECIAL_AFTER_GAP;
     }
 
     // Row segments for the typed-scroll transition (hide, special chars, buttons).
@@ -199,7 +207,7 @@ export class MainMenu {
         const pushGlyph = (char, drawX, drawY, size, z) => {
             rows.push({
                 y: GROUP_Y, x: order++, cost: 1,
-                draw: (c, n) => { if (n >= 1) drawChar(c, char, drawX, drawY, z, '#00ff41', size); }
+                draw: (c, n) => { if (n >= 1) drawChar(c, char, drawX, drawY, z, theme.fg,size); }
             });
         };
         const maxLen = Math.max(hideChars.length, sp.length);
@@ -323,7 +331,7 @@ export class MainMenu {
         const totalW = visible.length * charW + (visible.length - 1) * HIDE_SPACING;
         let x = cx - totalW / 2;
         visible.forEach(char => {
-            drawChar(ctx, char, x, HIDE_Y, HIDE_Z, '#00ff41', HIDE_SIZE);
+            drawChar(ctx, char, x, HIDE_Y, HIDE_Z, theme.fg,HIDE_SIZE);
             ctx.font = `${HIDE_SIZE}px "IBMVGA"`;
             x += charW + HIDE_SPACING;
         });
@@ -338,27 +346,31 @@ export class MainMenu {
         const totalW = this.specialChars.length * charW + (this.specialChars.length - 1) * SPECIAL_SPACING;
         let x = cx - totalW / 2;
 
-        const specialStart = HIDE_INTRO_DURATION + INTRO_DELAY;
-        const t = this.introStart === null ? 0 : (elapsed - this.introStart) - specialStart;
+        const introElapsed = this.introStart === null ? 0 : elapsed - this.introStart;
 
         this.specialChars.forEach((sc, i) => {
-            sc.rect = { x, y: SPECIAL_Y, w: charW, h: SPECIAL_SIZE };
-
-            // Drive sc.z from the intro easeOut until complete
+            // Pop in at resting z once released (by the HUD) and this char's
+            // staggered appear time arrives.
             if (!sc.introComplete) {
-                const offset = this.specialOffsets ? this.specialOffsets[i] : 0;
-                const localT = Math.max(0, Math.min(1, (t - offset) / SPECIAL_INTRO_DURATION));
-                if (localT > 0) sc.appeared = true; // clickable from the moment it starts
-                sc.z = 3.0 + (SPECIAL_Z - 3.0) * easeOut(localT);
-                if (localT >= 1) { sc.introComplete = true; sc.z = SPECIAL_Z; }
+                const appearTime = this.specialsStart == null ? Infinity : this.specialsStart + i * SPECIAL_POP_STAGGER;
+                if (introElapsed >= appearTime) {
+                    sc.appeared = true;
+                    sc.introComplete = true;
+                    sc.z = SPECIAL_Z;
+                } else {
+                    sc.rect = null; // not visible yet — not clickable
+                    x += charW + SPECIAL_SPACING;
+                    return;
+                }
             }
 
+            sc.rect = { x, y: SPECIAL_Y, w: charW, h: SPECIAL_SIZE };
             const z = sc.z;
 
-            let color = '#00ff41';
+            let color = theme.fg;
             if (sc.releasePhase === 'glowing' && sc.glowT > 0) {
                 const g = sc.glowT < 0.5 ? sc.glowT * 2 : (1 - sc.glowT) * 2;
-                color = `rgb(${Math.round(g * 170)}, 255, ${Math.round(65 + g * 121)})`;
+                color = glow(g);
             }
 
             // Single brightened-color draw — identical to the button glow.

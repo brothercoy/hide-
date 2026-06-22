@@ -1,4 +1,5 @@
 import { otFont, charWidth } from './Font.js';
+import { theme, dim, plainIdle, glow } from './colors.js';
 
 export const Z_FLOAT_MIN = 1.3;
 export const Z_FLOAT_MAX = 1.3;
@@ -84,7 +85,7 @@ export function drawChar(ctx, char, x, y, z, color, FONT_SIZE, rotAngle) {
         const scaledCX = (bbox.x1 + bbox.x2) / 2 * sScale;
         const scaledCY = (bbox.y1 + bbox.y2) / 2 * sScale;
         const path = otFont.getPath(char, fullCX - scaledCX, fullCY + scaledCY, scaledSize);
-        path.fill = color || '#00ff41';
+        path.fill = color || theme.fg;
         ctx.save();
         ctx.globalAlpha = alpha;
         if (rotAngle) {
@@ -105,7 +106,7 @@ export function drawChar(ctx, char, x, y, z, color, FONT_SIZE, rotAngle) {
         const cy = y + FONT_SIZE / 2;
         ctx.save();
         ctx.globalAlpha = alpha;
-        ctx.fillStyle = color || '#00ff41';
+        ctx.fillStyle = color || theme.fg;
         ctx.textAlign = 'left';
         ctx.textBaseline = 'top';
         if (rotAngle) {
@@ -131,6 +132,7 @@ export function makeButton(label, x, y, onClick, options = {}) {
         disabled: options.disabled || false,
         plain: options.plain || false,
         blocksInput: options.blocksInput || false,
+        fireOnRelease: options.fireOnRelease || false, // fire onClick instantly on release (glow plays after)
         z: Z_FLOAT_MIN + (Math.random() * (Z_FLOAT_MAX - Z_FLOAT_MIN)),
         releasePhase: null,
         charPhases: null,
@@ -147,6 +149,10 @@ export function updateButtonZ(btn, dt, elapsed, pressedButton, mouseIsDown, mous
     const isPressed = btn === pressedButton && mouseIsDown && over;
 
     if (isPressed) {
+        // A fresh press takes over immediately — otherwise re-pressing while the
+        // previous click is still 'returning' looks unresponsive (z is ignored
+        // by the draw during 'returning').
+        if (btn.releasePhase === 'returning') { btn.releasePhase = null; btn.charZ = null; btn.charRot = null; }
         btn.z = Math.min(Z_PRESSED, btn.z + dt * Z_PRESS_SPEED);
     } else if (btn.releasePhase === 'releasing') {
         btn.z -= dt * Z_RETURN_SPEED;
@@ -167,7 +173,7 @@ export function updateButtonZ(btn, dt, elapsed, pressedButton, mouseIsDown, mous
         if (btn.glowT >= 1.0) {
             btn.glowT = 0;
             btn.releasePhase = 'returning';
-            btn._fireClick = true;
+            if (!btn.fireOnRelease) btn._fireClick = true; // fireOnRelease buttons already fired on release
             if (btn.charPhases) {
                 btn.charZ = new Array(200).fill(1.0);
                 btn.charRot = new Array(200).fill(0.0);
@@ -176,7 +182,9 @@ export function updateButtonZ(btn, dt, elapsed, pressedButton, mouseIsDown, mous
     } else if (btn.releasePhase === 'returning') {
         if (btn.charZ) {
             let allDone = true;
-            const speed = Math.max(0.001, (Z_FLOAT_MAX - Z_FLOAT_MIN) * Z_FLOAT_SPEED * dt / 1000);
+            // Floor keeps the return brisk (~0.25s) even when float is disabled
+            // (Z_FLOAT_SPEED = 0), instead of crawling for ~5 seconds.
+            const speed = Math.max(0.02, (Z_FLOAT_MAX - Z_FLOAT_MIN) * Z_FLOAT_SPEED * dt / 1000);
             const rotSpeed = CHAR_ROT_MAX * 2 * CHAR_ROT_SPEED * dt / 1000;
             for (let i = 0; i < btn.charZ.length; i++) {
                 const target = getCharZ(btn.charPhases[i], Z_FLOAT_MIN, elapsed);
@@ -219,7 +227,7 @@ export function drawButton(ctx, btn, elapsed, FONT_SIZE) {
         const left = btn.x - w / 2;
         const top = btn.y - FONT_SIZE / 2;
         ctx.globalAlpha = 1;
-        const color = btn.disabled ? '#007a1f' : (btn.hoverProgress > 0.05 ? '#00ff41' : '#00aa2a');
+        const color = btn.disabled ? dim() : (btn.hoverProgress > 0.05 ? theme.fg : plainIdle());
         if (USE_VECTOR && otFont) {
             const path = otFont.getPath(btn.label, left, top + FONT_SIZE, FONT_SIZE);
             path.fill = color;
@@ -265,10 +273,10 @@ export function drawButton(ctx, btn, elapsed, FONT_SIZE) {
         btn.charPhases = Array.from({ length: 200 }, () => Math.random() * Math.PI * 2);
     }
 
-    let glowColor = btn.disabled ? '#007a1f' : '#00ff41';
+    let glowColor = btn.disabled ? dim() : theme.fg;
     if (ENABLE_GLOW_COLOR && btn.releasePhase === 'glowing' && btn.glowT > 0) {
         const g = btn.glowT < 0.5 ? btn.glowT * 2 : (1 - btn.glowT) * 2;
-        glowColor = `rgb(${Math.round(g * 170)}, 255, ${Math.round(65 + g * 121)})`;
+        glowColor = glow(g);
     }
 
     const useFixed = btn.releasePhase === 'releasing' || btn.releasePhase === 'glowing';
@@ -321,14 +329,23 @@ export function drawButtonRow(ctx, btn, rowIndex, n, FONT_SIZE) {
 
     btn.rect = btn.fullRect = { x: sl, y: st, w: borderWidth, h: totalHeight };
 
-    const color = btn.disabled ? '#007a1f' : '#00ff41';
+    // Reflect live interactive state (press depth, glow, pressed brackets) so the
+    // button is the real control while it scrolls in, not a static partial.
+    const z = btn.z !== undefined ? btn.z : Z_FLOAT_MIN;
+    let color = btn.disabled ? dim() : theme.fg;
+    if (ENABLE_GLOW_COLOR && btn.releasePhase === 'glowing' && btn.glowT > 0) {
+        const g = btn.glowT < 0.5 ? btn.glowT * 2 : (1 - btn.glowT) * 2;
+        color = glow(g);
+    }
 
     if (rowIndex === 1) {
+        const ls = btn._isPressed ? '}' : '|';
+        const rs = btn._isPressed ? '{' : '|';
         let drawn = 0;
-        if (drawn < n) { drawChar(ctx, '|', sl, st + lh, Z_FLOAT_MIN, color, FONT_SIZE); drawn++; }
+        if (drawn < n) { drawChar(ctx, ls, sl, st + lh, z, color, FONT_SIZE); drawn++; }
         for (let i = 0; i < btn.label.length && drawn < n; i++, drawn++)
-            drawChar(ctx, btn.label[i], sl + cw + padX + i * cw, st + lh, Z_FLOAT_MIN, color, FONT_SIZE);
-        if (drawn < n) { drawChar(ctx, '|', sl + borderWidth - cw, st + lh, Z_FLOAT_MIN, color, FONT_SIZE); drawn++; }
+            drawChar(ctx, btn.label[i], sl + cw + padX + i * cw, st + lh, z, color, FONT_SIZE);
+        if (drawn < n) { drawChar(ctx, rs, sl + borderWidth - cw, st + lh, z, color, FONT_SIZE); drawn++; }
     } else {
         const plusCount = Math.floor((dashCount / 2) * (btn.active ? 1 : btn.hoverProgress));
         let borderLine = '';
@@ -341,7 +358,7 @@ export function drawButtonRow(ctx, btn, rowIndex, n, FONT_SIZE) {
         const border = '+' + borderLine + '+';
         const y = rowIndex === 0 ? st : st + lh * 2;
         for (let i = 0; i < border.length && i < n; i++)
-            drawChar(ctx, border[i], sl + i * cw, y, Z_FLOAT_MIN, color, FONT_SIZE);
+            drawChar(ctx, border[i], sl + i * cw, y, z, color, FONT_SIZE);
     }
 
     ctx.globalAlpha = 1;
@@ -404,7 +421,7 @@ export function drawButtonPartial(ctx, btn, n, elapsed, FONT_SIZE) {
     }
     const topB = '+' + borderLine + '+';
     const botB = '+' + borderLine + '+';
-    const color = btn.disabled ? '#007a1f' : '#00ff41';
+    const color = btn.disabled ? dim() : theme.fg;
 
     let drawn = 0;
     for (let i = 0; i < topB.length && drawn < n; i++, drawn++)
