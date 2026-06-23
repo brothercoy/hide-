@@ -1,3 +1,8 @@
+// Resolve the font through Vite so it points at the correct (hashed) asset URL in
+// both dev and the production build — a bare 'PxPlus_IBM_VGA_8x16.ttf' string is
+// NOT rewritten by Vite and 404s once assets are hashed into /assets/.
+import fontUrl from '../PxPlus_IBM_VGA_8x16.ttf?url';
+
 export let otFont = null;
 let _fullCharW = null;
 
@@ -11,7 +16,7 @@ export function charWidth(fontSize) {
 
 export function initFont(fontSize) {
     return new Promise((resolve, reject) => {
-        opentype.load('PxPlus_IBM_VGA_8x16.ttf', (err, font) => {
+        opentype.load(fontUrl, (err, font) => {
             if (err) { reject(err); return; }
             otFont = font;
             _fullCharW = font.getAdvanceWidth('M', fontSize);
