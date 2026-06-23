@@ -2,18 +2,19 @@ import { makeButton, drawButton } from '../ui/Button.js';
 import { makeSlider, drawSlider } from '../ui/Slider.js';
 import { makeBracketButton, drawBracketButton } from '../ui/BracketButton.js';
 import { GAME_MODES } from '../../gameModes.js';
-import { theme } from '../ui/colors.js';
+import { theme, dim } from '../ui/colors.js';
 
-const FONT_SIZE = 32;
+const FONT_SIZE = 28;
 const TITLE_FONT = 96;   // big room code
 const LIST_FONT = 28;
+const HEADER_FONT = 24;  // column title + ~~~~ underline (GAME MODE / PLAYER LIST)
 const LABEL_FONT = 24;
 const DESC_FONT = 24;
 
 // --- Layout (tweak these) ---
 const ROOMCODE_Y = 20;       // big room code top edge
 const COPY_Y = 150;          // COPY CODE bracket button center
-const COL_OFFSET = 440;      // left/right column distance from screen center
+const COL_OFFSET = 600;      // left/right column distance from screen center (cap)
 const COL_TOP = 240;         // top of the three columns
 const TITLE_GAP = 30;        // underline below a column title
 const MODE_GAP = 70;         // gap from underline to first mode button
@@ -24,7 +25,8 @@ const SETTING_SLIDER_GAP = 78;
 const SETTING_OPTION_GAP = 95;
 const ACTION_GAP = 40;       // START GAME below the center content
 const ACTION_SPACING = 90;   // MAIN MENU below START GAME
-const PLAYER_GAP = 60;       // first player row below the underline
+const PLAYER_GAP = 70;       // first player row below the underline (= MODE_GAP, so the
+                             // first player lines up with the first mode button's label)
 const PLAYER_ROW_H = 32;
 const UNDERLINE_W = 360;     // px width of a column header rule (~ spans the column)
 
@@ -96,6 +98,7 @@ export class LobbyScreen {
     }
 
     _optionChange(key, v) {
+        if (this.settings[key] === v) return;   // already selected — no toggle-off / no-op
         this.settings[key] = v;
         this.dirty = true;                                          // discrete -> rebuild next frame
         this.onUpdateSettings(this.modeId, { ...this.settings });
@@ -129,11 +132,11 @@ export class LobbyScreen {
     }
 
     _title(text, x, y) {
-        this.texts.push({ text, x, y, align: 'center', font: LABEL_FONT, color: theme.fg });
+        this.texts.push({ text, x, y, align: 'center', font: HEADER_FONT, color: theme.fg });
         // Column-header rule: stretch the tildes across the column width.
-        this.ctx.font = `${LABEL_FONT}px "IBMVGA"`;
+        this.ctx.font = `${HEADER_FONT}px "IBMVGA"`;
         const count = Math.max(text.length, Math.round(UNDERLINE_W / this.ctx.measureText('~').width));
-        this.texts.push({ text: '~'.repeat(count), x, y: y + TITLE_GAP, align: 'center', font: LABEL_FONT, color: theme.fg });
+        this.texts.push({ text: '~'.repeat(count), x, y: y + TITLE_GAP, align: 'center', font: HEADER_FONT, color: theme.fg });
     }
 
     rebuild() {
@@ -155,7 +158,7 @@ export class LobbyScreen {
 
         const cx = this.canvas.width / 2;
         const W = this.canvas.width;
-        const off = Math.min(W * 0.27, COL_OFFSET);
+        const off = Math.min(W * 0.375, COL_OFFSET); // ~200px from each edge on a 1600 canvas
         const leftX = cx - off;
         const rightX = cx + off;
 
@@ -178,7 +181,9 @@ export class LobbyScreen {
         ly += MODE_SPACING;
         // description (unchanged behavior, under the column)
         if (this.modeId) {
-            const lines = this._wrap(GAME_MODES[this.modeId].description, 420, `${DESC_FONT}px "IBMVGA"`);
+            // Wrap to the column width (the header rule) so the description stays
+            // contained within — and centered on — the left column.
+            const lines = this._wrap(GAME_MODES[this.modeId].description, UNDERLINE_W, `${DESC_FONT}px "IBMVGA"`);
             lines.forEach((ln, i) =>
                 this.texts.push({ text: ln, x: leftX, y: ly + i * 28, align: 'center', font: DESC_FONT, color: theme.fg }));
         }
@@ -192,12 +197,16 @@ export class LobbyScreen {
             Object.entries(mode.settingsOptions).forEach(([key, setting]) => {
                 const value = this.settings[key] !== undefined ? this.settings[key] : setting.default;
                 if (setting.options) {
-                    this.texts.push({ text: setting.label, x: cx, y: ry, align: 'center', font: LABEL_FONT, color: theme.fg });
+                    // Match the slider titles (FONT_SIZE); dim for non-host like the rest.
+                    this.texts.push({ text: setting.label, x: cx, y: ry, align: 'center', font: FONT_SIZE, color: this.isHost ? theme.fg : dim() });
                     const n = setting.options.length;
-                    const spacing = 120;
+                    const spacing = 180; // wider than plain labels — bracket buttons need room
                     const startX = cx - spacing * (n - 1) / 2;
                     setting.options.forEach((val, i) => {
-                        this.ui.buttons.push(makeButton(setting.labels[i], startX + i * spacing, ry + 45,
+                        // Bracket buttons: the selected option is `active` (held inner,
+                        // no hover/interaction — there's always exactly one selected, so
+                        // it's NOT a toggle). The others rest outward and are clickable.
+                        this.ui.buttons.push(makeBracketButton(setting.labels[i], startX + i * spacing, ry + 45,
                             () => this._optionChange(key, val),
                             { active: value === val, disabled: !this.isHost }));
                     });
@@ -230,8 +239,10 @@ export class LobbyScreen {
         this.players.forEach((p, i) => {
             const rowY = listTop + i * PLAYER_ROW_H;
             if (this.isHost && !p.isHost && p.connected) {
-                this.ui.buttons.push(makeButton('[MAKE HOST]', rightX + 110, rowY + LIST_FONT / 2,
-                    () => this.onMakeHost(p.id), { plain: true }));
+                // Right bracket sits where the old '[MAKE HOST]' label's right edge did
+                // (≈ rightX+198), so it lines up with the previous layout.
+                this.ui.buttons.push(makeBracketButton('MAKE HOST', rightX + 96, rowY,
+                    () => this.onMakeHost(p.id)));
             }
         });
 
@@ -274,8 +285,10 @@ export class LobbyScreen {
         ctx.font = `${TITLE_FONT}px "IBMVGA"`;
         ctx.fillText(this.roomCode || '------', cx, ROOMCODE_Y);
 
-        // player rows
+        // player rows — center-baselined so rowY is the row's center (matches the
+        // mode buttons' center-Y, so columns share a row line for the transition).
         ctx.font = `${LIST_FONT}px "IBMVGA"`;
+        ctx.textBaseline = 'middle';
         const { listX, startY, rowH, rowW } = this.playerLayout;
         this.players.forEach((p, i) => {
             const rowY = startY + i * rowH;

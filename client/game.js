@@ -859,9 +859,16 @@ canvas.addEventListener('click', (e) => {
     if (settingsPanelOpen) {
         if (hits(getSettingsPanelRect())) {
             settingsPanelOpen = false;
-            if (room) room.send('leaveToMenu');
             if (currentMode) currentMode.reset();
-            showScreen('main');
+            // In a room, leaving navigates to main via room.onLeave — don't ALSO
+            // navigate directly, or the two transitions fight (a partial title
+            // typed then restarted, visible once there's network latency).
+            if (room) {
+                leaveDestination = 'main';
+                room.send('leaveToMenu');
+            } else {
+                showScreen('main');
+            }
         } else {
             settingsPanelOpen = false;
         }
