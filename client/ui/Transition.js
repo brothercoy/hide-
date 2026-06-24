@@ -15,7 +15,7 @@
 import { theme } from './colors.js';
 
 const TYPE_CHAR_MS = 20;       // base ms per character while typing a row
-const MAX_TYPE_MS = 3000;      // cap on total typing time; only screens that would
+const MAX_TYPE_MS = 3000;     // cap on total typing time; only screens that would
                                // exceed it (e.g. Play) type faster to fit. Screens
                                // under it keep the base TYPE_CHAR_MS unchanged.
 const ROW_PX = 30;             // pixels per "enter" step — smaller = more bumps per gap
@@ -44,11 +44,20 @@ export function textRow(text, x, y, font, align, baseline, color, groupY) {
         cost: text.length,
         draw(ctx, n) {
             ctx.font = font;
-            ctx.textAlign = align || 'left';
             ctx.textBaseline = baseline || 'top';
             ctx.fillStyle = color || theme.fg;
             ctx.globalAlpha = 1;
-            ctx.fillText(text.slice(0, n), x, y);
+            // Reveal left-to-right anchored at the FINAL text's left edge, so the
+            // line grows rightward like a typewriter instead of re-centering each
+            // character (it still ends exactly where its alignment puts it).
+            const a = align || 'left';
+            let left = x;
+            if (a !== 'left') {
+                const w = ctx.measureText(text).width;
+                left = a === 'center' ? x - w / 2 : x - w;
+            }
+            ctx.textAlign = 'left';
+            ctx.fillText(text.slice(0, n), left, y);
         }
     };
 }

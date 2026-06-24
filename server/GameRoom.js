@@ -7,6 +7,14 @@ const LOBBY_TIMEOUT = 1000 * 60 * 10;
 
 const DEFAULT_MODE = GAME_MODES.redacted;
 
+// Round-over pacing. The next round waits for the client's life-loss animation:
+// one beat per player who lost a life (must match LifeLossCallout ENTRY_MS on the
+// client), plus a short hold on the final value.
+const LIFE_LOSS_INTRO_MS = 350;  // text shows before the cursor appears (client INTRO_PAUSE_MS)
+const LIFE_LOSS_ENTRY_MS = 1500; // must match LifeLossCallout ENTRY_MS on the client
+const ROUND_OVER_HOLD_MS = 1300; // cursor blinks on the last player for this long before advancing
+const MATCH_OVER_DISPLAY_MS = 3000;
+
 class GameRoom extends Room {
     onCreate() {
         this.autoDispose = false;
@@ -15,6 +23,7 @@ class GameRoom extends Room {
         this.settings = { ...DEFAULT_MODE.defaultSettings };
         this.selectedMode = null;
         this.selectedSettingsData = null;
+        this.customOpen = false; // host's CUSTOM (settings editor) view, mirrored to non-hosts
 
         this.currentMatch = 1;
         this.currentRound = 1;
@@ -57,11 +66,13 @@ class GameRoom extends Room {
                 if (this.activePlayers[eliminatedId].lives <= 0) {
                     this.activePlayers[eliminatedId].alive = false;
                     roundOverMsg = {
+                        id: eliminatedId,
                         eliminatedName: this.activePlayers[eliminatedId].name,
                         lostLife: false
                     };
                 } else {
                     roundOverMsg = {
+                        id: eliminatedId,
                         lostLifeName: this.activePlayers[eliminatedId].name,
                         livesRemaining: this.activePlayers[eliminatedId].lives,
                         lostLife: true
@@ -70,7 +81,7 @@ class GameRoom extends Room {
 
                 this.currentRoundOverMessage = roundOverMsg;
                 this.broadcast('roundOver', roundOverMsg);
-                this.startNextRound();
+                this.startNextRound(1);
             }
         });
 
@@ -78,6 +89,7 @@ class GameRoom extends Room {
             if (client.sessionId !== Object.keys(this.players)[0]) return;
             this.selectedMode = data.mode;
             this.selectedSettingsData = data.settings;
+            this.customOpen = !!data.customOpen; // host's CUSTOM view, mirrored to non-hosts
             this.broadcast('settingsUpdated', data);
         });
 
@@ -177,13 +189,15 @@ class GameRoom extends Room {
                                 this.activePlayers[eliminatedId].alive = false;
                             }
                             const msg = {
+                                id: eliminatedId,
                                 lostLifeName: this.activePlayers[eliminatedId].name,
                                 eliminatedName: this.activePlayers[eliminatedId].name,
+                                livesRemaining: this.activePlayers[eliminatedId].lives,
                                 lostLife: this.activePlayers[eliminatedId].lives > 0
                             };
                             this.currentRoundOverMessage = msg;
                             this.broadcast('roundOver', msg);
-                            this.startNextRound();
+                            this.startNextRound(1);
                         }
                     }
                 }
@@ -206,6 +220,7 @@ class GameRoom extends Room {
 
             this.settings = {
                 ...this.gameMode.defaultSettings,
+                lives: data.settings.lives || this.gameMode.defaultSettings.lives,
                 roundTime: data.settings.roundTime || this.gameMode.defaultSettings.roundTime,
                 speedScale: data.settings.speedScale || this.gameMode.defaultSettings.speedScale,
                 charCount: data.settings.charCount || this.gameMode.defaultSettings.charCount,
@@ -289,7 +304,8 @@ class GameRoom extends Room {
         if (this.selectedMode) {
             client.send('settingsUpdated', {
                 mode: this.selectedMode,
-                settings: this.selectedSettingsData
+                settings: this.selectedSettingsData,
+                customOpen: this.customOpen
             });
         }
         if (this.gameStarted) {
@@ -345,20 +361,20 @@ class GameRoom extends Room {
             this.activePlayers[id].lives -= 1;
             if (this.activePlayers[id].lives <= 0) {
                 this.activePlayers[id].alive = false;
-                eliminated.push(this.activePlayers[id].name);
+                eliminated.push({ id, name: this.activePlayers[id].name });
             } else {
-                lostLife.push({ name: this.activePlayers[id].name, livesRemaining: this.activePlayers[id].lives });
+                lostLife.push({ id, name: this.activePlayers[id].name, livesRemaining: this.activePlayers[id].lives });
             }
         });
 
         const timeUpMsg = {
-            eliminatedNames: eliminated,
+            eliminated,
             lostLifePlayers: lostLife
         };
 
         this.currentRoundOverMessage = timeUpMsg;
         this.broadcast('timeUp', timeUpMsg);
-        this.startNextRound();
+        this.startNextRound(eliminated.length + lostLife.length);
     }
 
     generateChars() {
@@ -436,59 +452,56 @@ class GameRoom extends Room {
         }, 4000);
     }
 
-    startNextRound() {
+    // lossCount = how many players lost a life this round; the next round waits
+    // for that many client animations to finish before counting down.
+    startNextRound(lossCount = 1) {
         this.timeUpHandled = false;
+        this.roundActive = false;
+        this.taps = [];
         const alivePlayers = this.getAlivePlayers();
+        const animMs = LIFE_LOSS_INTRO_MS + Math.max(1, lossCount) * LIFE_LOSS_ENTRY_MS + ROUND_OVER_HOLD_MS;
 
         if (alivePlayers.length <= 1) {
             const matchWinnerId = alivePlayers[0] || null;
-
             if (matchWinnerId) {
                 this.matchWins[matchWinnerId] = (this.matchWins[matchWinnerId] || 0) + 1;
             }
-
-            this.broadcast('matchOver', {
-                matchWinnerName: matchWinnerId ? this.activePlayers[matchWinnerId].name : 'Nobody',
-                matchWins: Object.fromEntries(
-                    Object.entries(this.matchWins).map(([id, wins]) => [
-                        this.activePlayers[id]?.name || id, wins
-                    ])
-                ),
-                match: this.currentMatch,
-                totalMatches: this.settings.matches
-            });
-
-            if (this.currentMatch >= this.settings.matches) {
-                this.endGame();
-                return;
-            }
-
-            this.currentMatch += 1;
-            this.currentRound = 1;
-            this.taps = [];
-            this.timeLeft = this.settings.roundTime;
-            this.roundActive = false;
-
-            Object.keys(this.activePlayers).forEach(id => {
-                this.activePlayers[id].alive = true;
-                this.activePlayers[id].lives = this.settings.lives;
-            });
-
-            this.broadcastPlayerList();
+            // Let the final life-loss animation finish before showing the result.
             this.clock.setTimeout(() => {
-                this.startRoundCountdown();
-            }, 3000);
+                this.broadcast('matchOver', {
+                    matchWinnerName: matchWinnerId ? this.activePlayers[matchWinnerId].name : 'Nobody',
+                    matchWins: Object.fromEntries(
+                        Object.entries(this.matchWins).map(([id, wins]) => [
+                            this.activePlayers[id]?.name || id, wins
+                        ])
+                    ),
+                    match: this.currentMatch,
+                    totalMatches: this.settings.matches
+                });
+
+                if (this.currentMatch >= this.settings.matches) {
+                    this.endGame();
+                    return;
+                }
+
+                this.currentMatch += 1;
+                this.currentRound = 1;
+                this.timeLeft = this.settings.roundTime;
+                Object.keys(this.activePlayers).forEach(id => {
+                    this.activePlayers[id].alive = true;
+                    this.activePlayers[id].lives = this.settings.lives;
+                });
+                this.broadcastPlayerList();
+                this.clock.setTimeout(() => this.startRoundCountdown(), MATCH_OVER_DISPLAY_MS);
+            }, animMs);
             return;
         }
 
         this.currentRound += 1;
-        this.taps = [];
         this.timeLeft = this.settings.roundTime;
-        this.roundActive = false;
         this.broadcastPlayerList();
-        this.clock.setTimeout(() => {
-            this.startRoundCountdown();
-        }, 3000);
+        // Wait for the life-loss animation(s) to play, then count down the next round.
+        this.clock.setTimeout(() => this.startRoundCountdown(), animMs);
     }
 
     endGame() {

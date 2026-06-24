@@ -54,7 +54,7 @@ export class GameScreen {
         const {
             chars, prevChars, targetChar,
             playerList, timeLeft, currentRound, currentMatch, totalMatches,
-            showRoundOver, showMatchOver, matchOverData, eliminatedName,
+            showRoundOver, showMatchOver, matchOverData, eliminatedName, lifeCallout,
             countdownActive, countdownStartTime, lastUpdateTime, winnerId
         } = state;
 
@@ -73,7 +73,7 @@ export class GameScreen {
         } else {
             this._drawGame(ctx, FS, chars, prevChars, targetChar, playerList, timeLeft,
                 currentRound, currentMatch, totalMatches,
-                showRoundOver, showMatchOver, matchOverData, eliminatedName,
+                showRoundOver, showMatchOver, matchOverData, eliminatedName, lifeCallout,
                 winnerId, lastUpdateTime, cx, cy);
         }
     }
@@ -105,7 +105,7 @@ export class GameScreen {
 
     _drawGame(ctx, FS, chars, prevChars, targetChar, playerList, timeLeft,
               currentRound, currentMatch, totalMatches,
-              showRoundOver, showMatchOver, matchOverData, eliminatedName,
+              showRoundOver, showMatchOver, matchOverData, eliminatedName, lifeCallout,
               winnerId, lastUpdateTime, cx, cy) {
 
         const now = Date.now();
@@ -146,10 +146,11 @@ export class GameScreen {
             ctx.fillStyle = theme.fg;
             const winsText = totalMatches > 1 ? ` (${p.matchWins || 0})` : '';
             const disconnectText = !p.connected ? ' %' : '';
+            const lifeCount = Math.max(0, p.lives);
             const livesText = p.lives !== null && p.lives !== undefined
-                ? ' ' + '♥'.repeat(Math.max(0, p.lives))
-                : ': Spectator';
-            ctx.fillText(p.name + winsText + livesText + disconnectText, listX, listY);
+                ? ` ${lifeCount} ${lifeCount === 1 ? 'Life' : 'Lives'}`
+                : ' Spectator';
+            ctx.fillText(p.name + ':' + winsText + livesText + disconnectText, listX, listY);
             listY += 24;
         });
         ctx.globalAlpha = 1;
@@ -189,12 +190,20 @@ export class GameScreen {
                 scoreY += 24;
             });
         } else if (showRoundOver) {
-            ctx.fillStyle = bgAlpha(0.85);
-            ctx.fillRect(cx - 200, cy - 60, 400, 120);
-            ctx.fillStyle = theme.fg;
-            ctx.font = '32px "IBMVGA"';
-            ctx.textAlign = 'center';
-            ctx.fillText(eliminatedName, cx, cy + 10);
+            if (lifeCallout && lifeCallout.entries.length) {
+                const lineH = lifeCallout.lineHeight(32);
+                const boxH = Math.max(120, lifeCallout.entries.length * lineH + 40);
+                ctx.fillStyle = bgAlpha(0.85);
+                ctx.fillRect(cx - 260, cy - boxH / 2, 520, boxH);
+                lifeCallout.draw(ctx, cx, cy, 32, Date.now());
+            } else if (eliminatedName) {
+                ctx.fillStyle = bgAlpha(0.85);
+                ctx.fillRect(cx - 200, cy - 60, 400, 120);
+                ctx.fillStyle = theme.fg;
+                ctx.font = '32px "IBMVGA"';
+                ctx.textAlign = 'center';
+                ctx.fillText(eliminatedName, cx, cy + 10);
+            }
         }
     }
 }

@@ -133,6 +133,8 @@ export function makeButton(label, x, y, onClick, options = {}) {
         plain: options.plain || false,
         blocksInput: options.blocksInput || false,
         fireOnRelease: options.fireOnRelease || false, // fire onClick instantly on release (glow plays after)
+        noGlow: options.noGlow || false, // skip the release glow phase (press/return anims only)
+        corner: options.corner || '+',   // border corner / hover-fill glyph
         z: Z_FLOAT_MIN + (Math.random() * (Z_FLOAT_MAX - Z_FLOAT_MIN)),
         releasePhase: null,
         charPhases: null,
@@ -165,8 +167,18 @@ export function updateButtonZ(btn, dt, elapsed, pressedButton, mouseIsDown, mous
         }
         if (btn.z <= 1.0) {
             btn.z = 1.0;
-            btn.releasePhase = 'glowing';
-            btn.glowT = 0;
+            if (btn.noGlow) {
+                // Skip the glow phase entirely — straight to returning.
+                btn.releasePhase = 'returning';
+                if (!btn.fireOnRelease) btn._fireClick = true;
+                if (btn.charPhases) {
+                    btn.charZ = new Array(200).fill(1.0);
+                    btn.charRot = new Array(200).fill(0.0);
+                }
+            } else {
+                btn.releasePhase = 'glowing';
+                btn.glowT = 0;
+            }
         }
     } else if (btn.releasePhase === 'glowing') {
         btn.glowT += dt * GLOW_SPEED;
@@ -255,16 +267,17 @@ export function drawButton(ctx, btn, elapsed, FONT_SIZE) {
     const dashCount = Math.floor(innerWidth / cw);
     const plusCount = Math.floor((dashCount / 2) * (btn.active ? 1 : btn.hoverProgress));
 
+    const plus = btn.corner || '+';
     let borderLine = '';
     for (let i = 0; i < dashCount; i++) {
         const fl = i, fr = dashCount - 1 - i;
         borderLine += (fl < plusCount || fr < plusCount ||
             (dashCount % 2 === 1 && i === Math.floor(dashCount / 2) && plusCount >= Math.floor(dashCount / 2)))
-            ? '+' : '-';
+            ? plus : '-';
     }
 
-    const topB = '+' + borderLine + '+';
-    const botB = '+' + borderLine + '+';
+    const topB = plus + borderLine + plus;
+    const botB = plus + borderLine + plus;
     const isPressed = btn._isPressed;
     const ls = isPressed ? '}' : (btn.active ? (Math.floor(Date.now() / 500) % 2 === 0 ? '}' : ' ') : '|');
     const rs = isPressed ? '{' : (btn.active ? (Math.floor(Date.now() / 500) % 2 === 0 ? '{' : ' ') : '|');
@@ -274,7 +287,7 @@ export function drawButton(ctx, btn, elapsed, FONT_SIZE) {
     }
 
     let glowColor = btn.disabled ? dim() : theme.fg;
-    if (ENABLE_GLOW_COLOR && btn.releasePhase === 'glowing' && btn.glowT > 0) {
+    if (ENABLE_GLOW_COLOR && !btn.noGlow && btn.releasePhase === 'glowing' && btn.glowT > 0) {
         const g = btn.glowT < 0.5 ? btn.glowT * 2 : (1 - btn.glowT) * 2;
         glowColor = glow(g);
     }
@@ -333,7 +346,7 @@ export function drawButtonRow(ctx, btn, rowIndex, n, FONT_SIZE) {
     // button is the real control while it scrolls in, not a static partial.
     const z = btn.z !== undefined ? btn.z : Z_FLOAT_MIN;
     let color = btn.disabled ? dim() : theme.fg;
-    if (ENABLE_GLOW_COLOR && btn.releasePhase === 'glowing' && btn.glowT > 0) {
+    if (ENABLE_GLOW_COLOR && !btn.noGlow && btn.releasePhase === 'glowing' && btn.glowT > 0) {
         const g = btn.glowT < 0.5 ? btn.glowT * 2 : (1 - btn.glowT) * 2;
         color = glow(g);
     }
@@ -347,15 +360,16 @@ export function drawButtonRow(ctx, btn, rowIndex, n, FONT_SIZE) {
             drawChar(ctx, btn.label[i], sl + cw + padX + i * cw, st + lh, z, color, FONT_SIZE);
         if (drawn < n) { drawChar(ctx, rs, sl + borderWidth - cw, st + lh, z, color, FONT_SIZE); drawn++; }
     } else {
+        const plus = btn.corner || '+';
         const plusCount = Math.floor((dashCount / 2) * (btn.active ? 1 : btn.hoverProgress));
         let borderLine = '';
         for (let i = 0; i < dashCount; i++) {
             const fl = i, fr = dashCount - 1 - i;
             borderLine += (fl < plusCount || fr < plusCount ||
                 (dashCount % 2 === 1 && i === Math.floor(dashCount / 2) && plusCount >= Math.floor(dashCount / 2)))
-                ? '+' : '-';
+                ? plus : '-';
         }
-        const border = '+' + borderLine + '+';
+        const border = plus + borderLine + plus;
         const y = rowIndex === 0 ? st : st + lh * 2;
         for (let i = 0; i < border.length && i < n; i++)
             drawChar(ctx, border[i], sl + i * cw, y, z, color, FONT_SIZE);
@@ -411,16 +425,17 @@ export function drawButtonPartial(ctx, btn, n, elapsed, FONT_SIZE) {
 
     btn.rect = btn.fullRect = { x: sl, y: st, w: borderWidth, h: totalHeight };
 
+    const plus = btn.corner || '+';
     const plusCount = Math.floor((dashCount / 2) * (btn.active ? 1 : btn.hoverProgress));
     let borderLine = '';
     for (let i = 0; i < dashCount; i++) {
         const fl = i, fr = dashCount - 1 - i;
         borderLine += (fl < plusCount || fr < plusCount ||
             (dashCount % 2 === 1 && i === Math.floor(dashCount / 2) && plusCount >= Math.floor(dashCount / 2)))
-            ? '+' : '-';
+            ? plus : '-';
     }
-    const topB = '+' + borderLine + '+';
-    const botB = '+' + borderLine + '+';
+    const topB = plus + borderLine + plus;
+    const botB = plus + borderLine + plus;
     const color = btn.disabled ? dim() : theme.fg;
 
     let drawn = 0;

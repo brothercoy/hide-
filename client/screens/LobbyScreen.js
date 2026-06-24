@@ -1,6 +1,7 @@
-import { makeButton, drawButton } from '../ui/Button.js';
-import { makeSlider, drawSlider } from '../ui/Slider.js';
-import { makeBracketButton, drawBracketButton } from '../ui/BracketButton.js';
+import { makeButton, drawButton, buttonRows } from '../ui/Button.js';
+import { makeSlider, drawSlider, sliderRows } from '../ui/Slider.js';
+import { makeBracketButton, drawBracketButton, bracketButtonRows, BRACKET_REST } from '../ui/BracketButton.js';
+import { textRow } from '../ui/Transition.js';
 import { GAME_MODES } from '../../gameModes.js';
 import { theme, dim } from '../ui/colors.js';
 
@@ -19,11 +20,13 @@ const COL_TOP = 240;         // top of the three columns
 const TITLE_GAP = 30;        // underline below a column title
 const MODE_GAP = 70;         // gap from underline to first mode button
 const MODE_SPACING = 90;     // between mode buttons / CUSTOM
-const PREVIEW_W = 18;        // preview box width in chars
-const PREVIEW_H = 8;         // preview box height in rows
+const PREVIEW_W = 35;        // preview box width in chars
+const PREVIEW_H = 10;        // preview box height in rows (a touch taller than the true
+                            // play-box ratio — reads better in the lobby)
 const SETTING_SLIDER_GAP = 78;
 const SETTING_OPTION_GAP = 95;
-const ACTION_GAP = 40;       // START GAME below the center content
+const ACTION_GAP = 40;         // START GAME below the settings editor (CUSTOM)
+const PREVIEW_ACTION_GAP = 70; // START GAME below the preview box (sits lower — gap under it)
 const ACTION_SPACING = 90;   // MAIN MENU below START GAME
 const PLAYER_GAP = 70;       // first player row below the underline (= MODE_GAP, so the
                              // first player lines up with the first mode button's label)
@@ -59,7 +62,15 @@ export class LobbyScreen {
 
     enter() {
         this.dirty = false;
-        this.customOpen = false;
+        // Host enters fresh: preview shown, settings back to the mode defaults (so
+        // e.g. returning from a game doesn't keep the last game's CUSTOM values). A
+        // joining non-host instead mirrors the host via applyRemoteSettings, so we
+        // leave theirs alone.
+        if (this.isHost) {
+            this.customOpen = false;
+            this._resetSettingsToDefault();
+            if (this.modeId) this.onUpdateSettings(this.modeId, { ...this.settings }, this.customOpen);
+        }
         this.rebuild();
     }
 
@@ -68,40 +79,52 @@ export class LobbyScreen {
     setPlayers(players) { this.players = players; this.dirty = true; }
     setHost(isHost) { if (this.isHost !== isHost) { this.isHost = isHost; this.dirty = true; } }
 
-    applyRemoteSettings(mode, settings) {
+    applyRemoteSettings(mode, settings, customOpen) {
         this.modeId = mode;
         this.settings = { ...settings };
+        if (customOpen !== undefined) this.customOpen = customOpen; // mirror the host's CUSTOM view
         this.dirty = true;
     }
 
     // --- internal control actions ---
+    _resetSettingsToDefault() {
+        const mode = GAME_MODES[this.modeId];
+        if (!mode) return;
+        this.settings = {};
+        Object.entries(mode.settingsOptions).forEach(([k, s]) => { this.settings[k] = s.default; });
+    }
+
     selectMode(modeId) {
         if (!this.isHost || this.modeId === modeId) return;
         this.modeId = modeId;
-        const mode = GAME_MODES[modeId];
-        this.settings = {};
-        Object.entries(mode.settingsOptions).forEach(([k, s]) => { this.settings[k] = s.default; });
+        this._resetSettingsToDefault();
+        // Update the live buttons' selected state immediately so it shows even
+        // mid-typeout (the full rebuild — description/preview — waits for dirty).
+        for (const b of this.ui.buttons) if (b._modeId) b.active = b._modeId === modeId;
         this.dirty = true;
-        this.onUpdateSettings(this.modeId, { ...this.settings });
+        this.onUpdateSettings(this.modeId, { ...this.settings }, this.customOpen);
     }
 
     _toggleCustom() {
         if (!this.modeId) { this.onModal('?INVALID GAME MODE'); return; }   // need a mode selected to customize its settings
         this.customOpen = !this.customOpen;
         this.customToggledAt = this.ui.elapsed;  // start the hover-anim pause (on or off)
+        if (this.customBtn) this.customBtn.active = this.customOpen; // reflect on the live button (the editor swap waits for dirty)
+        if (!this.customOpen) this._resetSettingsToDefault(); // deselecting CUSTOM reverts to default settings
+        this.onUpdateSettings(this.modeId, { ...this.settings }, this.customOpen); // sync the CUSTOM view + values to non-hosts
         this.dirty = true;
     }
 
     _sliderChange(key, v) {
         this.settings[key] = v;
-        this.onUpdateSettings(this.modeId, { ...this.settings });   // no rebuild during drag
+        this.onUpdateSettings(this.modeId, { ...this.settings }, this.customOpen);   // no rebuild during drag
     }
 
     _optionChange(key, v) {
         if (this.settings[key] === v) return;   // already selected — no toggle-off / no-op
         this.settings[key] = v;
         this.dirty = true;                                          // discrete -> rebuild next frame
-        this.onUpdateSettings(this.modeId, { ...this.settings });
+        this.onUpdateSettings(this.modeId, { ...this.settings }, this.customOpen);
     }
 
     _copyCode() {
@@ -163,38 +186,48 @@ export class LobbyScreen {
         const rightX = cx + off;
 
         // --- HEADER: COPY CODE bracket button (room code is drawn live) ---
-        this.copyBtn = makeBracketButton('COPY CODE', cx, COPY_Y, () => this._copyCode());
+        this.copyBtn = makeBracketButton('COPY CODE', cx, COPY_Y, () => this._copyCode(), { hitPad: 30 });
         this.ui.buttons.push(this.copyBtn);
 
         // --- LEFT COLUMN: GAME MODE ---
         this._title('GAME MODE', leftX, COL_TOP);
         let ly = COL_TOP + TITLE_GAP + MODE_GAP;
         Object.values(GAME_MODES).forEach((mode) => {
-            this.ui.buttons.push(makeButton(mode.name.toUpperCase(), leftX, ly,
+            const b = makeButton(mode.name.toUpperCase(), leftX, ly,
                 () => this.selectMode(mode.id),
-                { active: this.modeId === mode.id, disabled: !this.isHost, fireOnRelease: true }));
+                { active: this.modeId === mode.id, disabled: !this.isHost, fireOnRelease: true, noGlow: true, corner: '*' });
+            b._modeId = mode.id;
+            this.ui.buttons.push(b);
             ly += MODE_SPACING;
         });
         // CUSTOM toggle (bracket button)
-        this.customBtn = makeBracketButton('CUSTOM', leftX, ly, () => this._toggleCustom(), { active: this.customOpen, toggle: true, toggledAt: this.customToggledAt });
+        this.customBtn = makeBracketButton('CUSTOM', leftX, ly, () => this._toggleCustom(), { active: this.customOpen, toggle: true, toggledAt: this.customToggledAt, disabled: !this.isHost });
         this.ui.buttons.push(this.customBtn);
         ly += MODE_SPACING;
         // description (unchanged behavior, under the column)
         if (this.modeId) {
-            // Wrap to the column width (the header rule) so the description stays
-            // contained within — and centered on — the left column.
-            const lines = this._wrap(GAME_MODES[this.modeId].description, UNDERLINE_W, `${DESC_FONT}px "IBMVGA"`);
+            // Extend the wrap past the column (underline) width by the same amount
+            // MAKE HOST's bracket overhangs its column edge — on each side. That
+            // overhang = the rest gap + half a bracket glyph at LIST_FONT.
+            this.ctx.font = `${LIST_FONT}px "IBMVGA"`;
+            const overhang = BRACKET_REST + this.ctx.measureText('M').width / 2;
+            const lines = this._wrap(GAME_MODES[this.modeId].description, UNDERLINE_W + 2 * overhang, `${DESC_FONT}px "IBMVGA"`);
+            const descColor = this.isHost ? theme.fg : dim();
             lines.forEach((ln, i) =>
-                this.texts.push({ text: ln, x: leftX, y: ly + i * 28, align: 'center', font: DESC_FONT, color: theme.fg }));
+                this.texts.push({ text: ln, x: leftX, y: ly + i * 28, align: 'center', font: DESC_FONT, color: descColor }));
         }
 
         // --- CENTER: settings editor (CUSTOM on) or preview box; then actions ---
         let centerBottom;
+        let actionGap = ACTION_GAP;
         if (this.customOpen && this.modeId) {
             this.previewBox = null;
             let ry = COL_TOP;
             const mode = GAME_MODES[this.modeId];
-            Object.entries(mode.settingsOptions).forEach(([key, setting]) => {
+            // Option-type settings (e.g. Speed) first, then the sliders.
+            const entries = Object.entries(mode.settingsOptions)
+                .sort((a, b) => (b[1].options ? 1 : 0) - (a[1].options ? 1 : 0));
+            entries.forEach(([key, setting]) => {
                 const value = this.settings[key] !== undefined ? this.settings[key] : setting.default;
                 if (setting.options) {
                     // Match the slider titles (FONT_SIZE); dim for non-host like the rest.
@@ -206,7 +239,7 @@ export class LobbyScreen {
                         // Bracket buttons: the selected option is `active` (held inner,
                         // no hover/interaction — there's always exactly one selected, so
                         // it's NOT a toggle). The others rest outward and are clickable.
-                        this.ui.buttons.push(makeBracketButton(setting.labels[i], startX + i * spacing, ry + 45,
+                        this.ui.buttons.push(makeBracketButton(setting.labels[i].toUpperCase(), startX + i * spacing, ry + 45,
                             () => this._optionChange(key, val),
                             { active: value === val, disabled: !this.isHost }));
                     });
@@ -220,12 +253,15 @@ export class LobbyScreen {
             });
             centerBottom = ry;
         } else {
-            this.previewBox = { cx, top: COL_TOP, w: PREVIEW_W, h: PREVIEW_H };
-            centerBottom = COL_TOP + PREVIEW_H * FONT_SIZE;
+            // Top aligned with the column underlines (tildes); buttons sit lower.
+            const previewTop = COL_TOP + TITLE_GAP;
+            this.previewBox = { cx, top: previewTop, w: PREVIEW_W, h: PREVIEW_H };
+            centerBottom = previewTop + PREVIEW_H * FONT_SIZE;
+            actionGap = PREVIEW_ACTION_GAP;
         }
 
         // START / BACK below the center content
-        let by = centerBottom + ACTION_GAP;
+        let by = centerBottom + actionGap;
         if (this.isHost) {
             this.ui.buttons.push(makeButton('START GAME', cx, by, () => this.onStart(), { blocksInput: true }));
             by += ACTION_SPACING;
@@ -239,10 +275,16 @@ export class LobbyScreen {
         this.players.forEach((p, i) => {
             const rowY = listTop + i * PLAYER_ROW_H;
             if (this.isHost && !p.isHost && p.connected) {
-                // Right bracket sits where the old '[MAKE HOST]' label's right edge did
-                // (≈ rightX+198), so it lines up with the previous layout.
-                this.ui.buttons.push(makeBracketButton('MAKE HOST', rightX + 96, rowY,
-                    () => this.onMakeHost(p.id)));
+                // Align the 'HOST' word of MAKE HOST under the 'HOST'/'PLAYER' role label
+                // above: same font (LIST_FONT), and the label's right edge sits at the
+                // same right-aligned x as the role text, so the words stack exactly.
+                const roleRightX = this.playerLayout.listX + this.playerLayout.rowW;
+                this.ctx.font = `${LIST_FONT}px "IBMVGA"`;
+                const labelW = this.ctx.measureText('MAKE HOST').width;
+                const mh = makeBracketButton('MAKE HOST', roleRightX - labelW / 2, rowY,
+                    () => this.onMakeHost(p.id));
+                mh.fontSize = LIST_FONT;
+                this.ui.buttons.push(mh);
             }
         });
 
@@ -251,6 +293,92 @@ export class LobbyScreen {
             const p = prevAnim[b.label];
             if (p) Object.assign(b, p);
         }
+    }
+
+    // Row segments for the typed-scroll transition. rebuild() has already laid the
+    // screen out (from whatever state has loaded), so we decompose those live
+    // elements; each row's fully-typed frame matches the steady draw.
+    getTypeables() {
+        const rows = [];
+        const cx = this.canvas.width / 2;
+
+        // big room code (center top)
+        rows.push(textRow(this.roomCode || '------', cx, ROOMCODE_Y,
+            `${TITLE_FONT}px "IBMVGA"`, 'center', 'top', theme.fg));
+
+        // titles, underlines, description, setting labels (already built in texts[])
+        for (const t of this.texts) {
+            rows.push(textRow(t.text, t.x, t.y, `${t.font}px "IBMVGA"`, t.align, 'top', t.color));
+        }
+
+        // every button — bordered (modes / START / BACK) and bracket (COPY/CUSTOM/
+        // speed/MAKE HOST)
+        for (const b of this.ui.buttons) {
+            if (b.bracket) rows.push(...bracketButtonRows(b, b.fontSize || FONT_SIZE));
+            else rows.push(...buttonRows(b, FONT_SIZE));
+        }
+
+        // sliders (CUSTOM settings editor)
+        for (const s of this.ui.sliders) rows.push(...sliderRows(s, FONT_SIZE));
+
+        // preview box
+        if (this.previewBox) rows.push(...this._previewRows(this.previewBox));
+
+        // player rows (name + role; MAKE HOST handled above as a button)
+        const { listX, startY, rowH, rowW } = this.playerLayout;
+        const playerColor = this.isHost ? theme.fg : dim();
+        this.players.forEach((p, i) => {
+            const rowY = startY + i * rowH;
+            rows.push(textRow(p.name, listX, rowY, `${LIST_FONT}px "IBMVGA"`, 'left', 'middle', playerColor));
+            if (!(this.isHost && !p.isHost && p.connected)) {
+                rows.push(textRow(p.isHost ? 'HOST' : 'PLAYER', listX + rowW, rowY,
+                    `${LIST_FONT}px "IBMVGA"`, 'right', 'middle', playerColor));
+            }
+        });
+
+        // Cluster segments whose Y is within ROW_BAND into one row, so each band
+        // types left-to-right across all three columns in a single sweep instead
+        // of as many stepped per-element rows. Only the grouping `y` changes — each
+        // segment still DRAWS at its real position.
+        const ROW_BAND = 20;
+        const ordered = [...rows].sort((a, b) => a.y - b.y);
+        let bandY = null;
+        for (const seg of ordered) {
+            if (bandY === null || seg.y - bandY > ROW_BAND) bandY = seg.y;
+            seg.y = bandY;
+        }
+        return rows;
+    }
+
+    // Box outline as typeable rows: the `=` top/bottom type across; each `]   [`
+    // side row types just its two brackets; the PREVIEW label types centered.
+    _previewRows(box) {
+        const ctx = this.ctx;
+        ctx.font = `${FONT_SIZE}px "IBMVGA"`;
+        const cw = ctx.measureText('M').width;
+        const lh = FONT_SIZE;
+        const left = box.cx - (box.w * cw) / 2;
+        const rightX = left + (box.w - 1) * cw;
+        const topRow = '='.repeat(box.w);
+        const fg = this.isHost ? theme.fg : dim();
+        const rows = [];
+        for (let i = 0; i < box.h; i++) {
+            const y = box.top + i * lh;
+            const edge = i === 0 || i === box.h - 1;
+            rows.push({
+                y, x: left, cost: edge ? box.w : 2,
+                draw: (c, n) => {
+                    c.font = `${FONT_SIZE}px "IBMVGA"`;
+                    c.textAlign = 'left'; c.textBaseline = 'top';
+                    c.fillStyle = fg; c.globalAlpha = 1;
+                    if (edge) { c.fillText(topRow.slice(0, n), left, y); }
+                    else { if (n >= 1) c.fillText(']', left, y); if (n >= 2) c.fillText('[', rightX, y); }
+                }
+            });
+        }
+        rows.push(textRow('PREVIEW', box.cx, box.top + (box.h * lh) / 2,
+            `${LABEL_FONT}px "IBMVGA"`, 'center', 'middle', fg));
+        return rows;
     }
 
     _drawPreviewBox(ctx, box) {
@@ -262,7 +390,7 @@ export class LobbyScreen {
         const left = box.cx - (box.w * cw) / 2;
         const topRow = '='.repeat(box.w);
         const midRow = ']' + ' '.repeat(box.w - 2) + '[';
-        ctx.fillStyle = theme.fg;
+        ctx.fillStyle = this.isHost ? theme.fg : dim();
         for (let i = 0; i < box.h; i++) {
             ctx.fillText(i === 0 || i === box.h - 1 ? topRow : midRow, left, box.top + i * lh);
         }
@@ -290,15 +418,16 @@ export class LobbyScreen {
         ctx.font = `${LIST_FONT}px "IBMVGA"`;
         ctx.textBaseline = 'middle';
         const { listX, startY, rowH, rowW } = this.playerLayout;
+        const playerColor = this.isHost ? theme.fg : dim();
         this.players.forEach((p, i) => {
             const rowY = startY + i * rowH;
             ctx.globalAlpha = p.connected ? 1 : 0.4;
             ctx.textAlign = 'left';
-            ctx.fillStyle = theme.fg;
+            ctx.fillStyle = playerColor;
             ctx.fillText(p.name, listX, rowY);
             if (!(this.isHost && !p.isHost && p.connected)) {
                 ctx.textAlign = 'right';
-                ctx.fillStyle = theme.fg;
+                ctx.fillStyle = playerColor;
                 ctx.fillText(p.isHost ? 'HOST' : 'PLAYER', listX + rowW, rowY);
             }
         });
@@ -318,7 +447,7 @@ export class LobbyScreen {
 
         this.ui.sliders.forEach(s => drawSlider(ctx, s, this.ui.elapsed, FONT_SIZE));
         this.ui.buttons.forEach(b => {
-            if (b.bracket) drawBracketButton(ctx, b, this.ui.elapsed, FONT_SIZE);
+            if (b.bracket) drawBracketButton(ctx, b, this.ui.elapsed, b.fontSize || FONT_SIZE);
             else drawButton(ctx, b, this.ui.elapsed, FONT_SIZE);
         });
     }

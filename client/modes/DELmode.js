@@ -1,3 +1,5 @@
+import { LifeLossCallout } from './LifeLossCallout.js';
+
 export class DELMode {
     constructor(canvas, ctx, uiManager, room, callbacks) {
         this.canvas = canvas;
@@ -23,6 +25,18 @@ export class DELMode {
         this.countdownActive = false;
         this.countdownStartTime = null;
         this.lastUpdateTime = null;
+
+        // Life-loss callout: holds the player list at the old values during the
+        // decrement animation, patching each player as the cursor retypes them.
+        this.lifeCallout = new LifeLossCallout();
+        this.pendingPlayerList = null;
+        this.lifeCallout.onEntryDone = (e) => {
+            const p = this.playerList && this.playerList.find(pl => pl.id === e.id);
+            if (p) { p.lives = e.newLives; if (e.newLives <= 0) p.alive = false; }
+        };
+        this.lifeCallout.onComplete = () => {
+            if (this.pendingPlayerList) { this.playerList = this.pendingPlayerList; this.pendingPlayerList = null; }
+        };
     }
 
     onMessage(type, data) {
@@ -35,6 +49,9 @@ export class DELMode {
                 this.currentMatch = data.match;
                 this.countdownActive = true;
                 this.countdownStartTime = Date.now() - ((data.elapsedSeconds || 0) * 1000);
+                // New round: end any life-loss callout and flush the held list.
+                this.lifeCallout.clear();
+                if (this.pendingPlayerList) { this.playerList = this.pendingPlayerList; this.pendingPlayerList = null; }
                 this.showRoundOver = false;
                 this.showMatchOver = false;
                 this.eliminatedName = null;
@@ -71,25 +88,32 @@ export class DELMode {
                 break;
 
             case 'playerList':
-                this.playerList = data.players;
+                // While the life-loss callout runs, hold the old list and apply
+                // the new one only once the animation finishes (per-entry patches
+                // happen via onEntryDone).
+                if (this.lifeCallout.isActive()) this.pendingPlayerList = data.players;
+                else this.playerList = data.players;
                 break;
 
-            case 'roundOver':
-                this.eliminatedName = data.lostLife
-                    ? `${data.lostLifeName} lost a life!`
-                    : `${data.eliminatedName} has been eliminated!`;
+            case 'roundOver': {
+                const entries = data.lostLife
+                    ? [{ id: data.id, name: data.lostLifeName, oldLives: data.livesRemaining + 1, newLives: data.livesRemaining }]
+                    : [{ id: data.id, name: data.eliminatedName, oldLives: 1, newLives: 0 }];
+                this.lifeCallout.begin(entries, Date.now());
                 this.showRoundOver = true;
                 break;
+            }
 
-            case 'timeUp':
-                const parts = [];
-                if (data.eliminatedNames?.length > 0)
-                    parts.push(data.eliminatedNames.join(', ') + ' eliminated!');
-                if (data.lostLifePlayers?.length > 0)
-                    parts.push(data.lostLifePlayers.map(p => `${p.name} lost a life!`).join(', '));
-                this.eliminatedName = parts.join(' ');
+            case 'timeUp': {
+                const entries = [];
+                (data.lostLifePlayers || []).forEach(p =>
+                    entries.push({ id: p.id, name: p.name, oldLives: p.livesRemaining + 1, newLives: p.livesRemaining }));
+                (data.eliminated || []).forEach(p =>
+                    entries.push({ id: p.id, name: p.name, oldLives: 1, newLives: 0 }));
+                this.lifeCallout.begin(entries, Date.now());
                 this.showRoundOver = true;
                 break;
+            }
 
             case 'matchOver':
                 this.showMatchOver = true;
@@ -124,6 +148,7 @@ export class DELMode {
     }
 
     draw(gameScreen) {
+        this.lifeCallout.update(Date.now());
         gameScreen.draw({
             chars: this.chars,
             prevChars: this.prevChars,
@@ -137,6 +162,7 @@ export class DELMode {
             showMatchOver: this.showMatchOver,
             matchOverData: this.matchOverData,
             eliminatedName: this.eliminatedName,
+            lifeCallout: this.lifeCallout,
             countdownActive: this.countdownActive,
             countdownStartTime: this.countdownStartTime,
             lastUpdateTime: this.lastUpdateTime,

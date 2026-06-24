@@ -5,7 +5,7 @@
 // free) plus a `bracket: true` flag; the screen draws them with this function.
 import { theme, dim } from './colors.js';
 
-const BRACKET_REST = 22;     // px gap from the label edge to each bracket at rest
+export const BRACKET_REST = 22;     // px gap from the label edge to each bracket at rest
 const BRACKET_STEP = 12;     // px the brackets flash inward
 const BRACKET_FLASH_IN = 600;  // ms the brackets stay snapped in
 const BRACKET_FLASH_OUT = 600; // ms at rest between flashes
@@ -21,6 +21,7 @@ export function makeBracketButton(label, x, y, onClick, options = {}) {
         active: options.active || false,
         toggle: options.toggle || false,  // a real on/off toggle (gets active-hover anim)
         toggledAt: options.toggledAt ?? null, // elapsed time the toggle last flipped (for the hover-anim pause)
+        hitPad: options.hitPad || 0,          // extra px around the hit rect (easier to click)
         disabled: options.disabled || false,
     };
 }
@@ -82,6 +83,47 @@ export function drawBracketButton(ctx, btn, elapsed, FONT_SIZE) {
     ctx.fillText(outward ? '}' : '{', cx + labelW / 2 + gap, cy);
 
     // Hit rect uses the REST spread (widest) so hovering doesn't shrink it.
-    const reach = labelW / 2 + BRACKET_REST + cw;
-    btn.rect = { x: cx - reach, y: cy - FONT_SIZE / 2, w: reach * 2, h: FONT_SIZE };
+    const hp = btn.hitPad || 0;
+    const reach = labelW / 2 + BRACKET_REST + cw + hp;
+    btn.rect = { x: cx - reach, y: cy - FONT_SIZE / 2 - hp, w: reach * 2, h: FONT_SIZE + hp * 2 };
+}
+
+// --- Screen-transition feed: one row that types `{ label }` left-to-right -----
+// The fully-typed frame matches drawBracketButton's REST state (outward when
+// inactive, held-inner when active), so the handoff to the live draw is seamless.
+export function bracketButtonRows(btn, FONT_SIZE) {
+    return [{
+        y: btn.y,
+        x: btn.x,
+        cost: btn.label.length + 2, // left bracket + label + right bracket
+        draw: (ctx, n) => drawBracketButtonRow(ctx, btn, n, FONT_SIZE),
+    }];
+}
+
+export function drawBracketButtonRow(ctx, btn, n, FONT_SIZE) {
+    ctx.font = `${FONT_SIZE}px "IBMVGA"`;
+    ctx.textBaseline = 'middle';
+    ctx.globalAlpha = 1;
+    ctx.fillStyle = btn.disabled ? dim() : theme.fg;
+    const cx = btn.x, cy = btn.y;
+    ctx.textAlign = 'center';
+    const cw = ctx.measureText('M').width;
+    const labelW = ctx.measureText(btn.label).width;
+    // Set the hit rect (same as drawBracketButton) so it's clickable while it
+    // types in — offset-aware hit-testing handles the scroll position.
+    const hp = btn.hitPad || 0;
+    const reach = labelW / 2 + BRACKET_REST + cw + hp;
+    btn.rect = { x: cx - reach, y: cy - FONT_SIZE / 2 - hp, w: reach * 2, h: FONT_SIZE + hp * 2 };
+    const inner = !!btn.active;                       // active rests held-inner
+    const gap = inner ? (BRACKET_REST - BRACKET_STEP) : BRACKET_REST;
+    const leftCh = inner ? '}' : '{';
+    const rightCh = inner ? '{' : '}';
+    if (n >= 1) ctx.fillText(leftCh, cx - labelW / 2 - gap, cy);
+    const shown = Math.max(0, Math.min(btn.label.length, n - 1));
+    if (shown > 0) {
+        ctx.textAlign = 'left';
+        ctx.fillText(btn.label.slice(0, shown), cx - labelW / 2, cy);
+        ctx.textAlign = 'center';
+    }
+    if (n >= btn.label.length + 2) ctx.fillText(rightCh, cx + labelW / 2 + gap, cy);
 }

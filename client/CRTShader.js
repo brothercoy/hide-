@@ -411,8 +411,10 @@ export class CRTEffect {
 
     render(time) {
         const gl = this.gl;
-        const w = window.innerWidth;
-        const h = window.innerHeight;
+        // Render at the source canvas's fixed resolution; CSS scales the glCanvas
+        // into the window (letterboxed), so this stays 1:1 with the source.
+        const w = this.sourceCanvas.width;
+        const h = this.sourceCanvas.height;
 
         if (this.glCanvas.width !== w || this.glCanvas.height !== h) {
             this.resize(w, h);

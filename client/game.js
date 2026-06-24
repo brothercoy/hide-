@@ -36,20 +36,42 @@ let modalMessage = null;
 let settingsPanelOpen = false;
 let winnerId = null;
 let leaveDestination = 'main'; // where to land after leaving a room (BACK from lobby → 'play')
+let pendingLobbyEntry = false; // waiting for the room's initial state before typing the lobby in
 
 const canvas = document.getElementById('gameCanvas');
 const ctx = canvas.getContext('2d', { alpha: false });
 
+// Fixed logical resolution — the game ALWAYS lays out in this 16:9 space (desktop
+// and mobile). The display is letterbox-scaled to the window so the play box never
+// shrinks with the window; a non-16:9 window just shows the whole thing smaller
+// with black bars (nudging people to fullscreen).
+const LOGICAL_W = 1920, LOGICAL_H = 1080;
+
 function resizeCanvas() {
-    canvas.width = isMobile ? Math.max(window.innerWidth, 300) : Math.max(window.innerWidth, 1600);
-    canvas.height = isMobile ? Math.max(window.innerHeight, 720) : Math.max(window.innerHeight, 800);
+    canvas.width = LOGICAL_W;
+    canvas.height = LOGICAL_H;
+}
+
+// Scale + center the canvas and the CRT overlay into the window, preserving aspect
+// (contain). Everything stays visible when not fullscreened — just smaller.
+function layoutDisplay() {
+    const winW = window.innerWidth, winH = window.innerHeight;
+    const aspect = LOGICAL_W / LOGICAL_H;
+    let w, h;
+    if (winW / winH > aspect) { h = winH; w = Math.round(h * aspect); }
+    else { w = winW; h = Math.round(w / aspect); }
+    const left = Math.round((winW - w) / 2), top = Math.round((winH - h) / 2);
+    for (const c of [canvas, crt.glCanvas]) {
+        c.style.position = 'fixed';
+        c.style.left = left + 'px';
+        c.style.top = top + 'px';
+        c.style.width = w + 'px';
+        c.style.height = h + 'px';
+    }
 }
 
 resizeCanvas();
-window.addEventListener('resize', () => {
-    if (transition.isActive()) transition.cancelToEnd();
-    resizeCanvas();
-});
+window.addEventListener('resize', () => layoutDisplay());
 
 const uiManager = new UIManager(canvas, ctx);
 const transition = new Transition(canvas, ctx);
@@ -74,10 +96,10 @@ const settingsScreen = new SettingsScreen(canvas, ctx, uiManager,
 );
 
 const lobbyScreen = new LobbyScreen(canvas, ctx, uiManager,
-    (mode, settings) => {
+    (mode, settings, customOpen) => {
         selectedMode = mode;
         selectedSettings = settings;
-        if (room) room.send('updateSettings', { mode, settings });
+        if (room) room.send('updateSettings', { mode, settings, customOpen });
     },
     (targetId) => { if (room) room.send('makeHost', { targetId }); },
     () => {
@@ -98,13 +120,17 @@ screens.lobby = lobbyScreen;
 const crt = new CRTEffect(canvas);
 canvas.style.opacity = '0';
 canvas.style.display = 'block';
+layoutDisplay();   // now that crt.glCanvas exists, size both into the window
 crt.render(0);
 uiManager.coordTransform = (x, y) => curveInverse(x, y);
 
 function curveInverse(canvasRelX, canvasRelY) {
+    // canvasRelX/Y are relative to the displayed (letterboxed) canvas rect, so
+    // normalize by that rect — not the window — then undo the CRT curve and scale
+    // to the fixed logical resolution.
     const gameRect = canvas.getBoundingClientRect();
-    const u = (canvasRelX + gameRect.left) / window.innerWidth;
-    const v = (canvasRelY + gameRect.top) / window.innerHeight;
+    const u = canvasRelX / gameRect.width;
+    const v = canvasRelY / gameRect.height;
     const c = crt.uniforms.curvature * 0.25;
     let cx = u * 2 - 1;
     let cy = v * 2 - 1;
@@ -204,7 +230,8 @@ async function tryReconnect() {
             showScreen('main');
             if (currentMode) currentMode.reset();
         });
-        showScreen('lobby');
+        // Defer like a fresh join — the lobby (or game) shows once state arrives.
+        pendingLobbyEntry = true;
         setupRoomMessages(true);
     } catch (e) {
         localStorage.removeItem('reconnectionToken');
@@ -215,7 +242,15 @@ async function tryReconnect() {
 }
 
 window.addEventListener('load', () => {
-    initFont(FONT_SIZE).then(() => {
+    // Wait for BOTH fonts before anything draws:
+    //  - initFont: the opentype.js load used for text metrics (charWidth)
+    //  - document.fonts.load: the CSS @font-face the canvas actually renders with
+    // Otherwise the title types in a fallback font and snaps to IBMVGA mid-type
+    // once the @font-face finishes downloading.
+    const cssFont = (document.fonts && document.fonts.load)
+        ? document.fonts.load(`${FONT_SIZE}px "IBMVGA"`).catch(() => {})
+        : Promise.resolve();
+    Promise.all([initFont(FONT_SIZE), cssFont]).then(() => {
         fontReady = true;
         tryReconnect();
     }).catch(err => {
@@ -250,8 +285,21 @@ function onRoomJoined(r) {
         leaveDestination = 'main';
         if (currentMode) currentMode.reset();
     });
-    showScreen('lobby');
+    // Don't show the lobby yet — wait for its initial state (room code, players,
+    // and the host's current selections) so it types in the REAL state instead of
+    // an empty screen. maybeEnterLobby() fires once that's in.
+    pendingLobbyEntry = true;
     setupRoomMessages();
+}
+
+// Show the lobby once its initial state has loaded. Deferred one frame so any
+// same-tick settingsUpdated (the host's mode/settings) is applied first.
+function maybeEnterLobby() {
+    if (!pendingLobbyEntry) return;
+    if (!lobbyScreen.roomCode || lobbyScreen.players.length === 0) return;
+    pendingLobbyEntry = false;
+    // ...unless a game-in-progress message took over in the meantime.
+    requestAnimationFrame(() => { if (currentScreen !== 'game') showScreen('lobby'); });
 }
 
 // --- Game Over Overlay ---
@@ -290,6 +338,7 @@ function setupRoomMessages(isReconnecting = false) {
 
     room.onMessage('roomCode', (data) => {
         lobbyScreen.setRoomCode(data.code);
+        maybeEnterLobby();
     });
 
     room.onMessage('playerList', (data) => {
@@ -299,6 +348,7 @@ function setupRoomMessages(isReconnecting = false) {
         lobbyScreen.setHost(isHost);
         lobbyScreen.setPlayers(data.players);
         if (currentMode) currentMode.onMessage('playerList', data);
+        maybeEnterLobby();
     });
 
     room.onMessage('startError', (data) => {
@@ -309,10 +359,11 @@ function setupRoomMessages(isReconnecting = false) {
         if (isHost) return;
         selectedMode = data.mode;
         selectedSettings = { ...data.settings };
-        lobbyScreen.applyRemoteSettings(data.mode, data.settings);
+        lobbyScreen.applyRemoteSettings(data.mode, data.settings, data.customOpen);
     });
 
     room.onMessage('gameStarted', (data) => {
+        pendingLobbyEntry = false; // going to the game, not the lobby
         if (transition.isActive()) transition.cancelToEnd();
         currentMode = createMode(data.mode, data);
         currentScreen = 'game';
@@ -356,6 +407,7 @@ function setupRoomMessages(isReconnecting = false) {
     modeMessages.forEach(type => {
         room.onMessage(type, (data) => {
             if (type === 'reconnected' && data.gameStarted) {
+                pendingLobbyEntry = false; // reconnecting into a live game, not the lobby
                 if (transition.isActive()) transition.cancelToEnd();
                 if (!currentMode) currentMode = createMode(data.mode || 'redacted', data);
                 currentScreen = 'game';
