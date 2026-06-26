@@ -3,6 +3,7 @@ import { makeInput, drawInput, inputRows } from '../ui/Input.js';
 import { charWidth } from '../ui/Font.js';
 import { textRow } from '../ui/Transition.js';
 import { theme } from '../ui/colors.js';
+import { vScale } from '../ui/viewport.js';
 
 const NAME_FONT_SIZE = 80;  // font size for the name input — bigger than rest
 const FONT_SIZE = 54;       // font size for everything else
@@ -43,16 +44,27 @@ export class PlayScreen {
         return innerWidth + cw * 2;
     }
 
+    // The row Y positions. This screen is laid out from the top (NAME_Y down), so all
+    // positions scale by vScale to redistribute proportionally with the window height
+    // (=== 1 at the load height, so unchanged there).
+    _layoutY() {
+        const vs = vScale(this.canvas);
+        const btnH = FONT_SIZE * 2.5;
+        const nameH = NAME_FONT_SIZE * 2.5;
+        const btnRowY = NAME_Y + nameH / 2 + btnH / 2 + BTN_ROW_GAP;
+        const codeRowY = btnRowY + btnH + CODE_ROW_GAP;
+        return { nameY: NAME_Y * vs, btnRowY: btnRowY * vs, codeRowY: codeRowY * vs };
+    }
+
     enter() {
         this.ui.clear();
 
         const cx = this.canvas.width / 2;
-        const btnH = FONT_SIZE * 2.5;
-        const nameH = NAME_FONT_SIZE * 2.5;
+        const { nameY, btnRowY, codeRowY } = this._layoutY();
 
         // Name input — larger font. Pre-fill with the name saved for this browser
         // instance (sessionStorage), so returning here keeps it filled.
-        this.nameInput = makeInput('ENTER NAME', cx, NAME_Y, 12);
+        this.nameInput = makeInput('ENTER NAME', cx, nameY, 12);
         this.nameInput.fontSize = NAME_FONT_SIZE;
         const savedName = sessionStorage.getItem('playerName');
         if (savedName) {
@@ -64,7 +76,6 @@ export class PlayScreen {
         // QUICK JOIN + CREATE ROOM side by side, centered
         const qjW = this._btnWidth('QUICK JOIN');
         const crW = this._btnWidth('CREATE ROOM');
-        const btnRowY = NAME_Y + nameH / 2 + btnH / 2 + BTN_ROW_GAP;
 
         // Gap between buttons is centered on cx
         const qjX = cx - BTN_PAIR_GAP / 2 - qjW / 2;
@@ -80,7 +91,6 @@ export class PlayScreen {
         const colonW = cw; // : is one character wide
         const rowTotalW = codeW + COLON_GAP + colonW + COLON_GAP + jrW;
         const rowLeft = cx - rowTotalW / 2;
-        const codeRowY = btnRowY + btnH / 2 + btnH / 2 + CODE_ROW_GAP;
 
         const codeX = rowLeft + codeW / 2;
         const joinX = rowLeft + codeW + COLON_GAP + colonW + COLON_GAP + jrW / 2;
@@ -90,10 +100,23 @@ export class PlayScreen {
 
         this.ui.buttons.push(makeButton('JOIN ROOM', joinX, codeRowY, () => this.onJoinRoom(this.nameInput.value, this.codeInput.value), { blocksInput: true }));
 
-
-
         // Store colon position for drawing
         this.colonX = rowLeft + codeW + COLON_GAP;
+        this.colonY = codeRowY;
+        this.codeRowY = codeRowY;
+    }
+
+    // Re-place inputs/buttons/colon for a new canvas height (resize re-fit), in place.
+    relayout() {
+        const { nameY, btnRowY, codeRowY } = this._layoutY();
+        if (this.nameInput) this.nameInput.y = nameY;
+        if (this.codeInput) this.codeInput.y = codeRowY;
+        const qj = this.ui.buttons.find(b => b.label === 'QUICK JOIN');
+        const cr = this.ui.buttons.find(b => b.label === 'CREATE ROOM');
+        const jr = this.ui.buttons.find(b => b.label === 'JOIN ROOM');
+        if (qj) qj.y = btnRowY;
+        if (cr) cr.y = btnRowY;
+        if (jr) jr.y = codeRowY;
         this.colonY = codeRowY;
         this.codeRowY = codeRowY;
     }

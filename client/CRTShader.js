@@ -155,20 +155,25 @@ export class CRTEffect {
                 
                 // Animated static noise — modulates the glow area
                 float noiseVal = rand(uv * vec2(1600.0, 900.0) + vec2(fract(time * 1.3), fract(time * 0.7)));
-                float bloomLum = dot(max(texture2D(tDiffuse, uv).rgb, vec3(0.0)), LUMA);
 
-                // Sample brightness from a wide neighborhood
-                float r = 0.003;
-                float nearBright = 0.0;
-                nearBright += dot(texture2D(tDiffuse, uv + vec2( r,  0.0)).rgb, LUMA);
-                nearBright += dot(texture2D(tDiffuse, uv + vec2(-r,  0.0)).rgb, LUMA);
-                nearBright += dot(texture2D(tDiffuse, uv + vec2( 0.0,  r)).rgb, LUMA);
-                nearBright += dot(texture2D(tDiffuse, uv + vec2( 0.0, -r)).rgb, LUMA);
-                nearBright += dot(texture2D(tDiffuse, uv + vec2( r,  r)).rgb, LUMA);
-                nearBright += dot(texture2D(tDiffuse, uv + vec2(-r, -r)).rgb, LUMA);
-                nearBright += dot(texture2D(tDiffuse, uv + vec2( r, -r)).rgb, LUMA);
-                nearBright += dot(texture2D(tDiffuse, uv + vec2(-r,  r)).rgb, LUMA);
-                nearBright /= 8.0;
+                // Bright-area mask for the phosphor glow. The bloom texture is already a
+                // blurred luminance of the scene, so one sample of it replaces the old
+                // 8-tap neighborhood fetch of tDiffuse — 9 texture reads (8 taps + an
+                // unused luminance sample) collapse to 1. Reused for the static-noise
+                // mask further down.
+                float bloomField = texture2D(bloomTex, uv).r;
+                // The glow is two terms combined so EVERY lit element glows, not just big
+                // bright ones:
+                //  - localGlow: from this pixel's OWN brightness (free — pixel is already
+                //    sampled). Same for any text pixel regardless of size, so it restores
+                //    the uniform "all text glows" baseline the old 8-tap had.
+                //    MIN-GLOW KNOB: lower the 0.40 below to make faint/small text glow more.
+                //  - haloGlow: from the wide bloom blur — extra spread around large bright
+                //    clusters (e.g. the HIDE title). WIDTH KNOB: raise the 0.40 to tighten
+                //    that halo, lower to widen it.
+                float localGlow = smoothstep(0.3, 0.4, dot(pixel.rgb, LUMA));
+                float haloGlow  = smoothstep(0.4, 0.75, bloomField);
+                float nearBright = max(localGlow, haloGlow);
 
                 // Phosphor noise glow: grainy in bright areas, fades to dark in dark areas
                 float noiseGlow = noiseVal * nearBright;
@@ -207,17 +212,16 @@ export class CRTEffect {
 
                 pixel.rgb *= lightingMask;
 
-                float lumField = texture2D(bloomTex, uv).r;
-                lumField = smoothstep(0.0, 0.3, lumField);
+                float lumField = smoothstep(0.0, 0.3, bloomField); // static-noise mask (original shaping)
 
-                float staticNoise = rand(uv * vec2(1601.0, 901.0) + vec2(fract(time * 17.3), fract(time * 13.7)));
-                pixel.rgb += staticNoise * phosphor * lumField * 0.5;
+                // One animated-noise sample, reused for both the bright-area grain and
+                // the radial screen grain (the two rand() calls were identical).
+                float screenNoise = rand(uv * vec2(1601.0, 901.0) + vec2(fract(time * 17.3), fract(time * 13.7)));
+                pixel.rgb += screenNoise * phosphor * lumField * 0.5;
 
                 // Radial vignette for noise — bright center, fades to edges
                 vec2 noiseCenter = uv - 0.5;
                 float radialFade = 1.0 - smoothstep(0.0, 0.7, length(noiseCenter));
-
-                float screenNoise = rand(uv * vec2(1601.0, 901.0) + vec2(fract(time * 17.3), fract(time * 13.7)));
                 pixel.rgb += screenNoise * phosphor * radialFade * 0.3;
 
                 pixel.rgb = applyRasterization(uv, pixel.rgb);
@@ -379,15 +383,21 @@ export class CRTEffect {
 
         gl.useProgram(this.bloomProgram);
         gl.bindBuffer(gl.ARRAY_BUFFER, this.buffer);
-        const posLoc = gl.getAttribLocation(this.bloomProgram, 'a_position');
-        const uvLoc = gl.getAttribLocation(this.bloomProgram, 'a_uv');
+        // Cache attribute/uniform locations once — querying them every frame is
+        // wasted CPU in the hot loop.
+        if (!this._bloomLocs) {
+            this._bloomLocs = {
+                pos: gl.getAttribLocation(this.bloomProgram, 'a_position'),
+                uv: gl.getAttribLocation(this.bloomProgram, 'a_uv'),
+                input: gl.getUniformLocation(this.bloomProgram, 'tInput'),
+                dir: gl.getUniformLocation(this.bloomProgram, 'blurDir'),
+            };
+        }
+        const { pos: posLoc, uv: uvLoc, input: inputLoc, dir: dirLoc } = this._bloomLocs;
         gl.enableVertexAttribArray(posLoc);
         gl.enableVertexAttribArray(uvLoc);
         gl.vertexAttribPointer(posLoc, 2, gl.FLOAT, false, 16, 0);
         gl.vertexAttribPointer(uvLoc, 2, gl.FLOAT, false, 16, 8);
-
-        const inputLoc = gl.getUniformLocation(this.bloomProgram, 'tInput');
-        const dirLoc = gl.getUniformLocation(this.bloomProgram, 'blurDir');
 
         // Horizontal pass: source canvas → FBO[0]
         gl.bindFramebuffer(gl.FRAMEBUFFER, this.bloomFBOs[0].fbo);
@@ -420,10 +430,18 @@ export class CRTEffect {
             this.resize(w, h);
         }
 
-        // Upload source canvas as texture
+        // Upload source canvas as texture. Allocate storage once (texImage2D), then
+        // update in place every frame (texSubImage2D) — re-allocating each frame is a
+        // per-frame cost the GPU can avoid when the size is unchanged.
         gl.activeTexture(gl.TEXTURE0);
         gl.bindTexture(gl.TEXTURE_2D, this.texture);
-        gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, this.sourceCanvas);
+        if (this._texW !== this.sourceCanvas.width || this._texH !== this.sourceCanvas.height) {
+            gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, this.sourceCanvas);
+            this._texW = this.sourceCanvas.width;
+            this._texH = this.sourceCanvas.height;
+        } else {
+            gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, gl.RGBA, gl.UNSIGNED_BYTE, this.sourceCanvas);
+        }
 
         // Run bloom passes
         this._renderBloomPass();
@@ -433,8 +451,13 @@ export class CRTEffect {
         gl.useProgram(this.program);
 
         gl.bindBuffer(gl.ARRAY_BUFFER, this.buffer);
-        const posLoc = gl.getAttribLocation(this.program, 'a_position');
-        const uvLoc = gl.getAttribLocation(this.program, 'a_uv');
+        if (!this._mainLocs) {
+            this._mainLocs = {
+                pos: gl.getAttribLocation(this.program, 'a_position'),
+                uv: gl.getAttribLocation(this.program, 'a_uv'),
+            };
+        }
+        const { pos: posLoc, uv: uvLoc } = this._mainLocs;
         gl.enableVertexAttribArray(posLoc);
         gl.enableVertexAttribArray(uvLoc);
         gl.vertexAttribPointer(posLoc, 2, gl.FLOAT, false, 16, 0);

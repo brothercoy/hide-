@@ -9,6 +9,7 @@ import { GameScreen } from './screens/GameScreen.js';
 import { makeButton, drawButton, zToAlpha } from './ui/Button.js';
 import { theme, bgAlpha, glow } from './ui/colors.js';
 import { initFont } from './ui/Font.js';
+import { setBaseHeight } from './ui/viewport.js';
 import { CRTEffect } from './CRTShader.js';
 import { Transition } from './ui/Transition.js';
 import { DELMode } from './modes/DELmode.js';
@@ -41,26 +42,24 @@ let pendingLobbyEntry = false; // waiting for the room's initial state before ty
 const canvas = document.getElementById('gameCanvas');
 const ctx = canvas.getContext('2d', { alpha: false });
 
-// Fixed logical resolution — the game ALWAYS lays out in this 16:9 space (desktop
-// and mobile). The display is letterbox-scaled to the window so the play box never
-// shrinks with the window; a non-16:9 window just shows the whole thing smaller
-// with black bars (nudging people to fullscreen).
-const LOGICAL_W = 1920, LOGICAL_H = 1080;
+// Logical resolution. Width is ALWAYS 1920 and shown 1:1 (a narrower window crops
+// the sides — the anti-cheat crop; elements never scale horizontally). Height
+// tracks the window's available height (capped at 1080): it re-fits when a resize
+// settles (see the resize handler) so maximize/fullscreen fills with no bars, but
+// it never reflows live while you drag. Mobile keeps the full 1080 scaled-to-fit,
+// since its viewport can't be resized.
+const LOGICAL_W = 1920;
+let LOGICAL_H = isMobile ? 1080 : Math.min(window.innerHeight || 1080, 1080);
+// The layout's reference height: gaps scale relative to this, so the load-time
+// layout is untouched and only a later resize (fullscreen) redistributes.
+setBaseHeight(LOGICAL_H);
 
 function resizeCanvas() {
     canvas.width = LOGICAL_W;
     canvas.height = LOGICAL_H;
 }
 
-// Scale + center the canvas and the CRT overlay into the window, preserving aspect
-// (contain). Everything stays visible when not fullscreened — just smaller.
-function layoutDisplay() {
-    const winW = window.innerWidth, winH = window.innerHeight;
-    const aspect = LOGICAL_W / LOGICAL_H;
-    let w, h;
-    if (winW / winH > aspect) { h = winH; w = Math.round(h * aspect); }
-    else { w = winW; h = Math.round(w / aspect); }
-    const left = Math.round((winW - w) / 2), top = Math.round((winH - h) / 2);
+function applyDisplayRect(left, top, w, h) {
     for (const c of [canvas, crt.glCanvas]) {
         c.style.position = 'fixed';
         c.style.left = left + 'px';
@@ -70,8 +69,61 @@ function layoutDisplay() {
     }
 }
 
+// Position the canvas and CRT overlay in the window.
+function layoutDisplay() {
+    const winW = window.innerWidth, winH = window.innerHeight;
+    if (isMobile) {
+        // Mobile can't resize its viewport, so scale-to-fit (contain) so the whole
+        // scene is visible — cropping a phone down to a 1920×1080 slice is unplayable.
+        const aspect = LOGICAL_W / LOGICAL_H;
+        let w, h;
+        if (winW / winH > aspect) { h = winH; w = Math.round(h * aspect); }
+        else { w = winW; h = Math.round(w / aspect); }
+        applyDisplayRect(Math.round((winW - w) / 2), Math.round((winH - h) / 2), w, h);
+        return;
+    }
+    // Desktop: fixed 1:1 size, centered; the window crops any overflow (body is
+    // overflow:hidden). left/top go negative when the window is smaller than 16:9.
+    applyDisplayRect(
+        Math.round((winW - LOGICAL_W) / 2),
+        Math.round((winH - LOGICAL_H) / 2),
+        LOGICAL_W, LOGICAL_H
+    );
+}
+
 resizeCanvas();
-window.addEventListener('resize', () => layoutDisplay());
+
+// Reposition the canvas immediately on resize (keeps it centered while you drag),
+// then — once the resize settles — re-fit the layout to the new window height so
+// maximize/fullscreen fills with no bars and no manual refresh. Debounced so it
+// snaps once when you finish rather than reflowing live mid-drag.
+let _refitTimer = null;
+window.addEventListener('resize', () => {
+    layoutDisplay();
+    clearTimeout(_refitTimer);
+    _refitTimer = setTimeout(refitToWindow, 150);
+});
+
+function refitToWindow() {
+    if (isMobile) return; // mobile is fixed 1080, scaled-to-fit
+    const h = Math.min(window.innerHeight || 1080, 1080);
+    if (h === LOGICAL_H) return;
+    LOGICAL_H = h;
+    resizeCanvas();      // applies canvas.height = LOGICAL_H (CRT re-sizes on next render)
+    layoutDisplay();
+    relayoutCurrentScreen();
+}
+
+// Reposition the current screen's layout for the new canvas height. Screens expose
+// relayout() to move their center-relative elements IN PLACE — no re-enter, so input
+// state, focus, the menu intro, and button animations are all preserved (re-entering
+// MainMenu left input blocked, which killed its buttons). Top-anchored screens (play,
+// lobby) don't move, so they need no relayout; the game recomputes every frame.
+function relayoutCurrentScreen() {
+    if (transition.isActive()) return; // mid-transition; positions are being animated
+    const s = screens[currentScreen];
+    if (s && typeof s.relayout === 'function') s.relayout();
+}
 
 const uiManager = new UIManager(canvas, ctx);
 const transition = new Transition(canvas, ctx);
@@ -335,6 +387,9 @@ function hideGameOverOverlay() {
 
 function setupRoomMessages(isReconnecting = false) {
     if (!isReconnecting) room.send('clientReady');
+    // Per-char collision radii (from the font + fixed play-box size). The server
+    // stores them so its wall bounce keeps each glyph's edge off the frame.
+    room.send('charRadii', gameScreen.charRadii());
 
     room.onMessage('roomCode', (data) => {
         lobbyScreen.setRoomCode(data.code);
@@ -934,7 +989,7 @@ canvas.addEventListener('click', (e) => {
 
     if (currentScreen !== 'game') return;
 
-    const clickX = mx - canvas.width / 2;
+    const clickX = mx - gameScreen.boxCenterX;   // box is left-aligned, not canvas-centered
     const clickY = my - canvas.height / 2;
     if (currentMode) {
         const hit = currentMode.hitTest(gameScreen, clickX, clickY);

@@ -1,6 +1,7 @@
 import { makeButton, drawButton, drawButtonPartial, buttonRows, drawChar, GLOW_SPEED, Z_FLOAT_MIN } from '../ui/Button.js';
 import { charWidth } from '../ui/Font.js';
 import { theme, glow } from '../ui/colors.js';
+import { vScale } from '../ui/viewport.js';
 
 const FONT_SIZE = 54;
 
@@ -69,6 +70,8 @@ export class MainMenu {
         this.onSettings = onSettings;
         this.introStart = null;
         this.introDone = false;
+        this.introHasPlayed = false; // bespoke intro is once per page load — re-entries
+                                     // (fullscreen re-fit, returning to Main) skip it
         this.specialChars = ['@', '$', '©', '!', '!'].map(makeSpecialChar);
         this._bindSpecialClick   = this._onCanvasClick.bind(this);
         this._bindSpecialRelease = this._onCanvasRelease.bind(this);
@@ -79,13 +82,36 @@ export class MainMenu {
         this._pressedSpecialChar = null;
     }
 
+    // PLAY/SETTINGS positions. Vertical offsets are scaled by vScale so the gap from
+    // center grows in proportion when the window height changes (fullscreen) — at the
+    // load height vScale === 1, so this matches the original layout there.
+    _btnLayout() {
+        const cy = this.canvas.height / 2;
+        const vs = vScale(this.canvas);
+        return { startY: cy + 60 * vs, btnSpacing: (FONT_SIZE * 2.5 + 20) * vs };
+    }
+
+    // Re-place the buttons for a new canvas height WITHOUT re-entering (which would
+    // re-block input and reset the intro). Called by the resize re-fit. HIDE/specials
+    // are drawn from scaled constants every frame, so they need no work here.
+    relayout() {
+        const { startY, btnSpacing } = this._btnLayout();
+        const play = this.ui.buttons.find(b => b.label === 'PLAY');
+        const settings = this.ui.buttons.find(b => b.label === 'SETTINGS');
+        if (play) play.y = startY;
+        if (settings) settings.y = startY + btnSpacing;
+    }
+
     // opts.typed === true when entered via the typed-scroll transition (returning
     // to Main from another screen). In that case the row-based feed handles the
     // entrance, so the bespoke first-load intro is skipped and draw() shows the
     // steady state immediately. Without it (first load), the bespoke intro plays.
     enter(opts = {}) {
         this.ui.clear();
-        this.typed = !!opts.typed;
+        // Skip the bespoke intro if it already played this load, OR if we arrived via
+        // the typed-scroll transition. Either way: settled state, just reposition.
+        this.typed = !!opts.typed || this.introHasPlayed;
+        if (this.typed) this.introHasPlayed = true;
         this.releasedDuringIntro = new Set();
         this.ui.blocked = true;
 
@@ -109,11 +135,7 @@ export class MainMenu {
         this.canvas.addEventListener('mousemove', this._bindSpecialMove);
 
         const cx = this.canvas.width / 2;
-        const cy = this.canvas.height / 2;
-        const btnHeight = FONT_SIZE * 2.5;
-        const gap = 20;
-        const btnSpacing = btnHeight + gap;
-        const startY = cy + 60;
+        const { startY, btnSpacing } = this._btnLayout();
 
         this.ui.buttons.push(makeButton('PLAY', cx, startY, () => this.onPlay(), { blocksInput: true }));
         this.ui.buttons.push(makeButton('SETTINGS', cx, startY + btnSpacing, () => this.onSettings(), { blocksInput: true }));
@@ -202,7 +224,8 @@ export class MainMenu {
         const spTotal = sp.length * spCharW + (sp.length - 1) * SPECIAL_SPACING;
         const spX0 = cx - spTotal / 2;
 
-        const GROUP_Y = SPECIAL_Y; // anchors the merged row (lowest element)
+        const vs = vScale(this.canvas);
+        const GROUP_Y = SPECIAL_Y * vs; // anchors the merged row (lowest element)
         let order = 0;
         const pushGlyph = (char, drawX, drawY, size, z) => {
             rows.push({
@@ -212,8 +235,8 @@ export class MainMenu {
         };
         const maxLen = Math.max(hideChars.length, sp.length);
         for (let i = 0; i < maxLen; i++) {
-            if (i < sp.length) pushGlyph(sp[i].char, spX0 + i * (spCharW + SPECIAL_SPACING), SPECIAL_Y, SPECIAL_SIZE, SPECIAL_Z);
-            if (i < hideChars.length) pushGlyph(hideChars[i], hideX0 + i * (hideCharW + HIDE_SPACING), HIDE_Y, HIDE_SIZE, HIDE_Z);
+            if (i < sp.length) pushGlyph(sp[i].char, spX0 + i * (spCharW + SPECIAL_SPACING), SPECIAL_Y * vs, SPECIAL_SIZE, SPECIAL_Z);
+            if (i < hideChars.length) pushGlyph(hideChars[i], hideX0 + i * (hideCharW + HIDE_SPACING), HIDE_Y * vs, HIDE_SIZE, HIDE_Z);
         }
 
         // buttons (3 rows each)
@@ -308,6 +331,7 @@ export class MainMenu {
         if (this.introStart === null) return;
         if (elapsed - this.introStart > this.allBtnsFinishTime) {
             this.introDone = true;
+            this.introHasPlayed = true; // never replay the intro for the rest of this load
         }
     }
 
@@ -327,11 +351,12 @@ export class MainMenu {
                 if (t >= this.hideTimestamps[i]) visibleCount = i + 1;
             }
         }
+        const hideY = HIDE_Y * vScale(this.canvas);
         const visible = chars.slice(0, visibleCount);
         const totalW = visible.length * charW + (visible.length - 1) * HIDE_SPACING;
         let x = cx - totalW / 2;
         visible.forEach(char => {
-            drawChar(ctx, char, x, HIDE_Y, HIDE_Z, theme.fg,HIDE_SIZE);
+            drawChar(ctx, char, x, hideY, HIDE_Z, theme.fg,HIDE_SIZE);
             ctx.font = `${HIDE_SIZE}px "IBMVGA"`;
             x += charW + HIDE_SPACING;
         });
@@ -345,6 +370,7 @@ export class MainMenu {
         const charW = ctx.measureText('M').width;
         const totalW = this.specialChars.length * charW + (this.specialChars.length - 1) * SPECIAL_SPACING;
         let x = cx - totalW / 2;
+        const specialY = SPECIAL_Y * vScale(this.canvas); // scaled so glyph + hit-rect move together
 
         const introElapsed = this.introStart === null ? 0 : elapsed - this.introStart;
 
@@ -364,7 +390,7 @@ export class MainMenu {
                 }
             }
 
-            sc.rect = { x, y: SPECIAL_Y, w: charW, h: SPECIAL_SIZE };
+            sc.rect = { x, y: specialY, w: charW, h: SPECIAL_SIZE };
             const z = sc.z;
 
             let color = theme.fg;
@@ -376,7 +402,7 @@ export class MainMenu {
             // Single brightened-color draw — identical to the button glow.
             // (The old second-draw overlay is no longer needed now that the glow
             // sits at z = 1.0 / full opacity, same as buttons.)
-            drawChar(ctx, sc.char, x, SPECIAL_Y, z, color, SPECIAL_SIZE);
+            drawChar(ctx, sc.char, x, specialY, z, color, SPECIAL_SIZE);
             ctx.font = `${SPECIAL_SIZE}px "IBMVGA"`;
 
             x += charW + SPECIAL_SPACING;

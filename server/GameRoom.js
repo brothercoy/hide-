@@ -32,6 +32,7 @@ class GameRoom extends Room {
         this.players = {};
         this.activePlayers = {};
         this.taps = [];
+        this.charRadii = {}; // char -> { rx, ry } normalized collision radii (sent by clients)
         this.chars = this.generateChars();
         this.lastTick = Date.now();
         this.timeUpHandled = false;
@@ -45,6 +46,13 @@ class GameRoom extends Room {
         this.clock.setTimeout(() => {
             if (!this.gameStarted) this.disconnect();
         }, LOBBY_TIMEOUT);
+
+        // Clients send the per-char normalized collision radii — computed from the
+        // font (opentype) + the play-box size, which only the client knows. Stored
+        // once and stamped onto each char at creation; the bounce never recomputes.
+        this.onMessage('charRadii', (client, data) => {
+            if (data) this.charRadii = data;
+        });
 
         this.onMessage('tap', (client) => {
             if (this.inCountdown) return;
@@ -396,11 +404,18 @@ class GameRoom extends Room {
     }
 
     createChar(char, isTarget) {
+        // Per-char collision radius (normalized), stored on the char so the bounce
+        // reads it directly — no recompute. Falls back to a small default until a
+        // client's radii table arrives. Spawn anywhere the whole glyph fits inside
+        // the field (so it never starts overlapping the frame).
+        const rr = this.charRadii[char] || { rx: 0.03, ry: 0.05 };
         return {
             char: char,
             isTarget: isTarget,
-            x: (Math.random() - 0.5) * 1.8,
-            y: (Math.random() - 0.5) * 1.8,
+            rx: rr.rx,
+            ry: rr.ry,
+            x: (Math.random() * 2 - 1) * (1 - rr.rx),
+            y: (Math.random() * 2 - 1) * (1 - rr.ry),
             speedX: (Math.random() - 0.5) * this.settings.speedScale,
             speedY: (Math.random() - 0.5) * this.settings.speedScale,
             rotation: Math.random() * Math.PI * 2,
@@ -409,16 +424,19 @@ class GameRoom extends Room {
     }
 
     updateChars(delta) {
-        const r = 0.012;
         this.chars.forEach(c => {
             c.x += c.speedX * delta;
             c.y += c.speedY * delta;
             c.rotation += c.rotationSpeed * delta;
 
-            if (c.x < -0.995 + r) { c.speedX = Math.abs(c.speedX); c.x = -0.995 + r; }
-            if (c.x > 0.995 - r) { c.speedX = -Math.abs(c.speedX); c.x = 0.995 - r; }
-            if (c.y < -0.98 + r) { c.speedY = Math.abs(c.speedY); c.y = -0.98 + r; }
-            if (c.y > 0.98 - r) { c.speedY = -Math.abs(c.speedY); c.y = 0.98 - r; }
+            // Bounce the char's EDGE off the field walls (±1 maps to the frame's inner
+            // edge on the client), using its own stored radius so each glyph hits the
+            // brackets/equals exactly.
+            const rx = c.rx, ry = c.ry;
+            if (c.x < -1 + rx) { c.speedX = Math.abs(c.speedX);  c.x = -1 + rx; }
+            if (c.x >  1 - rx) { c.speedX = -Math.abs(c.speedX); c.x =  1 - rx; }
+            if (c.y < -1 + ry) { c.speedY = Math.abs(c.speedY);  c.y = -1 + ry; }
+            if (c.y >  1 - ry) { c.speedY = -Math.abs(c.speedY); c.y =  1 - ry; }
         });
     }
 
