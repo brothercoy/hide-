@@ -1,5 +1,6 @@
 import { Room } from '@colyseus/core';
 import { GAME_MODES } from '../gameModes.js';
+import { COUNTDOWN_MS, LIFE_LOSS_INTRO_MS, LIFE_LOSS_ENTRY_MS } from '../timings.js';
 
 const LETTERS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789!@#$%^&*';
 const TICK_RATE = 50;
@@ -10,8 +11,6 @@ const DEFAULT_MODE = GAME_MODES.redacted;
 // Round-over pacing. The next round waits for the client's life-loss animation:
 // one beat per player who lost a life (must match LifeLossCallout ENTRY_MS on the
 // client), plus a short hold on the final value.
-const LIFE_LOSS_INTRO_MS = 350;  // text shows before the cursor appears (client INTRO_PAUSE_MS)
-const LIFE_LOSS_ENTRY_MS = 1500; // must match LifeLossCallout ENTRY_MS on the client
 const ROUND_OVER_HOLD_MS = 1300; // cursor blinks on the last player for this long before advancing
 const MATCH_OVER_DISPLAY_MS = 3000;
 
@@ -452,7 +451,8 @@ class GameRoom extends Room {
             targetChar: this.targetChar,
             round: this.currentRound,
             match: this.currentMatch,
-            chars: this.chars
+            chars: this.chars,
+            countdownMs: COUNTDOWN_MS
         });
 
         this.clock.setTimeout(() => {
@@ -467,7 +467,7 @@ class GameRoom extends Room {
                 chars: this.chars,
                 timeLeft: this.timeLeft
             });
-        }, 4000);
+        }, COUNTDOWN_MS);
     }
 
     // lossCount = how many players lost a life this round; the next round waits

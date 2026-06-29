@@ -7,6 +7,7 @@ import { SettingsScreen } from './screens/SettingsScreen.js';
 import { LobbyScreen } from './screens/LobbyScreen.js';
 import { GameScreen } from './screens/GameScreen.js';
 import { makeButton, drawButton, zToAlpha } from './ui/Button.js';
+import { makeBracketButton, drawBracketButton } from './ui/BracketButton.js';
 import { theme, bgAlpha, glow } from './ui/colors.js';
 import { initFont } from './ui/Font.js';
 import { setBaseHeight } from './ui/viewport.js';
@@ -356,24 +357,69 @@ function maybeEnterLobby() {
 
 // --- Game Over Overlay ---
 
-let gameOverBtns = { playAgain: null, returnToLobby: null };
+let gameOverBtns = { playAgain: null, returnToLobby: null, mainMenu: null };
+let gameCopyBtn = null;
+
+// Register the in-game COPY CODE button (top-left, under the room code). Called at each
+// game entry, after uiManager.clear(). The room code text itself is drawn by GameScreen.
+function setupGameHud() {
+    gameCopyBtn = makeBracketButton('COPY CODE', gameScreen.copyBtnX, gameScreen.copyBtnY,
+        copyGameCode, { hitPad: 20 });
+    uiManager.buttons.push(gameCopyBtn);
+}
+
+function copyGameCode() {
+    if (!navigator.clipboard || !gameScreen.roomCode) return;
+    navigator.clipboard.writeText(gameScreen.roomCode).then(() => {
+        const b = gameCopyBtn;
+        if (!b) return;
+        b.label = 'COPIED!';
+        b.active = true; // hold the brackets inner while showing COPIED!
+        setTimeout(() => { if (b.label === 'COPIED!') { b.label = 'COPY CODE'; b.active = false; } }, 1500);
+    }).catch(() => {});
+}
+
+// Position the game-over buttons relative to the game box (centered on its X, stacked
+// below its vertical center). Called every frame while the overlay is up so they move
+// WITH the box on a window/fullscreen change instead of staying where they were created.
+function layoutGameOverButtons() {
+    const cx = gameScreen.boxCenterX;   // box X is fixed; box Y is canvas.height/2
+    const cy = canvas.height / 2;
+    if (gameOverBtns.playAgain) { gameOverBtns.playAgain.x = cx; gameOverBtns.playAgain.y = cy + 60; }
+    if (gameOverBtns.returnToLobby) { gameOverBtns.returnToLobby.x = cx; gameOverBtns.returnToLobby.y = cy + 155; }
+    if (gameOverBtns.mainMenu) { gameOverBtns.mainMenu.x = cx; gameOverBtns.mainMenu.y = cy + 250; }
+}
+
+// PLAY AGAIN needs at least two connected players, so disable it (dim + non-interactive)
+// when the winner is the only one left. Re-checked on every player-list update too.
+function updatePlayAgainState() {
+    if (!gameOverBtns.playAgain) return;
+    const connected = playerList.filter(p => p.connected).length;
+    gameOverBtns.playAgain.disabled = connected <= 1;
+}
 
 function showGameOverOverlay(winner) {
     winnerId = winner;
     uiManager.clear();
-    const cx = canvas.width / 2;
-    const cy = canvas.height / 2;
-
-    gameOverBtns.playAgain = makeButton('PLAY AGAIN', cx, cy + 60,
-        () => room.send('votePlayAgain'));
-    gameOverBtns.returnToLobby = makeButton('RETURN TO LOBBY', cx, cy + 155,
-        () => room.send('voteReturnToLobby'));
-    const mainMenuBtn = makeButton('MAIN MENU', cx, cy + 250,
+    // Same interaction/look as the lobby's REDACTED/FREQUENCY mode buttons: fire on
+    // release, no glow pulse, '*' corners.
+    const modeOpts = { fireOnRelease: true, noGlow: true, corner: '*' };
+    gameOverBtns.playAgain = makeButton('PLAY AGAIN', 0, 0,
+        () => room.send('votePlayAgain'), modeOpts);
+    gameOverBtns.returnToLobby = makeButton('RETURN TO LOBBY', 0, 0,
+        () => room.send('voteReturnToLobby'), modeOpts);
+    gameOverBtns.mainMenu = makeButton('MAIN MENU', 0, 0,   // a normal button — not a vote toggle
         () => { hideGameOverOverlay(); room.send('leaveToMenu'); }, { blocksInput: true });
 
     uiManager.buttons.push(gameOverBtns.playAgain);
     uiManager.buttons.push(gameOverBtns.returnToLobby);
-    uiManager.buttons.push(mainMenuBtn);
+    uiManager.buttons.push(gameOverBtns.mainMenu);
+    layoutGameOverButtons();
+    updatePlayAgainState();
+
+    // Keep COPY CODE alive through game over (cleared above) — it stays visible/clickable.
+    if (gameCopyBtn) uiManager.buttons.push(gameCopyBtn);
+    else setupGameHud();
 }
 
 function hideGameOverOverlay() {
@@ -381,6 +427,7 @@ function hideGameOverOverlay() {
     uiManager.clear();
     gameOverBtns.playAgain = null;
     gameOverBtns.returnToLobby = null;
+    gameOverBtns.mainMenu = null;
 }
 
 // --- Room Messages ---
@@ -390,9 +437,13 @@ function setupRoomMessages(isReconnecting = false) {
     // Per-char collision radii (from the font + fixed play-box size). The server
     // stores them so its wall bounce keeps each glyph's edge off the frame.
     room.send('charRadii', gameScreen.charRadii());
+    // Build the glyph atlas now (idle lobby time) so the first round doesn't hitch as
+    // each character is rasterized on first appearance.
+    gameScreen.prewarmGlyphs();
 
     room.onMessage('roomCode', (data) => {
         lobbyScreen.setRoomCode(data.code);
+        gameScreen.setRoomCode(data.code);
         maybeEnterLobby();
     });
 
@@ -403,6 +454,7 @@ function setupRoomMessages(isReconnecting = false) {
         lobbyScreen.setHost(isHost);
         lobbyScreen.setPlayers(data.players);
         if (currentMode) currentMode.onMessage('playerList', data);
+        updatePlayAgainState();   // a player leaving during game over may disable PLAY AGAIN
         maybeEnterLobby();
     });
 
@@ -423,6 +475,7 @@ function setupRoomMessages(isReconnecting = false) {
         currentMode = createMode(data.mode, data);
         currentScreen = 'game';
         uiManager.clear();
+        setupGameHud();
         resizeCanvas();
     });
 
@@ -431,7 +484,8 @@ function setupRoomMessages(isReconnecting = false) {
         if (currentMode) currentMode.reset();
         if (data.mode) currentMode = createMode(data.mode, data);
         currentScreen = 'game';
-        hideGameOverOverlay();
+        hideGameOverOverlay();   // clears uiManager (incl. the copy button)…
+        setupGameHud();          // …so re-register it
     });
 
     room.onMessage('returnedToLobby', () => {
@@ -467,6 +521,7 @@ function setupRoomMessages(isReconnecting = false) {
                 if (!currentMode) currentMode = createMode(data.mode || 'redacted', data);
                 currentScreen = 'game';
                 uiManager.clear();
+                setupGameHud();
                 uiManager.blocked = false;
                 uiManager.lastTime = performance.now();
                 resizeCanvas();
@@ -621,13 +676,22 @@ const HUD_TYPE_DELAY = 0.05; // seconds per character
 let hudIntroPending = false;
 let hudIntroStart = null;
 
+// Bottom-right HUD buttons sit this far above the bottom edge. The gap shrinks as the
+// window falls below fullscreen height (1080 = LOGICAL_H cap), so the buttons drop lower
+// — clear of the centered game box and its Round text — when just maximized, instead of
+// crowding up against the box. Clamped so they never reach the very edge. 0.3 = how fast
+// they drop; raise to drop them faster when maximized.
+function hudBtnGap() {
+    return Math.max(45, 90 - (1080 - canvas.height) * 0.3);
+}
+
 const hudItems = [
     {
         id: 'settings',
         hover: 0, z: HUD_Z_REST, releasePhase: null, glowT: 0, _rect: null,
         _animT: 0, _char: SETTINGS_REST_CHAR,
         typeChars: SETTINGS_REST_CHAR,
-        getRect() { return { x: canvas.width - 200, y: canvas.height - 90, w: 60, h: 40 }; },
+        getRect() { return { x: canvas.width - 200, y: canvas.height - hudBtnGap(), w: 60, h: 40 }; },
         // Rests on '%'; on hover it immediately swaps - -> \ -> ; then pauses back
         // on '%' (swap first so the animation starts at once, like the brackets).
         tick(dt, over) {
@@ -668,7 +732,7 @@ const hudItems = [
         hover: 0, z: HUD_Z_REST, releasePhase: null, glowT: 0, _rect: null,
         _animT: 0, _spread: 0,
         typeChars: '[]',
-        getRect() { return { x: canvas.width - 120, y: canvas.height - 90, w: 70, h: 40 }; },
+        getRect() { return { x: canvas.width - 120, y: canvas.height - hudBtnGap(), w: 70, h: 40 }; },
         // Inactive (windowed): rests closed, hover snaps OUT twice then returns.
         // Active (fullscreen): rests expanded, hover snaps IN twice then reverts.
         tick(dt, over) {
@@ -880,7 +944,20 @@ function drawScreenInto(name) {
     else if (name === 'lobby') lobbyScreen.draw();
     else if (name === 'game') {
         if (currentMode) currentMode.draw(gameScreen);
-        if (winnerId) uiManager.buttons.forEach(btn => drawButton(ctx, btn, uiManager.elapsed, FONT_SIZE));
+        // COPY CODE is always visible (including the game-over overlay).
+        if (gameCopyBtn) {
+            gameCopyBtn.x = gameScreen.copyBtnX;   // follow the room code (centered under it)
+            gameCopyBtn.y = gameScreen.copyBtnY;
+            drawBracketButton(ctx, gameCopyBtn, uiManager.elapsed, FONT_SIZE);
+        }
+        // Game-over voting buttons — relayout to the box each frame so they track it on a
+        // window/fullscreen change, then draw (normal style; skip the bracket button above).
+        if (winnerId) {
+            layoutGameOverButtons();
+            uiManager.buttons.forEach(btn => {
+                if (!btn.bracket) drawButton(ctx, btn, uiManager.elapsed, FONT_SIZE);
+            });
+        }
     }
 }
 

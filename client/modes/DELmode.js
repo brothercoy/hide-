@@ -24,6 +24,7 @@ export class DELMode {
         this.timeLeft = 30;
         this.countdownActive = false;
         this.countdownStartTime = null;
+        this.countdownMs = 6500;       // total countdown length, sent by the server in roundCountdown
         this.lastUpdateTime = null;
 
         // Life-loss callout: holds the player list at the old values during the
@@ -49,6 +50,7 @@ export class DELMode {
                 this.currentMatch = data.match;
                 this.countdownActive = true;
                 this.countdownStartTime = Date.now() - ((data.elapsedSeconds || 0) * 1000);
+                this.countdownMs = data.countdownMs || this.countdownMs;
                 // New round: end any life-loss callout and flush the held list.
                 this.lifeCallout.clear();
                 if (this.pendingPlayerList) { this.playerList = this.pendingPlayerList; this.pendingPlayerList = null; }
@@ -165,6 +167,7 @@ export class DELMode {
             lifeCallout: this.lifeCallout,
             countdownActive: this.countdownActive,
             countdownStartTime: this.countdownStartTime,
+            countdownMs: this.countdownMs,
             lastUpdateTime: this.lastUpdateTime,
             winnerId: this.winnerId
         });

@@ -1,4 +1,4 @@
-import { theme, bgAlpha } from '../ui/colors.js';
+import { theme } from '../ui/colors.js';
 import { otFont } from '../ui/Font.js';
 
 const TICK_RATE = 50;
@@ -12,6 +12,9 @@ const BOX_LEFT_MARGIN = 80;   // box is left-aligned this far from the canvas's 
 const PLAYER_LIST_GAP = 12;   // gap from the box's right edge ([ ) to the player list
 const LIST_FONT_SIZE = 28;    // player-list text
 const LIST_ROW_H = 30;        // tight row pitch so ~10 players fit the top half (spectators below)
+const ROOMCODE_TOP = 16;      // room code top edge (top-left corner of the screen)
+const COPY_GAP = 28;          // COPY CODE button center, px below the room code's ink bottom
+                              // (gives a small ~15px visible gap — less than the lobby's)
 
 export class GameScreen {
     constructor(canvas, ctx, isMobile) {
@@ -24,6 +27,50 @@ export class GameScreen {
         this._glyphCache = new Map(); // char -> pre-rendered glyph tile (atlas)
         this._glyphColor = null;      // theme color the tiles were baked in
         this._cw = null;              // cached monospace char width at the FRAME font
+        this.roomCode = '';           // shown top-left at the frame font; COPY CODE sits under it
+        this._inkCache = new Map();   // measured ink bounds per string at the FRAME font
+    }
+
+    setRoomCode(code) { this.roomCode = (code || '').toUpperCase(); }
+
+    // Actual rendered ink bounds (top/bottom px offsets from a textBaseline:'top' draw y)
+    // for a string at the FRAME font — measured, since this bitmap font's metrics and
+    // canvas baselines don't line up. Cached once the font is loaded.
+    _inkBounds(text) {
+        const hit = this._inkCache.get(text);
+        if (hit) return hit;
+        const fs = this.FRAME_SIZE;
+        const cv = document.createElement('canvas');
+        cv.width = Math.ceil(fs * text.length) + 4;
+        cv.height = Math.ceil(fs * 1.6);
+        const g = cv.getContext('2d');
+        g.font = `${fs}px "IBMVGA"`;
+        g.textBaseline = 'top';
+        g.fillStyle = '#fff';
+        g.fillText(text, 2, 0);
+        const { data } = g.getImageData(0, 0, cv.width, cv.height);
+        let top = -1, bottom = -1;
+        for (let y = 0; y < cv.height; y++) {
+            for (let x = 0; x < cv.width; x++) {
+                if (data[(y * cv.width + x) * 4 + 3] > 0) { if (top < 0) top = y; bottom = y; break; }
+            }
+        }
+        const res = { top, bottom };
+        if (bottom >= 0) this._inkCache.set(text, res);  // only cache once the font has rendered
+        return res;
+    }
+
+    // Where game.js parks the COPY CODE bracket button — centered under the room code, a
+    // fixed COPY_GAP below the room code's measured ink bottom (so it sits just under the
+    // code). Clamped so on short windows it can't reach the box top row's `=` ink.
+    get copyBtnX() { return BOX_LEFT_MARGIN + (this.roomCode.length || 6) * this._frameCW() / 2; }
+    get copyBtnY() {
+        const code = this._inkBounds('M0');   // caps + digit (room code charset)
+        const eq = this._inkBounds('=');      // box top row glyph
+        const codeBottom = ROOMCODE_TOP + (code.bottom >= 0 ? code.bottom : this.FRAME_SIZE * 0.78);
+        const boxTop = this.canvas.height / 2 - this.boxH / 2;
+        const rowInkTop = boxTop + (eq.top >= 0 ? eq.top : this.FRAME_SIZE * 0.4);
+        return Math.min(codeBottom + COPY_GAP, rowInkTop - 16);
     }
 
     // Char width at the FRAME font — the box is a grid of frame-font cells.
@@ -96,6 +143,31 @@ export class GameScreen {
         return table;
     }
 
+    // Pre-render every printable-ASCII glyph tile into the atlas, so the first round
+    // doesn't hitch as each new character is rasterized from its vector path on first
+    // draw (matches the charset covered by charRadii()/the server). Spread across idle
+    // callbacks so it never blocks a transition/animation; a single `_prewarming` guard
+    // keeps repeat calls (e.g. reconnect) from starting a second loop.
+    prewarmGlyphs() {
+        if (this._prewarming) return;
+        this._prewarming = true;
+        let code = 33;
+        const run = (deadline) => {
+            // With an idle deadline, fill until the slot is nearly spent; on the
+            // setTimeout fallback (no deadline) do a small fixed chunk per tick.
+            let budget = deadline ? Infinity : 6;
+            while (code <= 126 && budget-- > 0 && (!deadline || deadline.timeRemaining() > 3)) {
+                this._getGlyph(String.fromCharCode(code++));
+            }
+            if (code <= 126) schedule();
+            else this._prewarming = false;
+        };
+        const schedule = () => (typeof requestIdleCallback === 'function'
+            ? requestIdleCallback(run, { timeout: 2000 })
+            : setTimeout(() => run(null), 0));
+        schedule();
+    }
+
     // Reliable per-char metrics from the font's actual glyph outline (opentype),
     // NOT canvas measureText().actualBoundingBox, which this bitmap font reports
     // unreliably. Returns the ink box size, its encapsulating-circle radius, and the
@@ -144,7 +216,7 @@ export class GameScreen {
             chars, prevChars, targetChar,
             playerList, timeLeft, currentRound, currentMatch, totalMatches,
             showRoundOver, showMatchOver, matchOverData, eliminatedName, lifeCallout,
-            countdownActive, countdownStartTime, lastUpdateTime, winnerId
+            countdownActive, countdownStartTime, countdownMs, lastUpdateTime, winnerId
         } = state;
 
         const ctx = this.ctx;
@@ -155,8 +227,19 @@ export class GameScreen {
         // draw the shared frame (game box + player column, continuous top/bottom edges)
         this._drawFrame(ctx, cx, cy);
 
+        // room code — top-left, big (frame font), all caps. The COPY CODE button is a
+        // uiManager bracket button parked under it by game.js (copyBtnX/Y).
+        ctx.fillStyle = theme.fg;
+        ctx.font = `${this.FRAME_SIZE}px "IBMVGA"`;
+        ctx.textAlign = 'left';
+        ctx.textBaseline = 'top';
+        ctx.fillText(this.roomCode, BOX_LEFT_MARGIN, ROOMCODE_TOP);
+
+        // player list persists across the countdown (drawn here, not inside _drawGame)
+        this._drawPlayerList(ctx, playerList, totalMatches, cx, cy);
+
         if (countdownActive) {
-            this._drawCountdown(ctx, FS, chars, prevChars, targetChar, countdownStartTime, lastUpdateTime, cx, cy);
+            this._drawCountdown(ctx, FS, chars, prevChars, targetChar, countdownStartTime, lastUpdateTime, cx, cy, countdownMs);
         } else {
             this._drawGame(ctx, FS, chars, prevChars, targetChar, playerList, timeLeft,
                 currentRound, currentMatch, totalMatches,
@@ -182,19 +265,17 @@ export class GameScreen {
         ctx.font = `${this.FRAME_SIZE}px "IBMVGA"`;
         const edgeRow = '='.repeat(total);
 
-        // Top edge carries the PLAYERS title centered in the player-column section. The
-        // brackets sit one cell in from the section's bounding [ / ] (so one = outside
-        // each, symmetric); the word is centered between them (spaces ok).
+        // Top edge: the player section gets symmetric [ ] brackets — one cell in from the
+        // section's bounding [ / ], so one = outside each — with spaces between them. The
+        // PLAYERS word is NOT placed in the grid; it's drawn separately below, pixel-
+        // centered between the brackets, so its margins are equal even when the gap isn't
+        // a whole number of characters.
         const topEdge = edgeRow.split('');
-        const word = 'PLAYERS';
         const bracketL = BOX_COLS;     // one cell right of the game box [ (2nd from the left)
         const bracketR = total - 2;    // one cell left of the player ]  (2nd from the right)
         for (let i = bracketL; i <= bracketR; i++) topEdge[i] = ' ';
         topEdge[bracketL] = '[';
         topEdge[bracketR] = ']';
-        const innerStart = bracketL + 1;
-        const wordStart = innerStart + Math.floor((bracketR - innerStart - word.length) / 2);
-        for (let k = 0; k < word.length; k++) topEdge[wordStart + k] = word[k];
         const topRow = topEdge.join('');
 
         const mid = new Array(total).fill(' ');
@@ -206,30 +287,116 @@ export class GameScreen {
             const row = i === 0 ? topRow : (i === BOX_ROWS - 1 ? edgeRow : midRow);
             ctx.fillText(row, left, top + i * lh);
         }
+
+        // PLAYERS (top edge) and SPECTATORS (the 5th bracket row down) centered in REAL
+        // PIXELS on the column's midpoint, so each has equal margins. The 5th row splits
+        // the column into a PLAYERS half (above) and a SPECTATORS half (below).
+        const cw = this._frameCW();
+        const colCenterX = left + (bracketL + 1 + bracketR) / 2 * cw;
+        ctx.textAlign = 'center';
+        ctx.fillText('PLAYERS', colCenterX, top);
+        ctx.fillText('SPECTATORS', colCenterX, top + 5 * lh);
     }
 
-    _drawCountdown(ctx, FS, chars, prevChars, targetChar, countdownStartTime, lastUpdateTime, cx, cy) {
-        const elapsed = (Date.now() - countdownStartTime) / 1000;
-        const now = Date.now();
-        const t = lastUpdateTime ? Math.min((now - lastUpdateTime) / TICK_RATE, 1) : 0;
-
-        // draw chars invisible (keeps layout stable, skipped entirely since alpha 0 is wasteful)
-        // just skip drawing them during countdown — they're hidden anyway
-
-        ctx.textAlign = 'center';
-        ctx.textBaseline = 'middle';
-        ctx.font = '32px "IBMVGA"';
-        ctx.fillStyle = theme.fg;
-        ctx.fillText('Find:', cx, cy - 60);
-        ctx.font = '96px "IBMVGA"';
-        ctx.fillText(targetChar, cx, cy + 40);
-
-        if (elapsed > 1) {
-            const secondsLeft = 3 - Math.floor(elapsed - 1);
-            if (secondsLeft > 0) {
-                ctx.font = '48px "IBMVGA"';
-                ctx.fillText(secondsLeft, cx, cy + 120);
+    // Player list — drawn every frame (game AND countdown), so it never flashes out.
+    // "NAME....X Lives" dot-leader rows; PLAYERS in the top half, SPECTATORS below the
+    // row-5 divider, same spacing. Name hard-left at PLAYER_LIST_GAP past the [; the
+    // dots+lives are right-aligned to the SAME inset before the ], so the gaps match.
+    _drawPlayerList(ctx, playerList, totalMatches, cx, cy) {
+        const halfW = this.boxW / 2;
+        const halfH = this.boxH / 2;
+        ctx.textBaseline = 'top';
+        ctx.font = `${LIST_FONT_SIZE}px "IBMVGA"`;
+        const listX = cx + halfW + PLAYER_LIST_GAP;     // name left edge — PLAYER_LIST_GAP past the [
+        const rightEdge = BOX_LEFT_MARGIN + (this._totalCols - 1) * this._frameCW(); // the right ]'s left edge
+        const listRightX = rightEdge - PLAYER_LIST_GAP; // lives right edge — same inset as the name's
+        const cwList = ctx.measureText('M').width;
+        const colChars = Math.max(8, Math.floor((listRightX - listX) / cwList));
+        let playerY = cy - halfH + this.FRAME_SIZE + 8;     // below the top edge / PLAYERS title
+        let specY = cy - halfH + 6 * this.FRAME_SIZE + 8;   // below the SPECTATORS title (row 5)
+        playerList.forEach(p => {
+            ctx.globalAlpha = p.tapped ? 1 : 0.3;
+            if (!p.alive) ctx.globalAlpha = 0.1;
+            ctx.fillStyle = theme.fg;
+            const winsText = totalMatches > 1 ? ` (${p.matchWins || 0})` : '';
+            const disconnectText = !p.connected ? ' %' : '';
+            const nameStr = p.name + winsText + disconnectText;
+            if (p.lives === null || p.lives === undefined) {
+                ctx.textAlign = 'left';
+                ctx.fillText(nameStr, listX, specY);
+                specY += LIST_ROW_H;
+            } else {
+                const lifeCount = Math.max(0, p.lives);
+                const livesStr = `${lifeCount} ${lifeCount === 1 ? 'Life' : 'Lives'}`;
+                const dots = Math.max(1, colChars - nameStr.length - livesStr.length);
+                ctx.textAlign = 'left';
+                ctx.fillText(nameStr + '.'.repeat(dots), listX, playerY);   // dots right after the name
+                ctx.textAlign = 'right';
+                ctx.fillText(livesStr, listRightX, playerY);
+                playerY += LIST_ROW_H;
             }
+        });
+        ctx.globalAlpha = 1;
+    }
+
+    _drawCountdown(ctx, FS, chars, prevChars, targetChar, countdownStartTime, lastUpdateTime, cx, cy, countdownMs) {
+        const elapsed = (Date.now() - countdownStartTime) / 1000;
+
+        // Typewriter countdown at the frame font. ADAPTIVE: the intro is fixed and the
+        // three 3/2/1 digits fill whatever time is left, so it always lands exactly when the
+        // server ends the countdown. Tune the total in ONE place: COUNTDOWN_MS (timings.js).
+        const T_FIND = 1.0;       // s — "Find: " blinks before the char types
+        const LINE1_HOLD = 1.4;   // s — "Find: X" holds on line 1 before the cursor drops
+        const PRE_DIGIT = 0.5;    // s — pause on line 2 before "3" types
+        const GAP_S = 0.32;       // s — empty beat between a backspace and the next digit
+        const BLINK_HALF = 0.5;   // s — cursor on for this long, off for this long (phase resets on each keystroke)
+
+        const T_CHAR = T_FIND;
+        const T_NL = T_CHAR + LINE1_HOLD;          // cursor drops to line 2
+        const T3 = T_NL + PRE_DIGIT;               // "3" appears
+        const total = (countdownMs || 7500) / 1000;
+        const SHOW_S = Math.max(0.3, (total - T3 - 2 * GAP_S) / 3);   // 3 shows + 2 gaps fill the rest
+        const slot = SHOW_S + GAP_S;
+        const T1 = T3 + 2 * slot;                  // "1" appears
+
+        ctx.font = `${this.FRAME_SIZE}px "IBMVGA"`;
+        ctx.textBaseline = 'top';
+        ctx.fillStyle = theme.fg;
+        const cw = this._frameCW();
+        const y1 = cy - this.FRAME_SIZE - 6;       // line 1 top (Find: X)
+        const y2 = cy + 6;                         // line 2 top (countdown digit)
+
+        // Cursor blink ANCHORED to the last keystroke — like a real terminal: the instant it
+        // types or moves (incl. dropping to the new line) it's solid, then it blinks on/off
+        // every BLINK_HALF *from there*, so it's never caught mid-off right after a keystroke.
+        // t=0 (the prompt appearing) counts as the first. Same block proportions as the input
+        // box / life-loss cursor (cw-2 × FRAME_SIZE-4).
+        const keystrokes = [0, T_CHAR, T_NL, T3, T3 + SHOW_S, T3 + slot, T3 + slot + SHOW_S, T1];
+        let lastKey = 0;
+        for (const k of keystrokes) if (elapsed >= k) lastKey = k;
+        const cursorOn = Math.floor((elapsed - lastKey) / BLINK_HALF) % 2 === 0;
+        const cursorBlock = (x, lineY) => { if (cursorOn) ctx.fillRect(x, lineY + 2, cw - 2, this.FRAME_SIZE - 4); };
+
+        // Line 1 — "Find: " then the target char once typed (left-aligned, centered as a block).
+        ctx.textAlign = 'left';
+        const line1 = 'Find: ' + (elapsed >= T_CHAR ? targetChar : '');
+        const x0 = cx - ctx.measureText('Find: X').width / 2;
+        ctx.fillText(line1, x0, y1);
+
+        if (elapsed < T_NL) {
+            cursorBlock(x0 + ctx.measureText(line1).width, y1);   // cursor parked at end of line 1
+        } else {
+            // Line 2 — type 3, backspace, type 2, backspace, type 1 (stays); CENTERED.
+            let line2 = '';
+            if (elapsed >= T3) {
+                const di = Math.min(2, Math.floor((elapsed - T3) / slot));   // 0,1,2 → 3,2,1
+                const digit = 3 - di;
+                const within = (elapsed - T3) - di * slot;
+                line2 = (digit === 1 || within < SHOW_S) ? String(digit) : '';  // 3/2 backspace; 1 stays
+            }
+            ctx.textAlign = 'center';
+            ctx.fillText(line2, cx, y2);
+            cursorBlock(cx + ctx.measureText(line2).width / 2, y2);   // cursor after the centered digit
         }
     }
 
@@ -264,61 +431,73 @@ export class GameScreen {
         // reset transform once after all characters
         ctx.setTransform(1, 0, 0, 1, 0, 0);
 
-        // player list — "NAME....X Lives" dot-leader rows. Name hard-left at PLAYER_LIST_GAP
-        // past the [; the dots+lives are right-aligned to the SAME inset before the ], so
-        // the left and right gaps match exactly.
-        ctx.textBaseline = 'top';
-        ctx.font = `${LIST_FONT_SIZE}px "IBMVGA"`;
-        const listX = cx + halfW + PLAYER_LIST_GAP;     // name left edge — PLAYER_LIST_GAP past the [
-        const rightEdge = BOX_LEFT_MARGIN + (this._totalCols - 1) * this._frameCW(); // the right ]'s left edge
-        const listRightX = rightEdge - PLAYER_LIST_GAP; // lives right edge — same inset as the name's
-        const cwList = ctx.measureText('M').width;
-        const colChars = Math.max(8, Math.floor((listRightX - listX) / cwList));
-        let listY = cy - halfH + this.FRAME_SIZE + 8;   // a touch lower so it lines up with the bracket tops
-        playerList.forEach(p => {
-            ctx.globalAlpha = p.tapped ? 1 : 0.3;
-            if (!p.alive) ctx.globalAlpha = 0.1;
-            ctx.fillStyle = theme.fg;
-            const winsText = totalMatches > 1 ? ` (${p.matchWins || 0})` : '';
-            const disconnectText = !p.connected ? ' %' : '';
-            const lifeCount = Math.max(0, p.lives);
-            const livesStr = p.lives !== null && p.lives !== undefined
-                ? `${lifeCount} ${lifeCount === 1 ? 'Life' : 'Lives'}`
-                : 'Spectator';
-            const nameStr = p.name + winsText + disconnectText;
-            const dots = Math.max(1, colChars - nameStr.length - livesStr.length);
-            ctx.textAlign = 'left';
-            ctx.fillText(nameStr + '.'.repeat(dots), listX, listY);   // dots start right after the name
-            ctx.textAlign = 'right';
-            ctx.fillText(livesStr, listRightX, listY);
-            listY += LIST_ROW_H;
-        });
-        ctx.globalAlpha = 1;
-
-        // round / timer / target
-        ctx.font = '32px "IBMVGA"';
+        // Find target (TOP) and round / timer (BOTTOM), centered on the whole screen
+        // rather than the left-aligned box.
+        const screenCx = this.canvas.width / 2;
         ctx.fillStyle = theme.fg;
         ctx.textAlign = 'center';
         ctx.textBaseline = 'alphabetic';
-        if (totalMatches > 1) {
-            ctx.fillText(`Match ${currentMatch}/${totalMatches} · Round ${currentRound}`, cx, cy - halfH - 50);
-        } else {
-            ctx.fillText('Round ' + currentRound, cx, cy - halfH - 50);
-        }
-        ctx.fillText(Math.ceil(timeLeft) + 's', cx, cy - halfH - 20);
-        ctx.fillText('Find: ' + targetChar, cx, cy + halfH + 40);
+        // Find target — big (frame font, like the room code / PLAYERS title). The gap
+        // above the box scales with the top margin: ~25px at fullscreen, tighter (sits
+        // closer to the top row) when the window is just maximized.
+        ctx.font = `${this.FRAME_SIZE}px "IBMVGA"`;
+        const findGap = Math.max(10, (cy - halfH) * 0.16);
+        ctx.fillText('Find: ' + targetChar, screenCx, cy - halfH - findGap);
+
+        // Round/match — centered just below the box. Under textBaseline:'top' this font
+        // leaves blank space ABOVE its ink that the alphabetic-baselined Find up top
+        // doesn't have — subtract that measured ink offset so the bottom gap matches the
+        // Find's gap (findGap) at every size.
+        ctx.textBaseline = 'top';
+        const inkTop = Math.max(0, this._inkBounds('M0').top);
+        const bottomY = cy + halfH + findGap - inkTop;
+        const roundLabel = totalMatches > 1
+            ? `Match: ${currentMatch}/${totalMatches} & Round: ${currentRound}`
+            : 'Round: ' + currentRound;
+        ctx.textAlign = 'center';
+        ctx.fillText(roundLabel, screenCx, bottomY);
+
+        // Timer compartment — the MM:SS clock flanked by a single | on each side (in line
+        // with the digits), with the game box's bottom = edge above and a matching = line
+        // the same small gap (T_GAP) below — a compact attachment on the box's bottom-LEFT.
+        const T_GAP = 20;    // vertical gap: box edge → timer, and timer → bottom = line
+        const fLeft = cx - halfW;       // game box left edge (column 0, where the ] sits)
+        const fTop = cy - halfH;
+        const lh = this.FRAME_SIZE;
+        const totalSec = Math.max(0, Math.ceil(timeLeft));
+        const clock = `${String(Math.floor(totalSec / 60)).padStart(2, '0')}:${String(totalSec % 60).padStart(2, '0')}`;
+        const eqB = this._inkBounds('=');
+        const codeB = this._inkBounds('M0');
+        ctx.font = `${this.FRAME_SIZE}px "IBMVGA"`;
+        ctx.textBaseline = 'top';
+        ctx.textAlign = 'left';
+        ctx.fillStyle = theme.fg;
+        const boxEqInkBot = fTop + (BOX_ROWS - 1) * lh + eqB.bottom;   // bottom of box's bottom = ink
+        const clockY = boxEqInkBot + T_GAP - codeB.top;               // timer ink T_GAP below it
+        const botEqY = clockY + codeB.bottom + T_GAP - eqB.top;       // bottom = ink T_GAP below timer
+        // 8-cell compartment: | at column 0, | one column past the clock, the clock
+        // pixel-centered between them, and a matching 8-wide = line below.
+        const cw = this._frameCW();
+        const COMP_COLS = 8;
+        ctx.fillText('|', fLeft, clockY);                          // left bar (column 0)
+        ctx.fillText('|', fLeft + (COMP_COLS - 1) * cw, clockY);   // right bar (one column over)
+        ctx.textAlign = 'center';
+        ctx.fillText(clock, fLeft + (COMP_COLS / 2) * cw, clockY); // clock centered between the bars
+        ctx.textAlign = 'left';
+        ctx.fillText('='.repeat(COMP_COLS), fLeft, botEqY);
 
         // overlays
         if (winnerId) {
-            ctx.fillStyle = bgAlpha(0.85);
-            ctx.fillRect(cx - 200, cy - 60, 400, 120);
-            ctx.fillStyle = theme.fg;
-            ctx.font = '32px "IBMVGA"';
+            // Winner — big (frame font), centered on the box and sat HIGH in it so it
+            // clears the game-over buttons below (which are also box-centered, in game.js).
+            const winnerText = 'Winner: ' + winnerId + '!';
+            const wy = cy - 100;
+            ctx.font = `${this.FRAME_SIZE}px "IBMVGA"`;
             ctx.textAlign = 'center';
-            ctx.fillText('Winner: ' + winnerId, cx, cy + 10);
+            ctx.textBaseline = 'middle';
+            ctx.fillStyle = theme.fg;
+            ctx.fillText(winnerText, cx, wy);
         } else if (showMatchOver && matchOverData) {
-            ctx.fillStyle = bgAlpha(0.85);
-            ctx.fillRect(cx - 200, cy - 80, 400, 160);
             ctx.fillStyle = theme.fg;
             ctx.font = '32px "IBMVGA"';
             ctx.textAlign = 'center';
@@ -331,14 +510,8 @@ export class GameScreen {
             });
         } else if (showRoundOver) {
             if (lifeCallout && lifeCallout.entries.length) {
-                const lineH = lifeCallout.lineHeight(32);
-                const boxH = Math.max(120, lifeCallout.entries.length * lineH + 40);
-                ctx.fillStyle = bgAlpha(0.85);
-                ctx.fillRect(cx - 260, cy - boxH / 2, 520, boxH);
                 lifeCallout.draw(ctx, cx, cy, 32, Date.now());
             } else if (eliminatedName) {
-                ctx.fillStyle = bgAlpha(0.85);
-                ctx.fillRect(cx - 200, cy - 60, 400, 120);
                 ctx.fillStyle = theme.fg;
                 ctx.font = '32px "IBMVGA"';
                 ctx.textAlign = 'center';

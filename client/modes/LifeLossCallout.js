@@ -4,15 +4,19 @@
 // The player list is held at the old values and patched per entry as the cursor
 // finishes it (via onEntryDone), so the list updates in step with the animation.
 import { theme } from '../ui/colors.js';
+// Shared with the server (timings.js) so the animation length and the server's wait
+// before advancing can't drift apart.
+import {
+    LIFE_LOSS_INTRO_MS as INTRO_PAUSE_MS,
+    LIFE_LOSS_HOLD_MS as HOLD_MS,
+    LIFE_LOSS_DEL_MS as DEL_MS,
+    LIFE_LOSS_GAP_MS as GAP_MS,
+    LIFE_LOSS_TYPE_MS as TYPE_MS,
+    LIFE_LOSS_SETTLE_MS as SETTLE_MS,
+    LIFE_LOSS_ENTRY_MS as ENTRY_MS,
+} from '../../timings.js';
 
-const INTRO_PAUSE_MS = 350; // text shows first, brief pause, THEN the cursor appears
-const HOLD_MS = 500;    // cursor parks on the old number
-const DEL_MS = 160;     // backspace the old number
-const GAP_MS = 130;     // empty beat
-const TYPE_MS = 160;    // type the new number
-const SETTLE_MS = 550;  // cursor parks on the new number before moving on
-const ENTRY_MS = HOLD_MS + DEL_MS + GAP_MS + TYPE_MS + SETTLE_MS; // 1500 — must match server LIFE_LOSS_ENTRY_MS
-const LINE_GAP = 12;    // extra px between entry lines
+const LINE_GAP = 12;    // extra px between entry lines (purely visual — not synced)
 
 const typeDoneAt = (i) => INTRO_PAUSE_MS + i * ENTRY_MS + HOLD_MS + DEL_MS + GAP_MS + TYPE_MS;
 
@@ -83,8 +87,24 @@ export class LifeLossCallout {
         // type) and only blinks once every player is done — parked on the last one
         // until the round/game advances.
         const activeIndex = intro ? -1 : Math.min(Math.floor(anim / ENTRY_MS), n - 1);
-        const animDone = anim >= n * ENTRY_MS;
-        const blinkOn = Math.floor(now / 500) % 2 === 0; // matches the input cursor blink
+        // Cursor blink ANCHORED to the last keystroke, like a terminal (same as the countdown):
+        // solid while actively backspacing/typing, and when parked it blinks on/off every 500ms
+        // measured FROM the last edit — so it snaps solid the instant it lands/finishes typing
+        // and is never caught mid-off right after. Phase boundaries within the active entry:
+        let cursorOn = false;
+        if (activeIndex >= 0) {
+            const local = anim - activeIndex * ENTRY_MS;   // ms into the active entry (grows past ENTRY at the end)
+            const delEnd = HOLD_MS + DEL_MS;
+            const typeStart = delEnd + GAP_MS;
+            const typeEnd = typeStart + TYPE_MS;
+            let since;
+            if (local < HOLD_MS) since = local;                  // parked on old — anchored to landing here
+            else if (local < delEnd) since = 0;                  // backspacing — solid
+            else if (local < typeStart) since = local - delEnd;  // empty beat
+            else if (local < typeEnd) since = 0;                 // typing — solid
+            else since = local - typeEnd;                        // settled / parked at the end
+            cursorOn = Math.floor(since / 500) % 2 === 0;
+        }
 
         ctx.font = `${fontSize}px "IBMVGA"`;
         ctx.textAlign = 'left';
@@ -99,7 +119,7 @@ export class LifeLossCallout {
             else if (i > activeIndex) num = String(e.oldLives);  // pending / intro — no cursor
             else {
                 num = this._numStr(i, anim);
-                showCursor = animDone ? blinkOn : true;          // solid while running, blink at the end
+                showCursor = cursorOn;                           // anchored blink (see above)
             }
             const plural = num === '1' ? 'Life' : 'Lives';
             const prefix = `${e.name}: `;
