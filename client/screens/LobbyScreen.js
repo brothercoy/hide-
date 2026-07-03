@@ -3,7 +3,7 @@ import { makeSlider, drawSlider, sliderRows } from '../ui/Slider.js';
 import { makeBracketButton, drawBracketButton, bracketButtonRows, BRACKET_REST } from '../ui/BracketButton.js';
 import { textRow } from '../ui/Transition.js';
 import { GAME_MODES } from '../../gameModes.js';
-import { theme, dim } from '../ui/colors.js';
+import { theme, disabledColor, DISCONNECTED_ALPHA } from '../ui/colors.js';
 import { vScale } from '../ui/viewport.js';
 
 const FONT_SIZE = 28;
@@ -63,16 +63,27 @@ export class LobbyScreen {
 
     enter() {
         this.dirty = false;
-        // Host enters fresh: preview shown, settings back to the mode defaults (so
-        // e.g. returning from a game doesn't keep the last game's CUSTOM values). A
-        // joining non-host instead mirrors the host via applyRemoteSettings, so we
-        // leave theirs alone.
-        if (this.isHost) {
-            this.customOpen = false;
-            this._resetSettingsToDefault();
-            if (this.modeId) this.onUpdateSettings(this.modeId, { ...this.settings }, this.customOpen);
+        // PRESERVE the current customizations across (re)entry — returning from a game keeps
+        // the last game's settings AND its CUSTOM view, so a lot of tweaking isn't lost and
+        // only the one thing you want to change needs touching. The host re-broadcasts the
+        // current (unchanged) settings so non-hosts mirror the same state, instead of the
+        // host resetting and snapping everyone back to the preview box.
+        if (this.isHost && this.modeId) {
+            this.onUpdateSettings(this.modeId, { ...this.settings }, this.customOpen);
         }
         this.rebuild();
+    }
+
+    // Restore the pristine "just created a room" state. A fresh Create Room should ALWAYS
+    // look identical regardless of any prior game/lobby customizations, so game.js calls
+    // this on the create path only. Return-to-lobby deliberately does NOT call this — it
+    // keeps the previous settings (see enter()).
+    resetToDefault() {
+        this.modeId = null;
+        this.settings = {};
+        this.customOpen = false;
+        this.customToggledAt = null;
+        this.dirty = true;
     }
 
     // --- setters from game.js (server-driven) ---
@@ -213,7 +224,7 @@ export class LobbyScreen {
             this.ctx.font = `${LIST_FONT}px "IBMVGA"`;
             const overhang = BRACKET_REST + this.ctx.measureText('M').width / 2;
             const lines = this._wrap(GAME_MODES[this.modeId].description, UNDERLINE_W + 2 * overhang, `${DESC_FONT}px "IBMVGA"`);
-            const descColor = this.isHost ? theme.fg : dim();
+            const descColor = this.isHost ? theme.fg : disabledColor();
             lines.forEach((ln, i) =>
                 this.texts.push({ text: ln, x: leftX, y: ly + i * 28, align: 'center', font: DESC_FONT, color: descColor }));
         }
@@ -232,7 +243,7 @@ export class LobbyScreen {
                 const value = this.settings[key] !== undefined ? this.settings[key] : setting.default;
                 if (setting.options) {
                     // Match the slider titles (FONT_SIZE); dim for non-host like the rest.
-                    this.texts.push({ text: setting.label, x: cx, y: ry, align: 'center', font: FONT_SIZE, color: this.isHost ? theme.fg : dim() });
+                    this.texts.push({ text: setting.label, x: cx, y: ry, align: 'center', font: FONT_SIZE, color: this.isHost ? theme.fg : disabledColor() });
                     const n = setting.options.length;
                     const spacing = 180; // wider than plain labels — bracket buttons need room
                     const startX = cx - spacing * (n - 1) / 2;
@@ -345,7 +356,7 @@ export class LobbyScreen {
 
         // player rows (name + role; MAKE HOST handled above as a button)
         const { listX, startY, rowH, rowW } = this.playerLayout;
-        const playerColor = this.isHost ? theme.fg : dim();
+        const playerColor = this.isHost ? theme.fg : disabledColor();
         this.players.forEach((p, i) => {
             const rowY = startY + i * rowH;
             rows.push(textRow(p.name, listX, rowY, `${LIST_FONT}px "IBMVGA"`, 'left', 'middle', playerColor));
@@ -379,7 +390,7 @@ export class LobbyScreen {
         const left = box.cx - (box.w * cw) / 2;
         const rightX = left + (box.w - 1) * cw;
         const topRow = '='.repeat(box.w);
-        const fg = this.isHost ? theme.fg : dim();
+        const fg = this.isHost ? theme.fg : disabledColor();
         const rows = [];
         for (let i = 0; i < box.h; i++) {
             const y = box.top + i * lh;
@@ -409,7 +420,7 @@ export class LobbyScreen {
         const left = box.cx - (box.w * cw) / 2;
         const topRow = '='.repeat(box.w);
         const midRow = ']' + ' '.repeat(box.w - 2) + '[';
-        ctx.fillStyle = this.isHost ? theme.fg : dim();
+        ctx.fillStyle = this.isHost ? theme.fg : disabledColor();
         for (let i = 0; i < box.h; i++) {
             ctx.fillText(i === 0 || i === box.h - 1 ? topRow : midRow, left, box.top + i * lh);
         }
@@ -437,16 +448,19 @@ export class LobbyScreen {
         ctx.font = `${LIST_FONT}px "IBMVGA"`;
         ctx.textBaseline = 'middle';
         const { listX, startY, rowH, rowW } = this.playerLayout;
-        const playerColor = this.isHost ? theme.fg : dim();
+        const playerColor = this.isHost ? theme.fg : disabledColor();
         this.players.forEach((p, i) => {
             const rowY = startY + i * rowH;
-            ctx.globalAlpha = p.connected ? 1 : 0.4;
+            // Disconnected rows use an ABSOLUTE opacity (solid fg + globalAlpha) so they read
+            // the same for host and non-host; connected rows use the normal row color.
+            const rowColor = p.connected ? playerColor : theme.fg;
+            ctx.globalAlpha = p.connected ? 1 : DISCONNECTED_ALPHA;
             ctx.textAlign = 'left';
-            ctx.fillStyle = playerColor;
+            ctx.fillStyle = rowColor;
             ctx.fillText(p.name, listX, rowY);
             if (!(this.isHost && !p.isHost && p.connected)) {
                 ctx.textAlign = 'right';
-                ctx.fillStyle = playerColor;
+                ctx.fillStyle = rowColor;
                 ctx.fillText(p.isHost ? 'HOST' : 'PLAYER', listX + rowW, rowY);
             }
         });

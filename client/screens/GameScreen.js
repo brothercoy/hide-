@@ -1,5 +1,7 @@
 import { theme } from '../ui/colors.js';
 import { otFont } from '../ui/Font.js';
+import { bandTop } from '../ui/viewport.js';
+import { GLOW_SPEED } from '../ui/Button.js';   // share the buttons'/specials' glow length
 
 const TICK_RATE = 50;
 
@@ -11,10 +13,29 @@ const BOX_ROWS = 10;
 const BOX_LEFT_MARGIN = 80;   // box is left-aligned this far from the canvas's left edge
 const PLAYER_LIST_GAP = 12;   // gap from the box's right edge ([ ) to the player list
 const LIST_FONT_SIZE = 28;    // player-list text
+const LIFE_LOSS_FONT = 52;    // end-of-round life-loss callout — bigger than list text, below Find:X (76)
 const LIST_ROW_H = 30;        // tight row pitch so ~10 players fit the top half (spectators below)
 const ROOMCODE_TOP = 16;      // room code top edge (top-left corner of the screen)
 const COPY_GAP = 28;          // COPY CODE button center, px below the room code's ink bottom
                               // (gives a small ~15px visible gap — less than the lobby's)
+
+// "Hack" glitch shown to a player who taps inside the field but misses the target — every
+// char flickers to a random one of the letters ALREADY on screen so spam-clicking can't
+// reveal the target. Purely visual and local to the misser; the real positions/target never
+// change. Cheap: it reuses the cached glyph tiles, just picking a different existing letter
+// (re-rolled every GLITCH_SWAP_MS).
+const GLITCH_MS = 500;         // how long a miss scrambles the field
+const GLITCH_SWAP_MS = 60;     // re-roll the random glyphs this often (flicker rate)
+
+// Field dims to this alpha while a round is over, so the life-loss list reads clearly on top
+// (replaces the old low-opacity black backdrop).
+const ROUND_OVER_CHAR_DIM = 0.15;
+// Target tap feedback — modeled on the main-menu buttons/special chars: hold to press (dims
+// while held), release to glow. The press is HELD (not a fixed animation), and the glow length
+// matches the buttons/specials (GLOW_SPEED) rather than an arbitrary number.
+const TARGET_PRESS_ALPHA = 0.25;         // target dims to this while held (≈ the specials' pressed alpha)
+const TARGET_PRESS_MS = 250;             // press-dim eases in over this, then holds; also the un-dim time on release
+const TARGET_GLOW_MS = 1 / GLOW_SPEED;   // release glow length — same as the buttons/special chars (~770ms)
 
 export class GameScreen {
     constructor(canvas, ctx, isMobile) {
@@ -29,9 +50,55 @@ export class GameScreen {
         this._cw = null;              // cached monospace char width at the FRAME font
         this.roomCode = '';           // shown top-left at the frame font; COPY CODE sits under it
         this._inkCache = new Map();   // measured ink bounds per string at the FRAME font
+        this.modeId = 'redacted';     // 'redacted' hides the Round; other modes show it
+        this.glitchUntil = 0;         // scramble the play field until this timestamp (miss feedback)
+        this._glitchGlyphs = [];      // per-char random glyph while glitching
+        this._glitchSwapAt = 0;       // last time the glitch glyphs were re-rolled
+        this._glowCache = new Map();  // char -> glowHi-colored tile (target tap glow overlay)
+        this._glowColor = null;       // theme color the glow tiles were baked in
+        this._targetPressStart = -1;      // when the target was pressed (mousedown on it), or -1 if not held
+        this._targetReleaseStart = -1e9;  // when it was released (mouseup) → glow
     }
 
     setRoomCode(code) { this.roomCode = (code || '').toUpperCase(); }
+    setMode(modeId) { this.modeId = modeId || 'redacted'; }
+
+    // Start (or extend) the miss glitch — called when a tap lands inside the field but not on
+    // the target. Spam-clicking keeps re-triggering it, so the scramble stays continuous.
+    triggerGlitch() { this.glitchUntil = Date.now() + GLITCH_MS; }
+
+    // True if a click (relative to the box center, as game.js passes it) is inside the play area.
+    isInPlayField(clickX, clickY) {
+        return Math.abs(clickX) <= this.playHalfW && Math.abs(clickY) <= this.playHalfH;
+    }
+
+    // The player pressed the target (mousedown on it): start the held press-dim, and clear any
+    // active miss-glitch (you found it). The tap itself is sent by game.js on mousedown, so a
+    // hold still counts even as the target slides out from under the cursor.
+    pressTarget() { this._targetPressStart = Date.now(); this.glitchUntil = 0; }
+
+    // Released (mouseup): end the press and fire the glow. No-op if it wasn't being held.
+    releaseTarget() {
+        if (this._targetPressStart < 0) return;
+        this._targetPressStart = -1;
+        this._targetReleaseStart = Date.now();
+    }
+
+    // { alpha, glow } for the target — the held press-dim, then the release glow — or null at rest.
+    _targetState(now) {
+        if (this._targetPressStart >= 0) {                 // held: dim toward PRESS_ALPHA, then hold
+            const p = Math.min(1, (now - this._targetPressStart) / TARGET_PRESS_MS);
+            return { alpha: 1 - (1 - TARGET_PRESS_ALPHA) * p, glow: 0 };
+        }
+        const rel = now - this._targetReleaseStart;
+        if (rel >= 0 && rel < TARGET_GLOW_MS) {            // released: un-dim + glow pulse
+            const alpha = TARGET_PRESS_ALPHA + (1 - TARGET_PRESS_ALPHA) * Math.min(1, rel / TARGET_PRESS_MS);
+            const gt = rel / TARGET_GLOW_MS;
+            const glow = gt < 0.5 ? gt * 2 : (1 - gt) * 2;  // triangle 0→1→0, same shape as the specials
+            return { alpha, glow };
+        }
+        return null;
+    }
 
     // Actual rendered ink bounds (top/bottom px offsets from a textBaseline:'top' draw y)
     // for a string at the FRAME font — measured, since this bitmap font's metrics and
@@ -67,7 +134,7 @@ export class GameScreen {
     get copyBtnY() {
         const code = this._inkBounds('M0');   // caps + digit (room code charset)
         const eq = this._inkBounds('=');      // box top row glyph
-        const codeBottom = ROOMCODE_TOP + (code.bottom >= 0 ? code.bottom : this.FRAME_SIZE * 0.78);
+        const codeBottom = bandTop(this.canvas) + ROOMCODE_TOP + (code.bottom >= 0 ? code.bottom : this.FRAME_SIZE * 0.78);
         const boxTop = this.canvas.height / 2 - this.boxH / 2;
         const rowInkTop = boxTop + (eq.top >= 0 ? eq.top : this.FRAME_SIZE * 0.4);
         return Math.min(codeBottom + COPY_GAP, rowInkTop - 16);
@@ -104,6 +171,27 @@ export class GameScreen {
         path.draw(g2d);
         g = { canvas: cv, w, h };
         this._glyphCache.set(char, g);
+        return g;
+    }
+
+    // Same tile as _getGlyph but baked in the glow colour (theme.glowHi) — overlaid on the
+    // target during its tap animation. Identical layout/size, so it drops onto the normal tile
+    // with no position shift.
+    _getGlowGlyph(char) {
+        if (this._glowColor !== theme.glowHi) { this._glowCache.clear(); this._glowColor = theme.glowHi; }
+        let g = this._glowCache.get(char);
+        if (g) return g;
+        const m = this._getMetrics(char);
+        const PAD = 4;
+        const w = Math.max(1, Math.ceil(m.width) + 2 * PAD);
+        const h = Math.max(1, Math.ceil(m.height) + 2 * PAD);
+        const cv = document.createElement('canvas');
+        cv.width = w; cv.height = h;
+        const path = otFont.getPath(char, w / 2 - m.inkCX, h / 2 + m.inkCY, this.FONT_SIZE);
+        path.fill = theme.glowHi;
+        path.draw(cv.getContext('2d'));
+        g = { canvas: cv, w, h };
+        this._glowCache.set(char, g);
         return g;
     }
 
@@ -195,13 +283,20 @@ export class GameScreen {
         return { nx: px / this.playHalfW, ny: py / this.playHalfH };
     }
 
-    hitTest(clickX, clickY, chars, countdownActive) {
+    hitTest(clickX, clickY, chars, posA, posB, t, countdownActive) {
         if (countdownActive) return null;
-        for (const c of chars) {
+        const n = Math.min(chars.length, (posA.length / 3) | 0, (posB.length / 3) | 0);
+        for (let i = 0; i < n; i++) {
+            const c = chars[i];
             if (!c.isTarget) continue;
+            // Interpolate to the SAME position the frame drew (posA → posB at t), so a tap
+            // lands on where the target visibly is.
+            const j = i * 3;
+            const ix = posA[j]     + (posB[j]     - posA[j])     * t;
+            const iy = posA[j + 1] + (posB[j + 1] - posA[j + 1]) * t;
             // The glyph is drawn ink-centered on its position, so the collision circle
             // shares that center — no ascent/height fudge needed.
-            const { px, py } = this._toPixels(c.x, c.y);
+            const { px, py } = this._toPixels(ix, iy);
             const m = this._getMetrics(c.char);
             const dist = Math.sqrt((clickX - px) ** 2 + (clickY - py) ** 2);
             if (dist < m.radius + (this.isMobile ? 40 : 20)) {
@@ -213,7 +308,7 @@ export class GameScreen {
 
     draw(state) {
         const {
-            chars, prevChars, targetChar,
+            chars, posA, posB, charT, targetChar,
             playerList, timeLeft, currentRound, currentMatch, totalMatches,
             showRoundOver, showMatchOver, matchOverData, eliminatedName, lifeCallout,
             countdownActive, countdownStartTime, countdownMs, lastUpdateTime, winnerId
@@ -233,18 +328,18 @@ export class GameScreen {
         ctx.font = `${this.FRAME_SIZE}px "IBMVGA"`;
         ctx.textAlign = 'left';
         ctx.textBaseline = 'top';
-        ctx.fillText(this.roomCode, BOX_LEFT_MARGIN, ROOMCODE_TOP);
+        ctx.fillText(this.roomCode, BOX_LEFT_MARGIN, bandTop(this.canvas) + ROOMCODE_TOP);
 
         // player list persists across the countdown (drawn here, not inside _drawGame)
-        this._drawPlayerList(ctx, playerList, totalMatches, cx, cy);
+        this._drawPlayerList(ctx, playerList, totalMatches, cx, cy, winnerId);
 
         if (countdownActive) {
-            this._drawCountdown(ctx, FS, chars, prevChars, targetChar, countdownStartTime, lastUpdateTime, cx, cy, countdownMs);
+            this._drawCountdown(ctx, FS, chars, null, targetChar, countdownStartTime, lastUpdateTime, cx, cy, countdownMs);
         } else {
-            this._drawGame(ctx, FS, chars, prevChars, targetChar, playerList, timeLeft,
+            this._drawGame(ctx, FS, chars, posA, posB, targetChar, playerList, timeLeft,
                 currentRound, currentMatch, totalMatches,
                 showRoundOver, showMatchOver, matchOverData, eliminatedName, lifeCallout,
-                winnerId, lastUpdateTime, cx, cy);
+                winnerId, charT, cx, cy);
         }
     }
 
@@ -302,7 +397,7 @@ export class GameScreen {
     // "NAME....X Lives" dot-leader rows; PLAYERS in the top half, SPECTATORS below the
     // row-5 divider, same spacing. Name hard-left at PLAYER_LIST_GAP past the [; the
     // dots+lives are right-aligned to the SAME inset before the ], so the gaps match.
-    _drawPlayerList(ctx, playerList, totalMatches, cx, cy) {
+    _drawPlayerList(ctx, playerList, totalMatches, cx, cy, winnerId) {
         const halfW = this.boxW / 2;
         const halfH = this.boxH / 2;
         ctx.textBaseline = 'top';
@@ -312,22 +407,34 @@ export class GameScreen {
         const listRightX = rightEdge - PLAYER_LIST_GAP; // lives right edge — same inset as the name's
         const cwList = ctx.measureText('M').width;
         const colChars = Math.max(8, Math.floor((listRightX - listX) / cwList));
+        // At game over the game winner (most match wins) is ALWAYS full opacity — even if
+        // they didn't find the target or were eliminated (e.g. won on a match-win tiebreak).
+        const gameOver = !!winnerId;
+        let maxWins = 0;
+        if (gameOver) for (const p of playerList) maxWins = Math.max(maxWins, p.matchWins || 0);
         let playerY = cy - halfH + this.FRAME_SIZE + 8;     // below the top edge / PLAYERS title
         let specY = cy - halfH + 6 * this.FRAME_SIZE + 8;   // below the SPECTATORS title (row 5)
         playerList.forEach(p => {
             ctx.globalAlpha = p.tapped ? 1 : 0.3;
             if (!p.alive) ctx.globalAlpha = 0.1;
+            if (gameOver && maxWins > 0 && (p.matchWins || 0) === maxWins) ctx.globalAlpha = 1; // winner
             ctx.fillStyle = theme.fg;
-            const winsText = totalMatches > 1 ? ` (${p.matchWins || 0})` : '';
             const disconnectText = !p.connected ? ' %' : '';
-            const nameStr = p.name + winsText + disconnectText;
             if (p.lives === null || p.lives === undefined) {
+                // Spectator: name only (no lives, no match wins) + a dot leader that ends in
+                // the SAME spot the players' "Lives" ends (right-aligned at listRightX).
+                const specName = p.name + disconnectText;
                 ctx.textAlign = 'left';
-                ctx.fillText(nameStr, listX, specY);
+                ctx.fillText(specName, listX, specY);
+                ctx.textAlign = 'right';
+                ctx.fillText('.'.repeat(Math.max(1, colChars - specName.length)), listRightX, specY);
                 specY += LIST_ROW_H;
             } else {
+                const winsText = totalMatches > 1 ? ` (${p.matchWins || 0})` : '';
+                const nameStr = p.name + winsText + disconnectText;
                 const lifeCount = Math.max(0, p.lives);
-                const livesStr = `${lifeCount} ${lifeCount === 1 ? 'Life' : 'Lives'}`;
+                // Eliminated players read "DELETED" instead of "0 Lives" (matches the callout).
+                const livesStr = lifeCount <= 0 ? 'DELETED' : `${lifeCount} ${lifeCount === 1 ? 'Life' : 'Lives'}`;
                 const dots = Math.max(1, colChars - nameStr.length - livesStr.length);
                 ctx.textAlign = 'left';
                 ctx.fillText(nameStr + '.'.repeat(dots), listX, playerY);   // dots right after the name
@@ -386,7 +493,10 @@ export class GameScreen {
         if (elapsed < T_NL) {
             cursorBlock(x0 + ctx.measureText(line1).width, y1);   // cursor parked at end of line 1
         } else {
-            // Line 2 — type 3, backspace, type 2, backspace, type 1 (stays); CENTERED.
+            // Line 2 — type 3, backspace, type 2, backspace, type 1 (stays). The digit sits
+            // in a FIXED centered slot; only the cursor moves — right once a digit is typed,
+            // back to the slot when it's backspaced (one char typed/deleted in place, so the
+            // line never re-centers itself).
             let line2 = '';
             if (elapsed >= T3) {
                 const di = Math.min(2, Math.floor((elapsed - T3) / slot));   // 0,1,2 → 3,2,1
@@ -394,19 +504,20 @@ export class GameScreen {
                 const within = (elapsed - T3) - di * slot;
                 line2 = (digit === 1 || within < SHOW_S) ? String(digit) : '';  // 3/2 backspace; 1 stays
             }
-            ctx.textAlign = 'center';
-            ctx.fillText(line2, cx, y2);
-            cursorBlock(cx + ctx.measureText(line2).width / 2, y2);   // cursor after the centered digit
+            ctx.textAlign = 'left';
+            const digitX = cx - cw / 2;                               // single digit centered; position fixed
+            ctx.fillText(line2, digitX, y2);
+            cursorBlock(digitX + ctx.measureText(line2).width, y2);   // right of the digit, or the empty slot
         }
     }
 
-    _drawGame(ctx, FS, chars, prevChars, targetChar, playerList, timeLeft,
+    _drawGame(ctx, FS, chars, posA, posB, targetChar, playerList, timeLeft,
               currentRound, currentMatch, totalMatches,
               showRoundOver, showMatchOver, matchOverData, eliminatedName, lifeCallout,
-              winnerId, lastUpdateTime, cx, cy) {
+              winnerId, charT, cx, cy) {
 
         const now = Date.now();
-        const t = lastUpdateTime ? Math.min((now - lastUpdateTime) / TICK_RATE, 1) : 0;
+        const t = charT || 0;   // interpolation factor between the two buffered snapshots (from DELMode)
         const halfW = this.boxW / 2;   // frame edge — HUD (player list / header / footer)
         const halfH = this.boxH / 2;
         const phw = this.playHalfW;    // play area — character positions
@@ -415,18 +526,41 @@ export class GameScreen {
         // Draw every character by blitting its pre-rendered tile (drawImage) under a
         // per-char rotation transform. The tile is centered, so drawImage at (-w/2,-h/2)
         // puts the glyph centered on the rotation origin.
-        chars.forEach((c, i) => {
-            const prev = prevChars[i] || c;
-            const ix = prev.x + (c.x - prev.x) * t;
-            const iy = prev.y + (c.y - prev.y) * t;
+        const nChars = Math.min(chars.length, (posA.length / 3) | 0, (posB.length / 3) | 0);
+        // Miss glitch: while active, show a random glyph per char, re-rolled every GLITCH_SWAP_MS
+        // (same cached tiles — only the chosen letter changes, so it's near-free).
+        const glitching = now < this.glitchUntil;
+        if (glitching && now - this._glitchSwapAt >= GLITCH_SWAP_MS) {
+            this._glitchSwapAt = now;
+            for (let i = 0; i < nChars; i++) {
+                this._glitchGlyphs[i] = chars[(Math.random() * nChars) | 0].char;  // a letter already on screen
+            }
+        }
+        // Dim the whole field while a round is over so the life-loss list reads over it.
+        const overlayDim = showRoundOver || showMatchOver || winnerId;
+        // Target tap press/glow — live play only (not during a glitch or an overlay).
+        const tap = (!overlayDim && !glitching) ? this._targetState(now) : null;
+        for (let i = 0; i < nChars; i++) {
+            const j = i * 3;
+            const ix = posA[j]     + (posB[j]     - posA[j])     * t;
+            const iy = posA[j + 1] + (posB[j + 1] - posA[j + 1]) * t;
+            const rot = posA[j + 2] + (posB[j + 2] - posA[j + 2]) * t;
             const px = ix * phw + cx;
             const py = iy * phh + cy;
-            const g = this._getGlyph(c.char);
-            const cos = Math.cos(c.rotation);
-            const sin = Math.sin(c.rotation);
+            const ch = glitching ? (this._glitchGlyphs[i] || chars[i].char) : chars[i].char;
+            const tgt = tap && chars[i].isTarget;
+            const cos = Math.cos(rot), sin = Math.sin(rot);
             ctx.setTransform(cos, sin, -sin, cos, px, py);
+            ctx.globalAlpha = overlayDim ? ROUND_OVER_CHAR_DIM : (tgt ? tap.alpha : 1);
+            const g = this._getGlyph(ch);
             ctx.drawImage(g.canvas, -g.w / 2, -g.h / 2);
-        });
+            if (tgt && tap.glow > 0) {                       // glow-colour overlay on the tapped target
+                ctx.globalAlpha = tap.glow;
+                const gg = this._getGlowGlyph(ch);
+                ctx.drawImage(gg.canvas, -gg.w / 2, -gg.h / 2);
+            }
+        }
+        ctx.globalAlpha = 1;
 
         // reset transform once after all characters
         ctx.setTransform(1, 0, 0, 1, 0, 0);
@@ -438,10 +572,11 @@ export class GameScreen {
         ctx.textAlign = 'center';
         ctx.textBaseline = 'alphabetic';
         // Find target — big (frame font, like the room code / PLAYERS title). The gap
-        // above the box scales with the top margin: ~25px at fullscreen, tighter (sits
-        // closer to the top row) when the window is just maximized.
+        // above the box scales with the top margin WITHIN THE BAND (not the raw canvas), so it
+        // stays identical between maximized and fullscreen — the extra fullscreen height is
+        // margin above the band, not layout space.
         ctx.font = `${this.FRAME_SIZE}px "IBMVGA"`;
-        const findGap = Math.max(10, (cy - halfH) * 0.16);
+        const findGap = Math.max(10, (cy - halfH - bandTop(this.canvas)) * 0.16);
         ctx.fillText('Find: ' + targetChar, screenCx, cy - halfH - findGap);
 
         // Round/match — centered just below the box. Under textBaseline:'top' this font
@@ -451,9 +586,10 @@ export class GameScreen {
         ctx.textBaseline = 'top';
         const inkTop = Math.max(0, this._inkBounds('M0').top);
         const bottomY = cy + halfH + findGap - inkTop;
-        const roundLabel = totalMatches > 1
-            ? `Match: ${currentMatch}/${totalMatches} & Round: ${currentRound}`
-            : 'Round: ' + currentRound;
+        // Redacted has matches (no rounds); the other modes have rounds (no matches).
+        const roundLabel = this.modeId === 'redacted'
+            ? `Match ${currentMatch}/${totalMatches}`
+            : `Round ${currentRound}`;
         ctx.textAlign = 'center';
         ctx.fillText(roundLabel, screenCx, bottomY);
 
@@ -481,8 +617,25 @@ export class GameScreen {
         const COMP_COLS = 8;
         ctx.fillText('|', fLeft, clockY);                          // left bar (column 0)
         ctx.fillText('|', fLeft + (COMP_COLS - 1) * cw, clockY);   // right bar (one column over)
+        // Clock digits: dim normally; in the final 10s they pulse — as each new number
+        // appears the opacity smoothly BRIGHTENS up to full over the first slice of the
+        // second, then smoothly eases back DOWN to the dim floor over the rest (both
+        // directions interpolate — no snap). Keyed off the actual displayed-number change
+        // (not raw timeLeft, which the server only steps every 50ms) so the peak isn't
+        // missed and there's no flash at the 10s boundary.
+        const TIMER_DIM = 0.3;    // dim floor — "not too dim"
+        const TIMER_RISE = 0.22;  // fraction of the second spent brightening up before the fade
+        const sec = Math.ceil(timeLeft);
+        if (sec !== this._timerSec) { this._timerSec = sec; this._timerSecAt = now; }
+        const tp = Math.min(1, (now - this._timerSecAt) / 1000);   // 0..1 through the current second
+        let pulse = tp < TIMER_RISE
+            ? 0.5 - 0.5 * Math.cos(Math.PI * tp / TIMER_RISE)                        // ease up 0→1
+            : 0.5 + 0.5 * Math.cos(Math.PI * (tp - TIMER_RISE) / (1 - TIMER_RISE));  // ease down 1→0
+        if (sec > 10) pulse = 0;
+        ctx.globalAlpha = TIMER_DIM + (1 - TIMER_DIM) * pulse;
         ctx.textAlign = 'center';
         ctx.fillText(clock, fLeft + (COMP_COLS / 2) * cw, clockY); // clock centered between the bars
+        ctx.globalAlpha = 1;
         ctx.textAlign = 'left';
         ctx.fillText('='.repeat(COMP_COLS), fLeft, botEqY);
 
@@ -510,7 +663,7 @@ export class GameScreen {
             });
         } else if (showRoundOver) {
             if (lifeCallout && lifeCallout.entries.length) {
-                lifeCallout.draw(ctx, cx, cy, 32, Date.now());
+                lifeCallout.draw(ctx, cx, cy, LIFE_LOSS_FONT, Date.now());
             } else if (eliminatedName) {
                 ctx.fillStyle = theme.fg;
                 ctx.font = '32px "IBMVGA"';

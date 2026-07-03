@@ -21,6 +21,16 @@ export function dim(alpha = 0.48) {
 export const placeholderColor = () => dim(0.24); // input placeholder (≈ #003d0f)
 export const plainIdle = () => dim(0.66);         // plain button, not hovered (≈ #00aa2a)
 
+// Disabled widgets AND the non-host lobby — the only place a viewer sees the UI differently
+// from the host. Kept SEPARATE from dim() so the input fields (which use dim() when
+// unfocused, and are already faint) stay put when this is tuned.
+export const disabledColor = () => dim(0.3);
+
+// Disconnected player rows — an ABSOLUTE opacity (applied via globalAlpha over a solid fg)
+// so it reads the same for host and non-host. A distinct disconnect symbol carries the rest
+// of the signal, so this needn't be too low.
+export const DISCONNECTED_ALPHA = 0.22;
+
 // Background at reduced opacity (modal / overlay scrims).
 export function bgAlpha(alpha) {
     const [r, g, b] = rgbOf(theme.bg);

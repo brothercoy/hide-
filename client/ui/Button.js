@@ -1,5 +1,5 @@
 import { otFont, charWidth } from './Font.js';
-import { theme, dim, plainIdle, glow } from './colors.js';
+import { theme, disabledColor, plainIdle, glow } from './colors.js';
 
 export const Z_FLOAT_MIN = 1.3;
 export const Z_FLOAT_MAX = 1.3;
@@ -239,7 +239,7 @@ export function drawButton(ctx, btn, elapsed, FONT_SIZE) {
         const left = btn.x - w / 2;
         const top = btn.y - FONT_SIZE / 2;
         ctx.globalAlpha = 1;
-        const color = btn.disabled ? dim() : (btn.hoverProgress > 0.05 ? theme.fg : plainIdle());
+        const color = btn.disabled ? disabledColor() : (btn.hoverProgress > 0.05 ? theme.fg : plainIdle());
         if (USE_VECTOR && otFont) {
             const path = otFont.getPath(btn.label, left, top + FONT_SIZE, FONT_SIZE);
             path.fill = color;
@@ -286,7 +286,7 @@ export function drawButton(ctx, btn, elapsed, FONT_SIZE) {
         btn.charPhases = Array.from({ length: 200 }, () => Math.random() * Math.PI * 2);
     }
 
-    let glowColor = btn.disabled ? dim() : theme.fg;
+    let glowColor = btn.disabled ? disabledColor() : theme.fg;
     if (ENABLE_GLOW_COLOR && !btn.noGlow && btn.releasePhase === 'glowing' && btn.glowT > 0) {
         const g = btn.glowT < 0.5 ? btn.glowT * 2 : (1 - btn.glowT) * 2;
         glowColor = glow(g);
@@ -345,7 +345,7 @@ export function drawButtonRow(ctx, btn, rowIndex, n, FONT_SIZE) {
     // Reflect live interactive state (press depth, glow, pressed brackets) so the
     // button is the real control while it scrolls in, not a static partial.
     const z = btn.z !== undefined ? btn.z : Z_FLOAT_MIN;
-    let color = btn.disabled ? dim() : theme.fg;
+    let color = btn.disabled ? disabledColor() : theme.fg;
     if (ENABLE_GLOW_COLOR && !btn.noGlow && btn.releasePhase === 'glowing' && btn.glowT > 0) {
         const g = btn.glowT < 0.5 ? btn.glowT * 2 : (1 - btn.glowT) * 2;
         color = glow(g);
@@ -436,7 +436,7 @@ export function drawButtonPartial(ctx, btn, n, elapsed, FONT_SIZE) {
     }
     const topB = plus + borderLine + plus;
     const botB = plus + borderLine + plus;
-    const color = btn.disabled ? dim() : theme.fg;
+    const color = btn.disabled ? disabledColor() : theme.fg;
 
     let drawn = 0;
     for (let i = 0; i < topB.length && drawn < n; i++, drawn++)

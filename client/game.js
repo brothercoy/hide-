@@ -10,7 +10,7 @@ import { makeButton, drawButton, zToAlpha } from './ui/Button.js';
 import { makeBracketButton, drawBracketButton } from './ui/BracketButton.js';
 import { theme, bgAlpha, glow } from './ui/colors.js';
 import { initFont } from './ui/Font.js';
-import { setBaseHeight } from './ui/viewport.js';
+import { setBaseHeight, setBandHeight, bandTop } from './ui/viewport.js';
 import { CRTEffect } from './CRTShader.js';
 import { Transition } from './ui/Transition.js';
 import { DELMode } from './modes/DELmode.js';
@@ -43,17 +43,23 @@ let pendingLobbyEntry = false; // waiting for the room's initial state before ty
 const canvas = document.getElementById('gameCanvas');
 const ctx = canvas.getContext('2d', { alpha: false });
 
-// Logical resolution. Width is ALWAYS 1920 and shown 1:1 (a narrower window crops
-// the sides — the anti-cheat crop; elements never scale horizontally). Height
-// tracks the window's available height (capped at 1080): it re-fits when a resize
-// settles (see the resize handler) so maximize/fullscreen fills with no bars, but
-// it never reflows live while you drag. Mobile keeps the full 1080 scaled-to-fit,
-// since its viewport can't be resized.
+// Logical resolution. Width is ALWAYS 1920 and shown 1:1 (a narrower window crops the
+// sides). Height: the canvas GROWS to fill the window (up to 1080) but never shrinks below
+// the maximized height — a smaller window just crops. So fullscreen fills the screen with the
+// shader as usual, while the game's edge elements stay inside a centered "band" the size of
+// the maximized viewport (see setBandHeight / bandTop): the top/bottom fullscreen margins are
+// just shaded background, and leaving fullscreen crops them away with everything still
+// visible. Mobile keeps 1080 scaled-to-fit.
 const LOGICAL_W = 1920;
 let LOGICAL_H = isMobile ? 1080 : Math.min(window.innerHeight || 1080, 1080);
 // The layout's reference height: gaps scale relative to this, so the load-time
 // layout is untouched and only a later resize (fullscreen) redistributes.
 setBaseHeight(LOGICAL_H);
+// The maximized (windowed) height — the content "band". Fullscreen grows the CANVAS past
+// this, but edge elements stay within the band so they survive the crop back to maximized.
+// It only ever grows (maximizing from a smaller window); a smaller window crops instead.
+let maximizedH = LOGICAL_H;
+setBandHeight(maximizedH);
 
 function resizeCanvas() {
     canvas.width = LOGICAL_W;
@@ -94,10 +100,9 @@ function layoutDisplay() {
 
 resizeCanvas();
 
-// Reposition the canvas immediately on resize (keeps it centered while you drag),
-// then — once the resize settles — re-fit the layout to the new window height so
-// maximize/fullscreen fills with no bars and no manual refresh. Debounced so it
-// snaps once when you finish rather than reflowing live mid-drag.
+// Reposition the canvas immediately on resize (centered — a smaller window crops it), then —
+// once the resize settles — re-fit the canvas height: fullscreen fills the window; windowed
+// grows only up to the maximized height (smaller crops). Debounced.
 let _refitTimer = null;
 window.addEventListener('resize', () => {
     layoutDisplay();
@@ -107,7 +112,15 @@ window.addEventListener('resize', () => {
 
 function refitToWindow() {
     if (isMobile) return; // mobile is fixed 1080, scaled-to-fit
-    const h = Math.min(window.innerHeight || 1080, 1080);
+    const winH = Math.min(window.innerHeight || 1080, 1080);
+    let h;
+    if (document.fullscreenElement) {
+        h = winH;                                  // fullscreen: canvas fills the screen (shader + all)
+    } else {
+        maximizedH = Math.max(maximizedH, winH);   // maximized is the content band; smaller only crops
+        setBandHeight(maximizedH);
+        h = maximizedH;
+    }
     if (h === LOGICAL_H) return;
     LOGICAL_H = h;
     resizeCanvas();      // applies canvas.height = LOGICAL_H (CRT re-sizes on next render)
@@ -314,6 +327,7 @@ window.addEventListener('load', () => {
 function joinGame(type, code) {
     const options = { playerName };
     if (type === 'create') {
+        lobbyScreen.resetToDefault();   // a freshly created room always starts clean (return-to-lobby keeps settings)
         colyseusClient.create('game_room', options).then(onRoomJoined);
     } else {
         fetch('/join/' + code)
@@ -483,6 +497,9 @@ function setupRoomMessages(isReconnecting = false) {
         if (transition.isActive()) transition.cancelToEnd();
         if (currentMode) currentMode.reset();
         if (data.mode) currentMode = createMode(data.mode, data);
+        // reset() zeroes these; gameRestarted carries no `mode`, so createMode is skipped —
+        // restore them here or the match-win "(x)" counter (guarded on totalMatches>1) vanishes.
+        if (currentMode) { currentMode.totalMatches = data.totalMatches || 1; currentMode.currentMatch = data.match || 1; }
         currentScreen = 'game';
         hideGameOverOverlay();   // clears uiManager (incl. the copy button)…
         setupGameHud();          // …so re-register it
@@ -541,6 +558,7 @@ function createMode(modeId, data) {
             const mode = new DELMode(canvas, ctx, uiManager, room, callbacks);
             mode.totalMatches = data.totalMatches || 1;
             mode.currentMatch = data.match || 1;
+            gameScreen.setMode(modeId);   // GameScreen shows/hides the Round label by mode
             return mode;
     }
 }
@@ -682,7 +700,7 @@ let hudIntroStart = null;
 // crowding up against the box. Clamped so they never reach the very edge. 0.3 = how fast
 // they drop; raise to drop them faster when maximized.
 function hudBtnGap() {
-    return Math.max(45, 90 - (1080 - canvas.height) * 0.3);
+    return Math.max(45, 90 - (1080 - maximizedH) * 0.3);
 }
 
 const hudItems = [
@@ -691,7 +709,7 @@ const hudItems = [
         hover: 0, z: HUD_Z_REST, releasePhase: null, glowT: 0, _rect: null,
         _animT: 0, _char: SETTINGS_REST_CHAR,
         typeChars: SETTINGS_REST_CHAR,
-        getRect() { return { x: canvas.width - 200, y: canvas.height - hudBtnGap(), w: 60, h: 40 }; },
+        getRect() { return { x: canvas.width - 200, y: canvas.height - bandTop(canvas) - hudBtnGap(), w: 60, h: 40 }; },
         // Rests on '%'; on hover it immediately swaps - -> \ -> ; then pauses back
         // on '%' (swap first so the animation starts at once, like the brackets).
         tick(dt, over) {
@@ -732,7 +750,7 @@ const hudItems = [
         hover: 0, z: HUD_Z_REST, releasePhase: null, glowT: 0, _rect: null,
         _animT: 0, _spread: 0,
         typeChars: '[]',
-        getRect() { return { x: canvas.width - 120, y: canvas.height - hudBtnGap(), w: 70, h: 40 }; },
+        getRect() { return { x: canvas.width - 120, y: canvas.height - bandTop(canvas) - hudBtnGap(), w: 70, h: 40 }; },
         // Inactive (windowed): rests closed, hover snaps OUT twice then returns.
         // Active (fullscreen): rests expanded, hover snaps IN twice then reverts.
         tick(dt, over) {
@@ -877,7 +895,7 @@ function hudHit(mx, my) {
 }
 
 function getSettingsPanelRect() {
-    return { x: canvas.width - 216, y: canvas.height - 148, w: 208, h: 76 };
+    return { x: canvas.width - 216, y: canvas.height - bandTop(canvas) - 148, w: 208, h: 76 };
 }
 
 function getModalOkRect() {
@@ -1011,11 +1029,26 @@ canvas.addEventListener('mousedown', (e) => {
     if (transition.isActive() || modalMessage || hudIntroPending) return;
     const { x, y } = hudEventPos(e);
     hudOnMouseDown(x, y);
+    // Game: a press on the target registers the tap NOW (so a hold still counts as the target
+    // slides away) and begins the press-dim; a press elsewhere in the field glitches.
+    if (currentScreen === 'game' && currentMode && !settingsPanelOpen
+        && !currentMode.countdownActive && !currentMode.showRoundOver
+        && !currentMode.showMatchOver && !currentMode.winnerId) {
+        const cx = x - gameScreen.boxCenterX, cy = y - canvas.height / 2;
+        const hit = currentMode.hitTest(gameScreen, cx, cy);
+        if (hit) {
+            room.send('tap', { nx: hit.nx, ny: hit.ny, time: Date.now() });
+            gameScreen.pressTarget();            // hold-to-press the target
+        } else if (gameScreen.isInPlayField(cx, cy)) {
+            gameScreen.triggerGlitch();          // missed inside the field — scramble
+        }
+    }
 });
 
 canvas.addEventListener('mouseup', (e) => {
     const { x, y } = hudEventPos(e);
     hudOnMouseUp(x, y);
+    gameScreen.releaseTarget();   // end the target press → glow (no-op if not held)
 });
 
 canvas.addEventListener('click', (e) => {
@@ -1064,14 +1097,8 @@ canvas.addEventListener('click', (e) => {
         if (hudItem) { hudItem.onClick(); return; }
     }
 
-    if (currentScreen !== 'game') return;
-
-    const clickX = mx - gameScreen.boxCenterX;   // box is left-aligned, not canvas-centered
-    const clickY = my - canvas.height / 2;
-    if (currentMode) {
-        const hit = currentMode.hitTest(gameScreen, clickX, clickY);
-        if (hit) room.send('tap', { nx: hit.nx, ny: hit.ny, time: Date.now() });
-    }
+    // Game taps (target press/glow + miss glitch) are handled on mousedown/mouseup above so a
+    // hold registers correctly — nothing to do here for the game screen.
 });
 
 requestAnimationFrame(loop);

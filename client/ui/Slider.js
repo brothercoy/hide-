@@ -1,6 +1,6 @@
 import { otFont, charWidth } from './Font.js';
 import { getCharZ, drawChar, Z_FLOAT_MIN, CHAR_ROT_MAX, CHAR_ROT_SPEED } from './Button.js';
-import { theme, dim } from './colors.js';
+import { theme, disabledColor } from './colors.js';
 
 export function makeSlider(label, x, y, min, max, defaultValue, onChange, disabled = false, unit = '') {
     return {
@@ -59,7 +59,7 @@ export function drawSlider(ctx, s, elapsed, FONT_SIZE) {
 
     const { cw, labelStr, trackLeft, labelLeft } = sliderLayout(s, FONT_SIZE);
     const chars = trackChars(s);
-    const color = s.disabled ? dim() : theme.fg;
+    const color = s.disabled ? disabledColor() : theme.fg;
 
     // Centered label/value via opentype
     ctx.globalAlpha = 1;
@@ -105,7 +105,7 @@ export function drawSliderLabel(ctx, s, n, FONT_SIZE) {
     if (shown > 0) {
         ctx.globalAlpha = 1;
         const path = otFont.getPath(labelStr.slice(0, shown), labelLeft, s.y, FONT_SIZE);
-        path.fill = s.disabled ? dim() : theme.fg;
+        path.fill = s.disabled ? disabledColor() : theme.fg;
         path.draw(ctx);
     }
 }
@@ -115,7 +115,7 @@ export function drawSliderTrack(ctx, s, n, FONT_SIZE) {
     if (!otFont || n <= 0) return;
     const { cw, trackLeft } = sliderLayout(s, FONT_SIZE);
     const chars = trackChars(s);
-    const color = s.disabled ? dim() : theme.fg;
+    const color = s.disabled ? disabledColor() : theme.fg;
     for (let i = 0; i < chars.length && i < n; i++)
         drawChar(ctx, chars[i], trackLeft + i * cw, s.y, Z_FLOAT_MIN, color, FONT_SIZE);
 

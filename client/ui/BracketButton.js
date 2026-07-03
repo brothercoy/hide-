@@ -3,7 +3,7 @@
 // CODE and CUSTOM in the lobby. These are registered as `{ plain: true }`
 // uiManager buttons (so they fire onClick immediately and get hoverProgress for
 // free) plus a `bracket: true` flag; the screen draws them with this function.
-import { theme, dim } from './colors.js';
+import { theme, disabledColor } from './colors.js';
 
 export const BRACKET_REST = 22;     // px gap from the label edge to each bracket at rest
 const BRACKET_STEP = 12;     // px the brackets flash inward
@@ -33,7 +33,7 @@ export function drawBracketButton(ctx, btn, elapsed, FONT_SIZE) {
     const cw = ctx.measureText('M').width;
     const labelW = ctx.measureText(btn.label).width;
     const cx = btn.x, cy = btn.y;
-    const color = btn.disabled ? dim() : theme.fg;
+    const color = btn.disabled ? disabledColor() : theme.fg;
 
     // Just after a toggle flips (either direction), suppress its hover animation
     // for a beat so it doesn't fire the instant you click — it just shows its
@@ -104,7 +104,7 @@ export function drawBracketButtonRow(ctx, btn, n, FONT_SIZE) {
     ctx.font = `${FONT_SIZE}px "IBMVGA"`;
     ctx.textBaseline = 'middle';
     ctx.globalAlpha = 1;
-    ctx.fillStyle = btn.disabled ? dim() : theme.fg;
+    ctx.fillStyle = btn.disabled ? disabledColor() : theme.fg;
     const cx = btn.x, cy = btn.y;
     ctx.textAlign = 'center';
     const cw = ctx.measureText('M').width;

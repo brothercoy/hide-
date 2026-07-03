@@ -1,6 +1,6 @@
 import { Room } from '@colyseus/core';
 import { GAME_MODES } from '../gameModes.js';
-import { COUNTDOWN_MS, LIFE_LOSS_INTRO_MS, LIFE_LOSS_ENTRY_MS } from '../timings.js';
+import { COUNTDOWN_MS, LIFE_LOSS_INTRO_MS, LIFE_LOSS_ENTRY_MS, LIFE_LOSS_WORD_MS, LIFE_LOSS_ELIM_MS } from '../timings.js';
 
 const LETTERS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789!@#$%^&*';
 const TICK_RATE = 50;
@@ -13,6 +13,14 @@ const DEFAULT_MODE = GAME_MODES.redacted;
 // client), plus a short hold on the final value.
 const ROUND_OVER_HOLD_MS = 1300; // cursor blinks on the last player for this long before advancing
 const MATCH_OVER_DISPLAY_MS = 3000;
+
+// Server-side tap validation (anti-cheat): the server — not the client — decides whether a tap
+// actually hit the target. Because the client renders the field slightly in the past (the
+// interpolation delay + its ping), we keep a short history of the TARGET's position and accept
+// a tap if it lands within the target's radius anywhere in that window. This stops the trivial
+// exploit of sending `tap` with no/false coordinates to auto-win.
+const TARGET_HISTORY = 8;    // ticks kept (~400ms at 50ms) — covers the render delay + ping
+const TAP_TOLERANCE = 0.1;   // normalized padding added to the glyph's own radius (forgiving)
 
 class GameRoom extends Room {
     onCreate() {
@@ -32,6 +40,9 @@ class GameRoom extends Room {
         this.activePlayers = {};
         this.taps = [];
         this.charRadii = {}; // char -> { rx, ry } normalized collision radii (sent by clients)
+        this.targetObj = null;   // reference to the current target char, for tap validation
+        this.targetHistIdx = 0;
+        this.targetHistory = Array.from({ length: TARGET_HISTORY }, () => ({ x: 0, y: 0, t: -1 }));
         this.chars = this.generateChars();
         this.lastTick = Date.now();
         this.timeUpHandled = false;
@@ -53,12 +64,13 @@ class GameRoom extends Room {
             if (data) this.charRadii = data;
         });
 
-        this.onMessage('tap', (client) => {
+        this.onMessage('tap', (client, data) => {
             if (this.inCountdown) return;
             if (!this.roundActive) return;
             const player = this.activePlayers[client.sessionId];
             if (!player || !player.alive) return;
             if (this.taps.find(t => t.id === client.sessionId)) return;
+            if (!this._tapHitsTarget(data)) return;   // server decides the hit — the client isn't trusted
 
             this.taps.push({ id: client.sessionId, time: Date.now() });
             this.broadcastPlayerList();
@@ -88,7 +100,8 @@ class GameRoom extends Room {
 
                 this.currentRoundOverMessage = roundOverMsg;
                 this.broadcast('roundOver', roundOverMsg);
-                this.startNextRound(1);
+                this.startNextRound(1, roundOverMsg.lostLife && roundOverMsg.livesRemaining === 1 ? 1 : 0,
+                    roundOverMsg.lostLife ? 0 : 1);
             }
         });
 
@@ -125,7 +138,7 @@ class GameRoom extends Room {
 
         this.onMessage('clientReady', (client) => {
             client.send('gameState', {
-                chars: this.chars,
+                chars: this.charInit(),
                 targetChar: this.targetChar,
                 timeLeft: this.timeLeft,
                 round: this.currentRound,
@@ -204,7 +217,8 @@ class GameRoom extends Room {
                             };
                             this.currentRoundOverMessage = msg;
                             this.broadcast('roundOver', msg);
-                            this.startNextRound(1);
+                            this.startNextRound(1, msg.lostLife && msg.livesRemaining === 1 ? 1 : 0,
+                                msg.lostLife ? 0 : 1);
                         }
                     }
                 }
@@ -266,18 +280,31 @@ class GameRoom extends Room {
             this.lastTick = now;
 
             this.updateChars(delta);
+            // Record the target's position for lag-compensated tap validation.
+            if (this.targetObj) {
+                const h = this.targetHistory[this.targetHistIdx];
+                h.x = this.targetObj.x; h.y = this.targetObj.y; h.t = now;
+                this.targetHistIdx = (this.targetHistIdx + 1) % TARGET_HISTORY;
+            }
             this.timeLeft -= delta;
 
+            let timeUp = false;
             if (this.timeLeft <= 0 && !this.timeUpHandled) {
                 this.timeLeft = 0;
                 this.timeUpHandled = true;
-                this.handleTimeUp();
+                timeUp = true;
             }
 
+            // Broadcast this tick (timeLeft = 0 on the final one) BEFORE handling time-up:
+            // handleTimeUp() → startNextRound() resets this.timeLeft to the full round time,
+            // so broadcasting after it would send the full time and the client clock would
+            // snap from 00:00 back up to the full duration.
             this.broadcast('charUpdate', {
-                chars: this.chars,
+                pos: this.charPositions(),
                 timeLeft: this.timeLeft
             });
+
+            if (timeUp) this.handleTimeUp();
         }, TICK_RATE);
     }
 
@@ -317,7 +344,7 @@ class GameRoom extends Room {
         }
         if (this.gameStarted) {
             client.send('reconnected', {
-                chars: this.inCountdown ? [] : this.chars,
+                chars: this.inCountdown ? [] : this.charInit(),
                 targetChar: this.inCountdown ? null : this.targetChar,
                 timeLeft: this.timeLeft,
                 round: this.currentRound,
@@ -337,7 +364,7 @@ class GameRoom extends Room {
                     targetChar: this.targetChar,
                     round: this.currentRound,
                     match: this.currentMatch,
-                    chars: this.chars,
+                    chars: this.charInit(),
                     elapsedSeconds: elapsed
                 });
             } else if (this.currentRoundOverMessage && !this.roundActive) {
@@ -381,7 +408,9 @@ class GameRoom extends Room {
 
         this.currentRoundOverMessage = timeUpMsg;
         this.broadcast('timeUp', timeUpMsg);
-        this.startNextRound(eliminated.length + lostLife.length);
+        this.startNextRound(eliminated.length + lostLife.length,
+            lostLife.filter(p => p.livesRemaining === 1).length,
+            eliminated.length);
     }
 
     generateChars() {
@@ -397,9 +426,31 @@ class GameRoom extends Room {
         }
 
         const targetIndex = Math.floor(Math.random() * this.settings.charCount);
-        chars.splice(targetIndex, 0, this.createChar(this.targetChar, true));
+        const target = this.createChar(this.targetChar, true);
+        chars.splice(targetIndex, 0, target);
+
+        this.targetObj = target;                       // reference for server-side tap validation
+        for (const h of this.targetHistory) h.t = -1;  // clear last round's positions
 
         return chars;
+    }
+
+    // True if the tap (normalized coords from the client) lands on the target at any point in
+    // its recent history — server-authoritative, so a client can't just claim a hit. The
+    // history window absorbs the client's render delay + ping without needing to know either.
+    _tapHitsTarget(data) {
+        const tgt = this.targetObj;
+        if (!tgt || !data || typeof data.nx !== 'number' || typeof data.ny !== 'number') return false;
+        const rad = Math.max(tgt.rx, tgt.ry) + TAP_TOLERANCE;
+        const r2 = rad * rad;
+        let dx = data.nx - tgt.x, dy = data.ny - tgt.y;   // newest (live) position
+        if (dx * dx + dy * dy <= r2) return true;
+        for (const h of this.targetHistory) {             // ...and the recorded past window
+            if (h.t < 0) continue;
+            dx = data.nx - h.x; dy = data.ny - h.y;
+            if (dx * dx + dy * dy <= r2) return true;
+        }
+        return false;
     }
 
     createChar(char, isTarget) {
@@ -420,6 +471,24 @@ class GameRoom extends Room {
             rotation: Math.random() * Math.PI * 2,
             rotationSpeed: Math.random() < 0.05 ? 0 : (Math.random() - 0.5) * 2
         };
+    }
+
+    // Only char + isTarget are static per round; positions move every tick. Round-start
+    // messages carry these (with the initial positions) via charInit(); the per-tick
+    // charUpdate carries only the moving numbers via charPositions().
+    charInit() {
+        return this.chars.map(c => ({ char: c.char, isTarget: c.isTarget, x: c.x, y: c.y, rotation: c.rotation }));
+    }
+    // Flat [x, y, rotation, ...] — ~70% smaller than the full objects, and ONE array to
+    // (de)serialize each tick instead of ~150 objects (much less GC on both ends).
+    charPositions() {
+        const n = this.chars.length;
+        const p = new Array(n * 3);
+        for (let i = 0; i < n; i++) {
+            const c = this.chars[i];
+            p[i * 3] = c.x; p[i * 3 + 1] = c.y; p[i * 3 + 2] = c.rotation;
+        }
+        return p;
     }
 
     updateChars(delta) {
@@ -451,7 +520,7 @@ class GameRoom extends Room {
             targetChar: this.targetChar,
             round: this.currentRound,
             match: this.currentMatch,
-            chars: this.chars,
+            chars: this.charInit(),
             countdownMs: COUNTDOWN_MS
         });
 
@@ -464,20 +533,23 @@ class GameRoom extends Room {
                 targetChar: this.targetChar,
                 round: this.currentRound,
                 match: this.currentMatch,
-                chars: this.chars,
+                chars: this.charInit(),
                 timeLeft: this.timeLeft
             });
         }, COUNTDOWN_MS);
     }
 
-    // lossCount = how many players lost a life this round; the next round waits
-    // for that many client animations to finish before counting down.
-    startNextRound(lossCount = 1) {
+    // lossCount = how many players lost a life this round; the next round waits for that
+    // many client animations to finish before counting down. Morphing entries run longer:
+    // toOneCount (dropped to exactly one life → "Lives → Life", +WORD_MS each) and elimCount
+    // (dropped to zero → consume + "DELETED", +ELIM_MS each).
+    startNextRound(lossCount = 1, toOneCount = 0, elimCount = 0) {
         this.timeUpHandled = false;
         this.roundActive = false;
         this.taps = [];
         const alivePlayers = this.getAlivePlayers();
-        const animMs = LIFE_LOSS_INTRO_MS + Math.max(1, lossCount) * LIFE_LOSS_ENTRY_MS + ROUND_OVER_HOLD_MS;
+        const animMs = LIFE_LOSS_INTRO_MS + Math.max(1, lossCount) * LIFE_LOSS_ENTRY_MS
+            + toOneCount * LIFE_LOSS_WORD_MS + elimCount * LIFE_LOSS_ELIM_MS + ROUND_OVER_HOLD_MS;
 
         if (alivePlayers.length <= 1) {
             const matchWinnerId = alivePlayers[0] || null;

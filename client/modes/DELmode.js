@@ -1,5 +1,19 @@
 import { LifeLossCallout } from './LifeLossCallout.js';
 
+// Render characters INTERP_DELAY_MS behind the latest server snapshot, interpolating between
+// the two buffered snapshots that straddle that time. This ~2-tick buffer absorbs the JITTER
+// in charUpdate arrival (Node's 50ms tick + network are never perfectly even) that otherwise
+// made the letters freeze-then-jump: the old code interpolated toward the LATEST snapshot over
+// a fixed 50ms and stalled whenever an update landed early or late.
+const INTERP_DELAY_MS = 100;
+
+// Flat [x, y, rotation, ...] from a round-start char list (mirrors the server's charPositions).
+function posFromChars(chars) {
+    const p = new Array(chars.length * 3);
+    for (let i = 0; i < chars.length; i++) { const c = chars[i]; p[i * 3] = c.x; p[i * 3 + 1] = c.y; p[i * 3 + 2] = c.rotation; }
+    return p;
+}
+
 export class DELMode {
     constructor(canvas, ctx, uiManager, room, callbacks) {
         this.canvas = canvas;
@@ -11,6 +25,8 @@ export class DELMode {
         this.targetChar = null;
         this.chars = [];
         this.prevChars = [];
+        this.snapshots = [];       // [{ chars, time }] — recent server snapshots for interpolation
+        this._lastInterp = null;   // last {a,b,t} computed in draw(), reused by hitTest so taps match the render
         this.lastUpdateTime = null;
         this.currentRound = 1;
         this.currentMatch = 1;
@@ -40,12 +56,40 @@ export class DELMode {
         };
     }
 
+    // Snapshots hold the flat [x, y, rotation, ...] position array from each charUpdate. The
+    // static char/isTarget list lives in this.chars (set at round start). a/b are those flat
+    // arrays; the render reads positions by index and the glyph from this.chars[i].
+    _pushSnapshot(pos) {
+        this.snapshots.push({ pos, time: performance.now() });
+        if (this.snapshots.length > 6) this.snapshots.shift();  // small ring buffer
+    }
+    _resetSnapshots(chars) {
+        this.snapshots = [{ pos: posFromChars(chars), time: performance.now() }];  // seed from round-start positions
+    }
+    // The two snapshots straddling (now - INTERP_DELAY_MS) and the blend factor between them.
+    _interp() {
+        const buf = this.snapshots;
+        if (buf.length === 0) return { a: [], b: [], t: 0 };
+        if (buf.length === 1) return { a: buf[0].pos, b: buf[0].pos, t: 0 };
+        const rt = performance.now() - INTERP_DELAY_MS;
+        if (rt <= buf[0].time) return { a: buf[0].pos, b: buf[0].pos, t: 0 };
+        const last = buf[buf.length - 1];
+        if (rt >= last.time) return { a: buf[buf.length - 2].pos, b: last.pos, t: 1 }; // buffer ran dry — hold newest
+        for (let i = 0; i < buf.length - 1; i++) {
+            if (rt >= buf[i].time && rt < buf[i + 1].time) {
+                const span = buf[i + 1].time - buf[i].time || 1;
+                return { a: buf[i].pos, b: buf[i + 1].pos, t: (rt - buf[i].time) / span };
+            }
+        }
+        return { a: last.pos, b: last.pos, t: 0 };
+    }
+
     onMessage(type, data) {
         switch (type) {
             case 'roundCountdown':
                 this.targetChar = data.targetChar;
                 this.chars = data.chars;
-                this.prevChars = data.chars.map(c => ({ ...c }));
+                this._resetSnapshots(data.chars);
                 this.currentRound = data.round;
                 this.currentMatch = data.match;
                 this.countdownActive = true;
@@ -64,7 +108,7 @@ export class DELMode {
             case 'roundStart':
                 this.targetChar = data.targetChar;
                 this.chars = data.chars;
-                this.prevChars = data.chars.map(c => ({ ...c }));
+                this._resetSnapshots(data.chars);
                 this.currentRound = data.round;
                 this.currentMatch = data.match;
                 this.timeLeft = data.timeLeft;
@@ -74,7 +118,7 @@ export class DELMode {
 
             case 'gameState':
                 this.chars = data.chars;
-                this.prevChars = data.chars.map(c => ({ ...c }));
+                this._resetSnapshots(data.chars);
                 this.targetChar = data.targetChar;
                 this.timeLeft = data.timeLeft;
                 this.currentRound = data.round;
@@ -83,9 +127,9 @@ export class DELMode {
                 break;
 
             case 'charUpdate':
-                this.prevChars = this.chars.map(c => ({ ...c }));
-                this.chars = data.chars;
+                // Only positions this tick (flat array); the static char list stays put.
                 this.timeLeft = data.timeLeft;
+                this._pushSnapshot(data.pos);
                 this.lastUpdateTime = Date.now();
                 break;
 
@@ -133,7 +177,7 @@ export class DELMode {
             case 'reconnected':
                 if (!this.countdownActive) {
                     this.chars = data.chars;
-                    this.prevChars = data.chars.map(c => ({ ...c }));
+                    this._resetSnapshots(data.chars);
                     this.targetChar = data.targetChar;
                 }
                 this.timeLeft = data.timeLeft;
@@ -151,9 +195,13 @@ export class DELMode {
 
     draw(gameScreen) {
         this.lifeCallout.update(Date.now());
+        const { a, b, t } = this._interp();
+        this._lastInterp = { a, b, t };   // reuse for hitTest so a tap matches what's on screen
         gameScreen.draw({
-            chars: this.chars,
-            prevChars: this.prevChars,
+            chars: this.chars,   // static char/isTarget list
+            posA: a,
+            posB: b,
+            charT: t,
             targetChar: this.targetChar,
             playerList: this.playerList,
             timeLeft: this.timeLeft,
@@ -174,12 +222,17 @@ export class DELMode {
     }
 
     hitTest(gameScreen, clickX, clickY) {
-        return gameScreen.hitTest(clickX, clickY, this.chars, this.countdownActive);
+        // Hit-test against the SAME interpolated positions the player sees, not the latest
+        // server ones (which are INTERP_DELAY_MS ahead) — tap where you see it.
+        const { a, b, t } = this._lastInterp || this._interp();
+        return gameScreen.hitTest(clickX, clickY, this.chars, a, b, t, this.countdownActive);
     }
 
     reset() {
         this.chars = [];
         this.prevChars = [];
+        this.snapshots = [];
+        this._lastInterp = null;
         this.targetChar = null;
         this.winnerId = null;
         this.eliminatedName = null;
