@@ -391,6 +391,75 @@ function update(now) {
     });
 }
 
+// ── Rotate-device prompt preview ───────────────────────────────────────────────
+// The loop is drawn glyph-by-glyph, each centered by its ACTUAL INK (not its cell) so a '.'
+// and a "'" land exactly where you place them. Each entry is [char, x, y] as an offset from
+// the icon centre, in fractions of size S: x = left(-)/right(+), y = up(-)/down(+). Because
+// it's ink-centered, symmetric x-values (e.g. ±0.40) are truly equidistant, and same-y values
+// sit level. Nudge any single glyph without touching the rest.
+const ROTATE_PARTS = [
+    ['.', -0.40, -0.42],   // top-left
+    ['-',  0.00, -0.55],   // top
+    ['.',  0.40, -0.42],   // top-right
+    ['(', -0.66,  0.00],   // left side
+    [')',  0.66,  0.00],   // right side
+    ['<', -0.35,  0.66],   // bottom-left  (arrow)
+    ['-',  0.00,  0.66],   // bottom
+    ["'",  0.40,  0.48],   // bottom-right
+];
+
+// Measure a glyph's ink-CENTER offset from its fillText origin (textBaseline 'top') so we can
+// place the ink — not the cell — exactly. We only MEASURE offscreen; we RENDER with the main
+// canvas' fillText so the font is always correct. Cache the offset only once IBMVGA is loaded,
+// so an early fallback measurement doesn't get stuck.
+const _inkOffsetCache = {};
+function inkOffset(ch, fs) {
+    const key = ch + '|' + fs;
+    if (_inkOffsetCache[key]) return _inkOffsetCache[key];
+    const pad = Math.ceil(fs), w = pad * 3, h = pad * 3;
+    const cv = document.createElement('canvas');
+    cv.width = w; cv.height = h;
+    const g = cv.getContext('2d');
+    g.font = `${fs}px "IBMVGA"`;
+    g.textAlign = 'left'; g.textBaseline = 'top';
+    g.fillStyle = '#fff';
+    g.fillText(ch, pad, pad);
+    const d = g.getImageData(0, 0, w, h).data;
+    let x0 = w, y0 = h, x1 = -1, y1 = -1;
+    for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+        if (d[(y * w + x) * 4 + 3] > 20) { if (x < x0) x0 = x; if (x > x1) x1 = x; if (y < y0) y0 = y; if (y > y1) y1 = y; }
+    }
+    if (x1 < 0) { x0 = x1 = pad; y0 = y1 = pad; }   // blank glyph
+    const res = { cx: (x0 + x1) / 2 - pad, cy: (y0 + y1) / 2 - pad };
+    if (document.fonts.check(`${fs}px "IBMVGA"`)) _inkOffsetCache[key] = res;   // cache only once the real font is loaded
+    return res;
+}
+
+function drawRotateIcon(cx, cy, S, color) {
+    ctx.font = `${S}px "IBMVGA"`;
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'top';
+    ctx.fillStyle = color || '#00ff41';
+    ctx.globalAlpha = 1;
+    for (const [ch, x, y] of ROTATE_PARTS) {
+        const o = inkOffset(ch, S);
+        ctx.fillText(ch, cx + x * S - o.cx, cy + y * S - o.cy);   // place ink center at (x,y)
+    }
+}
+
+function drawRotatePreview() {
+    const cx = canvas.width / 2, cy = canvas.height / 2;
+    const S = 150;   // icon size
+    drawRotateIcon(cx, cy - 40, S, '#00ff41');
+
+    ctx.font = `64px "IBMVGA"`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'top';
+    ctx.fillStyle = '#00ff41';
+    ctx.globalAlpha = 1;
+    ctx.fillText('ROTATE DEVICE', cx, cy - 40 + S * 1.15);
+}
+
 // ── Loop ──────────────────────────────────────────────────────────────────────
 function loop() {
     const now = performance.now();
@@ -399,9 +468,11 @@ function loop() {
     ctx.fillStyle = 'black';
     ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-    inputs.forEach(inp => drawInput(inp));
-    buttons.forEach(btn => drawButton(btn));
-    sliders.forEach(s => drawSlider(s));
+    // Rotate-prompt preview. Comment this out and restore the three lines below to test buttons.
+    drawRotatePreview();
+    // inputs.forEach(inp => drawInput(inp));
+    // buttons.forEach(btn => drawButton(btn));
+    // sliders.forEach(s => drawSlider(s));
 
     requestAnimationFrame(loop);
 }

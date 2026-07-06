@@ -14,6 +14,7 @@ import { setBaseHeight, setBandHeight, bandTop } from './ui/viewport.js';
 import { CRTEffect } from './CRTShader.js';
 import { Transition } from './ui/Transition.js';
 import { DELMode } from './modes/DELmode.js';
+import { drawRotateGate } from './ui/RotateGate.js';
 
 const colyseusClient = new Client(
     window.location.hostname === 'localhost'
@@ -21,7 +22,14 @@ const colyseusClient = new Client(
         : 'wss://' + window.location.hostname
 );
 
-const isMobile = navigator.maxTouchPoints > 0;
+// Larger font + tap tolerance on SMALL screens, purely for readability — decided by SCREEN
+// SIZE, not touch. (Touch is unreliable: touchpads/drivers make non-touch desktops report
+// touch, which is why a plain desktop was getting the mobile treatment.) This ONLY affects the
+// font/tolerance — the LAYOUT is the desktop model on every device, so any normal-sized
+// desktop or laptop looks identical everywhere. Judged on the screen's shorter side (stable,
+// unlike the resizable window); tune the cutoff if a size feels wrong.
+const SMALL_SCREEN_MAX = 800;   // shorter screen side (CSS px) below this → bigger font
+const isMobile = Math.min(window.screen.width, window.screen.height) < SMALL_SCREEN_MAX;
 const FONT_SIZE = isMobile ? 36 : 32;
 
 let selectedMode = null;
@@ -43,15 +51,26 @@ let pendingLobbyEntry = false; // waiting for the room's initial state before ty
 const canvas = document.getElementById('gameCanvas');
 const ctx = canvas.getContext('2d', { alpha: false });
 
-// Logical resolution. Width is ALWAYS 1920 and shown 1:1 (a narrower window crops the
-// sides). Height: the canvas GROWS to fill the window (up to 1080) but never shrinks below
-// the maximized height — a smaller window just crops. So fullscreen fills the screen with the
-// shader as usual, while the game's edge elements stay inside a centered "band" the size of
-// the maximized viewport (see setBandHeight / bandTop): the top/bottom fullscreen margins are
-// just shaded background, and leaving fullscreen crops them away with everything still
-// visible. Mobile keeps 1080 scaled-to-fit.
+// Logical resolution. Width is ALWAYS 1920. Height: the canvas GROWS to fill the window (up to
+// 1080) but never shrinks below the maximized height — a smaller window just crops. So fullscreen
+// fills the screen with the shader as usual, while the game's edge elements stay inside a centered
+// "band" the size of the maximized viewport (see setBandHeight / bandTop): the top/bottom
+// fullscreen margins are just shaded background, and leaving fullscreen crops them away with
+// everything still visible.
+//
+// MOBILE uses this EXACT model — the ONLY difference is displayScale: the whole 1920-wide canvas
+// is shrunk ONCE to fit the phone (so fullscreen shows the entire scene, not a 1920-wide crop),
+// then it crops on shrink just like desktop. Desktop scale is 1 (shown 1:1) and a narrower window
+// crops the sides; mobile's scale fits 1920×1080 into the device screen, so the full width always
+// shows and only the height band crops.
 const LOGICAL_W = 1920;
-let LOGICAL_H = isMobile ? 1080 : Math.min(window.innerHeight || 1080, 1080);
+// One-time shrink-to-fit for small screens; 1 (native) on desktop. Based on the physical screen
+// (stable), so the address bar showing/hiding only crops — it never rescales the world.
+const displayScale = isMobile
+    ? Math.min(Math.max(window.screen.width, window.screen.height) / LOGICAL_W,
+               Math.min(window.screen.width, window.screen.height) / 1080)
+    : 1;
+let LOGICAL_H = Math.min((window.innerHeight || 1080) / displayScale, 1080);
 // The layout's reference height: gaps scale relative to this, so the load-time
 // layout is untouched and only a later resize (fullscreen) redistributes.
 setBaseHeight(LOGICAL_H);
@@ -76,25 +95,17 @@ function applyDisplayRect(left, top, w, h) {
     }
 }
 
-// Position the canvas and CRT overlay in the window.
+// Position the canvas and CRT overlay in the window: shown at displayScale, centered. A viewport
+// smaller than the scaled canvas crops the overflow (body is overflow:hidden); larger just adds
+// shaded margin. Desktop scale is 1 (native 1920×LOGICAL_H); mobile is the shrink-to-fit factor.
 function layoutDisplay() {
-    const winW = window.innerWidth, winH = window.innerHeight;
-    if (isMobile) {
-        // Mobile can't resize its viewport, so scale-to-fit (contain) so the whole
-        // scene is visible — cropping a phone down to a 1920×1080 slice is unplayable.
-        const aspect = LOGICAL_W / LOGICAL_H;
-        let w, h;
-        if (winW / winH > aspect) { h = winH; w = Math.round(h * aspect); }
-        else { w = winW; h = Math.round(w / aspect); }
-        applyDisplayRect(Math.round((winW - w) / 2), Math.round((winH - h) / 2), w, h);
-        return;
-    }
-    // Desktop: fixed 1:1 size, centered; the window crops any overflow (body is
-    // overflow:hidden). left/top go negative when the window is smaller than 16:9.
+    const cssW = LOGICAL_W * displayScale;
+    const cssH = LOGICAL_H * displayScale;
     applyDisplayRect(
-        Math.round((winW - LOGICAL_W) / 2),
-        Math.round((winH - LOGICAL_H) / 2),
-        LOGICAL_W, LOGICAL_H
+        Math.round((window.innerWidth  - cssW) / 2),
+        Math.round((window.innerHeight - cssH) / 2),
+        Math.round(cssW),
+        Math.round(cssH)
     );
 }
 
@@ -105,14 +116,16 @@ resizeCanvas();
 // grows only up to the maximized height (smaller crops). Debounced.
 let _refitTimer = null;
 window.addEventListener('resize', () => {
+    if (isPortraitGate()) { layoutGate(); return; }   // portrait mobile shows the rotate gate, not the game
     layoutDisplay();
     clearTimeout(_refitTimer);
     _refitTimer = setTimeout(refitToWindow, 150);
 });
 
 function refitToWindow() {
-    if (isMobile) return; // mobile is fixed 1080, scaled-to-fit
-    const winH = Math.min(window.innerHeight || 1080, 1080);
+    // Viewport height in LOGICAL units (÷ displayScale, so mobile and desktop share this logic),
+    // capped at the design height.
+    const winH = Math.min((window.innerHeight || 1080) / displayScale, 1080);
     let h;
     if (document.fullscreenElement) {
         h = winH;                                  // fullscreen: canvas fills the screen (shader + all)
@@ -127,6 +140,58 @@ function refitToWindow() {
     layoutDisplay();
     relayoutCurrentScreen();
 }
+
+// ── Portrait rotate-gate (mobile) ───────────────────────────────────────────────
+// The game is landscape-only. On a small screen held in PORTRAIT we hide the game and show the
+// "ROTATE DEVICE" prompt; landscape plays as normal. While gated, the canvas swaps to a fixed
+// portrait resolution so the prompt fills the phone (the CRT re-sizes to match on next render).
+const GATE_W = 1080, GATE_H = 1920;
+let gateActive = false;
+let _gatePrevBlocked = false;
+
+function isPortraitGate() {
+    return isMobile && window.innerHeight > window.innerWidth;
+}
+
+// Contain-fit the portrait gate canvas in the viewport (no stretch → no distortion).
+function layoutGate() {
+    const vw = window.innerWidth, vh = window.innerHeight;
+    const aspect = GATE_W / GATE_H;
+    let w, h;
+    if (vw / vh > aspect) { h = vh; w = Math.round(h * aspect); }
+    else { w = vw; h = Math.round(w / aspect); }
+    applyDisplayRect(Math.round((vw - w) / 2), Math.round((vh - h) / 2), w, h);
+}
+
+function enterGate() {
+    if (!gateActive) {              // save/suppress input only on the first entry…
+        gateActive = true;
+        _gatePrevBlocked = uiManager.blocked;
+        uiManager.blocked = true;   // suppress UIManager input while the game is hidden
+    }
+    canvas.width = GATE_W;          // …but always (re)assert the portrait canvas, in case a
+    canvas.height = GATE_H;         // gameStarted/reconnected resize changed it out from under us
+    layoutGate();
+}
+
+function exitGate() {
+    gateActive = false;
+    uiManager.blocked = _gatePrevBlocked;
+    uiManager.lastTime = performance.now();   // don't fold the gated time into the next update dt
+    resizeCanvas();      // back to the landscape game resolution
+    layoutDisplay();
+    relayoutCurrentScreen();
+}
+
+// Best-effort: ask the browser to lock landscape. Only works fullscreen on some Android browsers
+// (iOS/desktop reject it), so failures are ignored — the visual gate is the real fallback.
+function tryLockLandscape() {
+    try {
+        const p = screen.orientation && screen.orientation.lock && screen.orientation.lock('landscape');
+        if (p && p.catch) p.catch(() => {});
+    } catch (_) { /* unsupported */ }
+}
+if (isMobile) tryLockLandscape();
 
 // Reposition the current screen's layout for the new canvas height. Screens expose
 // relayout() to move their center-relative elements IN PLACE — no re-enter, so input
@@ -1026,6 +1091,7 @@ function hudEventPos(e) {
 }
 
 canvas.addEventListener('mousedown', (e) => {
+    if (gateActive) return;   // portrait rotate gate — ignore input
     if (transition.isActive() || modalMessage || hudIntroPending) return;
     const { x, y } = hudEventPos(e);
     hudOnMouseDown(x, y);
@@ -1046,12 +1112,14 @@ canvas.addEventListener('mousedown', (e) => {
 });
 
 canvas.addEventListener('mouseup', (e) => {
+    if (gateActive) return;   // portrait rotate gate — ignore input
     const { x, y } = hudEventPos(e);
     hudOnMouseUp(x, y);
     gameScreen.releaseTarget();   // end the target press → glow (no-op if not held)
 });
 
 canvas.addEventListener('click', (e) => {
+    if (gateActive) return;   // portrait rotate gate — ignore input
     if (transition.isActive()) return; // ignore clicks mid-transition
 
     const rect = canvas.getBoundingClientRect();
@@ -1104,7 +1172,13 @@ canvas.addEventListener('click', (e) => {
 requestAnimationFrame(loop);
 
 function loop() {
-    draw();
+    if (isPortraitGate()) {
+        if (!gateActive || canvas.width !== GATE_W) enterGate();
+        drawRotateGate(ctx, canvas.width, canvas.height);
+    } else {
+        if (gateActive) exitGate();
+        draw();
+    }
     crt.render(performance.now() / 1000);
     requestAnimationFrame(loop);
 }
