@@ -536,8 +536,11 @@ export class GameScreen {
                 this._glitchGlyphs[i] = chars[(Math.random() * nChars) | 0].char;  // a letter already on screen
             }
         }
-        // Dim the whole field while a round is over so the life-loss list reads over it.
-        const overlayDim = showRoundOver || showMatchOver || winnerId;
+        // A round/match over dims the field so the life-loss list reads over it. Game over
+        // instead uses a full-screen scrim (drawn in game.js), so DON'T pre-dim the characters
+        // there — let that scrim dim the whole screen uniformly.
+        const roundOverlay = showRoundOver || showMatchOver;
+        const overlayDim = roundOverlay || winnerId;   // any overlay suppresses tap interaction
         // Target tap press/glow — live play only (not during a glitch or an overlay).
         const tap = (!overlayDim && !glitching) ? this._targetState(now) : null;
         for (let i = 0; i < nChars; i++) {
@@ -551,7 +554,7 @@ export class GameScreen {
             const tgt = tap && chars[i].isTarget;
             const cos = Math.cos(rot), sin = Math.sin(rot);
             ctx.setTransform(cos, sin, -sin, cos, px, py);
-            ctx.globalAlpha = overlayDim ? ROUND_OVER_CHAR_DIM : (tgt ? tap.alpha : 1);
+            ctx.globalAlpha = roundOverlay ? ROUND_OVER_CHAR_DIM : (tgt ? tap.alpha : 1);
             const g = this._getGlyph(ch);
             ctx.drawImage(g.canvas, -g.w / 2, -g.h / 2);
             if (tgt && tap.glow > 0) {                       // glow-colour overlay on the tapped target
@@ -641,15 +644,9 @@ export class GameScreen {
 
         // overlays
         if (winnerId) {
-            // Winner — big (frame font), centered on the box and sat HIGH in it so it
-            // clears the game-over buttons below (which are also box-centered, in game.js).
-            const winnerText = 'Winner: ' + winnerId + '!';
-            const wy = cy - 100;
-            ctx.font = `${this.FRAME_SIZE}px "IBMVGA"`;
-            ctx.textAlign = 'center';
-            ctx.textBaseline = 'middle';
-            ctx.fillStyle = theme.fg;
-            ctx.fillText(winnerText, cx, wy);
+            // Game over is drawn as a full-screen modal in game.js (a scrim + the winner and vote
+            // buttons centered on the whole screen), so nothing is drawn here — this branch only
+            // suppresses the match/round overlays below during game over.
         } else if (showMatchOver && matchOverData) {
             ctx.fillStyle = theme.fg;
             ctx.font = '32px "IBMVGA"';

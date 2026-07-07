@@ -6,7 +6,7 @@ import { PlayScreen } from './screens/PlayScreen.js';
 import { SettingsScreen } from './screens/SettingsScreen.js';
 import { LobbyScreen } from './screens/LobbyScreen.js';
 import { GameScreen } from './screens/GameScreen.js';
-import { makeButton, drawButton, zToAlpha } from './ui/Button.js';
+import { makeButton, drawButton, drawButtonPartial, buttonCharCount, zToAlpha } from './ui/Button.js';
 import { makeBracketButton, drawBracketButton } from './ui/BracketButton.js';
 import { theme, bgAlpha, glow } from './ui/colors.js';
 import { initFont } from './ui/Font.js';
@@ -69,10 +69,13 @@ const LOGICAL_W = 1920;
 // surrounded by black; a phone shrinks the whole scene to fit). A smaller window then just crops.
 // Based on screen.width/height (stable — chrome/address-bar changes only crop, never rescale) and
 // orientation-independent: fit the long side to 1920 and the short side to 1080, take the tighter.
-const displayScale = Math.min(
-    Math.max(window.screen.width, window.screen.height) / LOGICAL_W,
-    Math.min(window.screen.width, window.screen.height) / 1080
-);
+function computeDisplayScale() {
+    // Guard against browsers that report screen metrics as 0 before the page fully settles.
+    const sw = window.screen.width || window.innerWidth || 1920;
+    const sh = window.screen.height || window.innerHeight || 1080;
+    return Math.min(Math.max(sw, sh) / LOGICAL_W, Math.min(sw, sh) / 1080) || 1;
+}
+let displayScale = computeDisplayScale();
 // FIXED design height. The canvas — and therefore the CRT shader — is ALWAYS 1920×1080, so the
 // shader/curve/vignette never change with the window. The window simply crops this fixed view.
 const LOGICAL_H = 1080;
@@ -203,6 +206,20 @@ function relayoutCurrentScreen() {
     if (transition.isActive()) return; // mid-transition; positions are being animated
     const s = screens[currentScreen];
     if (s && typeof s.relayout === 'function') s.relayout();
+}
+
+// Recompute the physical-screen scale and re-run layout in place. Some browsers (e.g. DuckDuckGo)
+// report screen metrics / finish font loading only AFTER the module first runs, leaving the game
+// mis-scaled or in a fallback font until a manual refresh. Calling this once everything's settled
+// (fonts truly ready + window load) corrects it — and since it runs before the first screen is
+// shown, that screen lays out correctly from the start.
+function refreshLayout() {
+    displayScale = computeDisplayScale();
+    maximizedH = Math.min((window.innerHeight || 1080) / displayScale, 1080);
+    setBandHeight(maximizedH);
+    resizeCanvas();
+    layoutDisplay();
+    relayoutCurrentScreen();
 }
 
 const uiManager = new UIManager(canvas, ctx, isMobile);
@@ -382,8 +399,12 @@ window.addEventListener('load', () => {
     const cssFont = (document.fonts && document.fonts.load)
         ? document.fonts.load(`${FONT_SIZE}px "IBMVGA"`).catch(() => {})
         : Promise.resolve();
-    Promise.all([initFont(FONT_SIZE), cssFont]).then(() => {
+    // document.fonts.ready is the authoritative "all fonts truly loaded" signal — some browsers
+    // (DuckDuckGo) resolve fonts.load() before the glyphs actually paint, so gate on this too.
+    const fontsReady = (document.fonts && document.fonts.ready) ? document.fonts.ready.catch(() => {}) : Promise.resolve();
+    Promise.all([initFont(FONT_SIZE), cssFont, fontsReady]).then(() => {
         fontReady = true;
+        refreshLayout();   // correct any early screen-metric misread now that everything's settled
         tryReconnect();
     }).catch(err => {
         console.error('Font load failed:', err);
@@ -439,6 +460,17 @@ function maybeEnterLobby() {
 
 let gameOverBtns = { playAgain: null, returnToLobby: null, mainMenu: null };
 let gameCopyBtn = null;
+const GAME_OVER_SCRIM = 0.72;   // opacity of the black dim behind the end-of-game modal (0..1)
+
+// Scripted game-over reveal timeline (ms from when the overlay appears).
+let gameOverStart = 0;
+const GO_SCRIM_MS   = 1000;  // scrim interpolates 0 → GAME_OVER_SCRIM over this; "Winner:" shows meanwhile
+const GO_PAUSE1_MS  = 500;   // pause (cursor blinking after "Winner:") before the name types
+const GO_NAME_MS    = 75;    // per-character type speed for the winner's name (and the '!')
+const GO_PAUSE2_MS  = 750;   // pause (cursor at the end) after the name before the buttons type
+const GO_BTN_MS     = 380;   // type-in duration per button
+const GO_BTN_GAP_MS = 120;   // gap between consecutive buttons starting to type
+const GO_CURSOR_MS  = 500;   // cursor blink half-period
 
 // Register the in-game COPY CODE button (top-left, under the room code). Called at each
 // game entry, after uiManager.clear(). The room code text itself is drawn by GameScreen.
@@ -459,15 +491,69 @@ function copyGameCode() {
     }).catch(() => {});
 }
 
-// Position the game-over buttons relative to the game box (centered on its X, stacked
-// below its vertical center). Called every frame while the overlay is up so they move
-// WITH the box on a window/fullscreen change instead of staying where they were created.
+// Position the game-over buttons for the full-screen end-of-game modal: centered on the whole
+// SCREEN (not the game box) and stacked below screen center. Called every frame while the overlay
+// is up so they stay centered on a window/fullscreen change.
 function layoutGameOverButtons() {
-    const cx = gameScreen.boxCenterX;   // box X is fixed; box Y is canvas.height/2
+    const cx = canvas.width / 2;        // whole-screen center, not the left-offset game box
     const cy = canvas.height / 2;
     if (gameOverBtns.playAgain) { gameOverBtns.playAgain.x = cx; gameOverBtns.playAgain.y = cy + 60; }
     if (gameOverBtns.returnToLobby) { gameOverBtns.returnToLobby.x = cx; gameOverBtns.returnToLobby.y = cy + 155; }
     if (gameOverBtns.mainMenu) { gameOverBtns.mainMenu.x = cx; gameOverBtns.mainMenu.y = cy + 250; }
+}
+
+// The scripted end-of-game reveal: the scrim fades in while "Winner:" shows with a blinking cursor,
+// a pause, the winner's name types in (then '!'), another pause, then the vote buttons type in one
+// by one — each interactive as it appears (drawButtonPartial keeps its hit-rect live every frame).
+function drawGameOverModal() {
+    const t = performance.now() - gameOverStart;
+
+    // Scrim: interpolate 0 → GAME_OVER_SCRIM over the first second instead of snapping on.
+    ctx.fillStyle = bgAlpha(Math.min(1, t / GO_SCRIM_MS) * GAME_OVER_SCRIM);
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+    const cx = canvas.width / 2, cy = canvas.height / 2, wy = cy - 100;
+    const prefix = 'Winner: ';
+    const typed = (winnerId || '') + '!';          // the part that types in after the prefix
+
+    const nameStart = GO_SCRIM_MS + GO_PAUSE1_MS;
+    const nameEnd = nameStart + typed.length * GO_NAME_MS;
+    const btnsStart = nameEnd + GO_PAUSE2_MS;
+
+    let revealed = typed.length;
+    if (t < nameStart) revealed = 0;
+    else if (t < nameEnd) revealed = Math.floor((t - nameStart) / GO_NAME_MS);
+    const shown = prefix + typed.slice(0, revealed);
+
+    // Winner line — CENTER-aligned on the revealed text, so the already-typed characters drift left
+    // as each new one centers in (the whole visible line stays centered on the screen).
+    ctx.font = `${gameScreen.FRAME_SIZE}px "IBMVGA"`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillStyle = theme.fg;
+    ctx.fillText(shown, cx, wy);
+
+    // Blinking block cursor just past the revealed text. It stays forever — a permanent part of the
+    // game-over screen. Only the TEXT is centered (not text+cursor) so the line doesn't jitter as
+    // the cursor blinks on and off.
+    if (Math.floor(t / GO_CURSOR_MS) % 2 === 0) {
+        const curX = cx + ctx.measureText(shown).width / 2 + 2;
+        const chH = gameScreen.FRAME_SIZE * 0.8;
+        ctx.fillRect(curX, wy - chH / 2, ctx.measureText('M').width * 0.85, chH);
+    }
+
+    // Vote buttons type in one after another; drawButtonPartial reflects live hover/press and sets
+    // the hit-rect, so they're fully interactive while (and after) they appear.
+    layoutGameOverButtons();
+    const btns = [gameOverBtns.playAgain, gameOverBtns.returnToLobby, gameOverBtns.mainMenu].filter(Boolean);
+    for (let i = 0; i < btns.length; i++) {
+        const start = btnsStart + i * (GO_BTN_MS + GO_BTN_GAP_MS);
+        if (t < start) continue;
+        const b = btns[i];
+        const p = Math.min(1, (t - start) / GO_BTN_MS);
+        if (p >= 1) drawButton(ctx, b, uiManager.elapsed, FONT_SIZE);
+        else drawButtonPartial(ctx, b, Math.ceil(p * buttonCharCount(b, FONT_SIZE)), uiManager.elapsed, FONT_SIZE);
+    }
 }
 
 // PLAY AGAIN needs at least two connected players, so disable it (dim + non-interactive)
@@ -480,6 +566,7 @@ function updatePlayAgainState() {
 
 function showGameOverOverlay(winner) {
     winnerId = winner;
+    gameOverStart = performance.now();   // kick off the scripted reveal
     uiManager.clear();
     // Same interaction/look as the lobby's REDACTED/FREQUENCY mode buttons: fire on
     // release, no glow pulse, '*' corners.
@@ -1034,14 +1121,9 @@ function drawScreenInto(name) {
             gameCopyBtn.y = gameScreen.copyBtnY;
             drawBracketButton(ctx, gameCopyBtn, uiManager.elapsed, FONT_SIZE);
         }
-        // Game-over voting buttons — relayout to the box each frame so they track it on a
-        // window/fullscreen change, then draw (normal style; skip the bracket button above).
-        if (winnerId) {
-            layoutGameOverButtons();
-            uiManager.buttons.forEach(btn => {
-                if (!btn.bracket) drawButton(ctx, btn, uiManager.elapsed, FONT_SIZE);
-            });
-        }
+        // Game-over: a full-screen modal that reveals as a scripted sequence (scrim fade → winner
+        // types in → buttons type in), sitting over the whole dimmed screen.
+        if (winnerId) drawGameOverModal();
     }
 }
 

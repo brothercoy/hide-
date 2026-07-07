@@ -194,7 +194,11 @@ export class CRTEffect {
                 float lightingMask = 1.0;
 
                 if (scanlineIntensity > 0.001) {
-                    float scanlineY = (uv.y + yOffset) * scanlineCount;
+                    // Scanlines arc OPPOSITE to the screen's barrel: reflect the curved y back
+                    // across the flat vUv.y so the lines bow the other way, while the image warp
+                    // and black corners stay as they are. Use (uv.y) instead of (2.0*vUv.y - uv.y)
+                    // to make them follow the screen curve again.
+                    float scanlineY = (2.0 * vUv.y - uv.y + yOffset) * scanlineCount;
                     float scanlinePattern = abs(sin(scanlineY * PI));
 
                     float adaptiveFactor = 1.0;

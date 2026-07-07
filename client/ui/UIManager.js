@@ -39,6 +39,7 @@ export class UIManager {
         this.canvas.addEventListener('mouseup', e => this._onMouseUp(e));
         this.canvas.addEventListener('dblclick', e => this._onDoubleClick(e));
         window.addEventListener('keydown', e => this._onKeyDown(e));
+        window.addEventListener('paste', e => this._onPaste(e));
         // Touch: mobile browsers only EMULATE mouse events for taps, never for drags — so sliders
         // (which need a drag) never update. Drive the same handlers from real touch events instead.
         this.canvas.addEventListener('touchstart', e => this._onTouchStart(e), { passive: false });
@@ -308,22 +309,9 @@ export class UIManager {
             return;
         }
         if (mod && (e.key === 'v' || e.key === 'V')) {
-            e.preventDefault();
-            if (!navigator.clipboard || !navigator.clipboard.readText) return;
-            navigator.clipboard.readText().then(text => {
-                if (!text) return;
-                const clean = text.replace(/[\r\n\t]/g, '').trim().toUpperCase();
-                if (inp.selStart !== inp.selEnd) this._deleteSelection(inp);
-                const space = inp.maxLength - inp.value.length;
-                if (space <= 0) return;
-                const toInsert = clean.slice(0, space);
-                inp.value = inp.value.slice(0, inp.cursorPos) + toInsert + inp.value.slice(inp.cursorPos);
-                inp.cursorPos += toInsert.length;
-                inp.selStart = inp.cursorPos;
-                inp.selEnd = inp.cursorPos;
-                inp.cursorVisible = true;
-                inp.lastBlink = performance.now();
-            }).catch(() => {});
+            // Do NOT preventDefault: let the browser fire its native `paste` event, which _onPaste
+            // handles via e.clipboardData. That path needs no async-clipboard permission, so it
+            // works in privacy browsers (DuckDuckGo) that block navigator.clipboard.readText().
             return;
         }
 
@@ -391,6 +379,35 @@ export class UIManager {
         inp.cursorPos = selMin;
         inp.selStart = selMin;
         inp.selEnd = selMin;
+    }
+
+    // Insert text at the cursor (replacing any selection), uppercased and clamped to maxLength.
+    _insertText(inp, text) {
+        const clean = text.replace(/[\r\n\t]/g, '').trim().toUpperCase();
+        if (!clean) return;
+        if (inp.selStart !== inp.selEnd) this._deleteSelection(inp);
+        const space = inp.maxLength - inp.value.length;
+        if (space <= 0) return;
+        const toInsert = clean.slice(0, space);
+        inp.value = inp.value.slice(0, inp.cursorPos) + toInsert + inp.value.slice(inp.cursorPos);
+        inp.cursorPos += toInsert.length;
+        inp.selStart = inp.cursorPos;
+        inp.selEnd = inp.cursorPos;
+        inp.cursorVisible = true;
+        inp.lastBlink = performance.now();
+    }
+
+    // Native paste event — reads e.clipboardData synchronously, which needs no async-clipboard
+    // permission, so Ctrl+V works even in privacy browsers (DuckDuckGo) that block readText().
+    _onPaste(e) {
+        if (this.useMobileKeyboard) return;   // mobile: the hidden <input> mirrors pastes via its input event
+        if (this.blocked || !this.focusedInput) return;
+        const data = e.clipboardData || window.clipboardData;
+        if (!data) return;
+        const text = data.getData('text');
+        if (!text) return;
+        e.preventDefault();
+        this._insertText(this.focusedInput, text);
     }
 
     _focusNextInput(dir) {
