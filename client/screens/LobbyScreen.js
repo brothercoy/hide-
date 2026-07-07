@@ -4,7 +4,7 @@ import { makeBracketButton, drawBracketButton, bracketButtonRows, BRACKET_REST }
 import { textRow } from '../ui/Transition.js';
 import { GAME_MODES } from '../../gameModes.js';
 import { theme, disabledColor, DISCONNECTED_ALPHA } from '../ui/colors.js';
-import { vScale } from '../ui/viewport.js';
+import { bandTop } from '../ui/viewport.js';
 
 const FONT_SIZE = 28;
 const TITLE_FONT = 96;   // big room code
@@ -306,18 +306,18 @@ export class LobbyScreen {
             if (p) Object.assign(b, p);
         }
 
-        // Redistribute vertically: this screen is laid out from a fixed top, so scale
-        // every cached Y by vScale to keep gap ratios constant as the window height
-        // changes (=== 1 at the load height → unchanged there). The room code is drawn
-        // live and scaled the same way in draw()/getTypeables().
-        const vs = vScale(this.canvas);
-        if (vs !== 1) {
-            for (const t of this.texts) t.y *= vs;
-            for (const b of this.ui.buttons) b.y *= vs;
-            for (const s of this.ui.sliders) s.y *= vs;
-            if (this.previewBox) this.previewBox.top *= vs;
-            this.playerLayout.startY *= vs;
-            this.playerLayout.rowH *= vs;
+        // Top-anchored: this screen is laid out from a fixed top, so shift every cached Y down by
+        // bandTop to keep the whole layout inside the guaranteed-visible band (nothing crops when
+        // maximized). At full height bandTop === 0. The room code is drawn live and offset the same
+        // way in draw()/getTypeables(). rebuild() recomputes base positions each call, so the offset
+        // is applied fresh, never compounded.
+        const bt = bandTop(this.canvas);
+        if (bt !== 0) {
+            for (const t of this.texts) t.y += bt;
+            for (const b of this.ui.buttons) b.y += bt;
+            for (const s of this.ui.sliders) s.y += bt;
+            if (this.previewBox) this.previewBox.top += bt;
+            this.playerLayout.startY += bt;
         }
     }
 
@@ -333,7 +333,7 @@ export class LobbyScreen {
         const cx = this.canvas.width / 2;
 
         // big room code (center top)
-        rows.push(textRow(this.roomCode || '------', cx, ROOMCODE_Y * vScale(this.canvas),
+        rows.push(textRow(this.roomCode || '------', cx, bandTop(this.canvas) + ROOMCODE_Y,
             `${TITLE_FONT}px "IBMVGA"`, 'center', 'top', theme.fg));
 
         // titles, underlines, description, setting labels (already built in texts[])
@@ -441,7 +441,7 @@ export class LobbyScreen {
         ctx.textAlign = 'center';
         ctx.textBaseline = 'top';
         ctx.font = `${TITLE_FONT}px "IBMVGA"`;
-        ctx.fillText(this.roomCode || '------', cx, ROOMCODE_Y * vScale(this.canvas));
+        ctx.fillText(this.roomCode || '------', cx, bandTop(this.canvas) + ROOMCODE_Y);
 
         // player rows — center-baselined so rowY is the row's center (matches the
         // mode buttons' center-Y, so columns share a row line for the transition).

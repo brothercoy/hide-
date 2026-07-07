@@ -3,7 +3,7 @@ import { makeInput, drawInput, inputRows } from '../ui/Input.js';
 import { charWidth } from '../ui/Font.js';
 import { textRow } from '../ui/Transition.js';
 import { theme } from '../ui/colors.js';
-import { vScale } from '../ui/viewport.js';
+import { bandTop } from '../ui/viewport.js';
 
 const NAME_FONT_SIZE = 80;  // font size for the name input — bigger than rest
 const FONT_SIZE = 54;       // font size for everything else
@@ -48,12 +48,14 @@ export class PlayScreen {
     // positions scale by vScale to redistribute proportionally with the window height
     // (=== 1 at the load height, so unchanged there).
     _layoutY() {
-        const vs = vScale(this.canvas);
+        // Top-anchored: offset every row by bandTop so the whole screen sits inside the
+        // guaranteed-visible band (nothing crops when maximized). At full height bandTop === 0.
+        const bt = bandTop(this.canvas);
         const btnH = FONT_SIZE * 2.5;
         const nameH = NAME_FONT_SIZE * 2.5;
         const btnRowY = NAME_Y + nameH / 2 + btnH / 2 + BTN_ROW_GAP;
         const codeRowY = btnRowY + btnH + CODE_ROW_GAP;
-        return { nameY: NAME_Y * vs, btnRowY: btnRowY * vs, codeRowY: codeRowY * vs };
+        return { nameY: bt + NAME_Y, btnRowY: bt + btnRowY, codeRowY: bt + codeRowY };
     }
 
     enter() {

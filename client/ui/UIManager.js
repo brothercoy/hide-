@@ -1,7 +1,7 @@
 import { updateButtonZ, CHAR_ROT_SPEED, CHAR_ROT_MAX } from './Button.js';
 
 export class UIManager {
-    constructor(canvas, ctx) {
+    constructor(canvas, ctx, isMobile = false) {
         this.canvas = canvas;
         this.ctx = ctx;
         this.buttons = [];
@@ -22,7 +22,14 @@ export class UIManager {
         // interact with elements where you SEE them mid-scroll. 0 when not animating.
         this.offsetY = 0;
 
+        // Mobile: canvas inputs can't summon the on-screen keyboard on their own, so we focus a
+        // hidden real <input> (inside the tap gesture) to bring it up and mirror its value into the
+        // focused custom input. Desktop keeps the richer window-keydown path below.
+        this.useMobileKeyboard = !!isMobile;
+        this._mobileInput = null;
+
         this._bindEvents();
+        if (this.useMobileKeyboard) this._mobileInput = this._createMobileInput();
     }
 
     _bindEvents() {
@@ -31,6 +38,72 @@ export class UIManager {
         this.canvas.addEventListener('mouseup', e => this._onMouseUp(e));
         this.canvas.addEventListener('dblclick', e => this._onDoubleClick(e));
         window.addEventListener('keydown', e => this._onKeyDown(e));
+    }
+
+    // A hidden, focusable <input> used only on mobile. Focusing it (from within a tap handler)
+    // opens the OS keyboard; its `input` event is mirrored into the focused canvas input.
+    _createMobileInput() {
+        const el = document.createElement('input');
+        el.type = 'text';
+        el.autocomplete = 'off';
+        el.autocapitalize = 'characters';
+        el.setAttribute('autocorrect', 'off');
+        el.spellcheck = false;
+        el.setAttribute('aria-hidden', 'true');
+        el.tabIndex = -1;
+        // Invisible and non-interactive to touch, but still focusable (opacity, NOT display:none —
+        // a hidden/removed element can't hold focus or raise the keyboard). 16px font stops iOS
+        // from zooming the page on focus.
+        Object.assign(el.style, {
+            position: 'fixed', left: '50%', top: '0px', width: '1px', height: '1px',
+            opacity: '0', border: '0', padding: '0', margin: '0', zIndex: '-1',
+            pointerEvents: 'none', background: 'transparent', color: 'transparent',
+            caretColor: 'transparent', fontSize: '16px'
+        });
+        document.body.appendChild(el);
+
+        el.addEventListener('input', () => {
+            const inp = this.focusedInput;
+            if (!inp) return;
+            const v = el.value.toUpperCase().slice(0, inp.maxLength);
+            el.value = v;                              // reflect casing/clamp back to the field
+            inp.value = v;
+            const caret = el.selectionStart == null ? v.length : Math.min(v.length, el.selectionStart);
+            inp.cursorPos = caret;
+            inp.selStart = caret;
+            inp.selEnd = caret;
+            inp.cursorVisible = true;
+            inp.lastBlink = performance.now();
+        });
+        // Soft-keyboard Enter fires here (keydown bubbles to window but _onKeyDown early-returns on
+        // mobile), so trigger the default button directly.
+        el.addEventListener('keydown', e => {
+            if (e.key === 'Enter') {
+                const btn = this.buttons.find(b => b.isDefault);
+                if (btn) btn.onClick();
+            }
+        });
+        // Dismissing the keyboard unfocuses the field.
+        el.addEventListener('blur', () => {
+            for (const inp of this.inputs) inp.focused = false;
+            this.focusedInput = null;
+        });
+        return el;
+    }
+
+    // Raise/lower the mobile keyboard to match the focused canvas input. Must be called
+    // synchronously from within the tap handler or the OS won't open the keyboard.
+    _syncMobileFocus(inp) {
+        const el = this._mobileInput;
+        if (!el) return;
+        if (inp) {
+            el.maxLength = inp.maxLength;
+            el.value = inp.value;
+            el.focus();
+            try { el.setSelectionRange(inp.value.length, inp.value.length); } catch (_) { /* noop */ }
+        } else {
+            el.blur();
+        }
     }
 
     _getPos(e) {
@@ -99,6 +172,10 @@ export class UIManager {
         });
         this.focusedInput = clickedInput;
 
+        // Mobile: open the OS keyboard for the tapped field (or close it if we tapped elsewhere).
+        // Must happen here, synchronously in the tap, for the keyboard to appear.
+        if (this.useMobileKeyboard) this._syncMobileFocus(clickedInput);
+
         this.sliders.forEach(s => {
             if (s.disabled) return;
             if (s.rect && this._hitTest(s.rect, x, hy)) {
@@ -156,6 +233,9 @@ export class UIManager {
 
     _onKeyDown(e) {
         if (this.blocked) return;
+        // Mobile routes all typing through the hidden <input>'s `input` event; ignore the
+        // bubbled keydowns here so characters aren't inserted twice.
+        if (this.useMobileKeyboard) return;
 
         const inp = this.focusedInput;
         if (!inp) return;
@@ -352,5 +432,6 @@ export class UIManager {
         this.blocked = false;
         this.offsetY = 0;
         this.lastTime = performance.now();
+        if (this._mobileInput) this._mobileInput.blur();   // close the keyboard on screen change
     }
 }

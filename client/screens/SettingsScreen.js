@@ -2,7 +2,7 @@ import { makeButton, drawButton, buttonRows } from '../ui/Button.js';
 import { makeSlider, drawSlider, sliderRows } from '../ui/Slider.js';
 import { textRow } from '../ui/Transition.js';
 import { theme } from '../ui/colors.js';
-import { vScale } from '../ui/viewport.js';
+import { vScale, bandTop } from '../ui/viewport.js';
 
 // --- Size & spacing (tweak these) ---
 const FONT_SIZE = 36;       // sliders + BACK button font size
@@ -47,17 +47,20 @@ export class SettingsScreen {
 
     // Re-place sliders + BACK for a new canvas height (resize re-fit), in place.
     relayout() {
+        // Re-center X as well as Y so a canvas-width change (mobile portrait gate ↔ landscape)
+        // can never leave the group off-center.
+        const cx = this.canvas.width / 2;
         const L = this._layout();
-        this.ui.sliders.forEach((s, i) => { if (L.sliderYs[i] != null) s.y = L.sliderYs[i]; });
+        this.ui.sliders.forEach((s, i) => { if (L.sliderYs[i] != null) { s.x = cx; s.y = L.sliderYs[i]; } });
         const back = this.ui.buttons.find(b => b.label === 'BACK');
-        if (back) back.y = L.backY;
+        if (back) { back.x = cx; back.y = L.backY; }
     }
 
     // Flat list of row segments for the screen-transition feed (grouped by Y).
     getTypeables() {
         const cx = this.canvas.width / 2;
         return [
-            textRow('SETTINGS', cx, TITLE_Y * vScale(this.canvas), `${TITLE_SIZE}px "IBMVGA"`, 'center', 'top', theme.fg),
+            textRow('SETTINGS', cx, bandTop(this.canvas) + TITLE_Y, `${TITLE_SIZE}px "IBMVGA"`, 'center', 'top', theme.fg),
             ...this.ui.sliders.flatMap(s => sliderRows(s, FONT_SIZE)),
             ...this.ui.buttons.flatMap(b => buttonRows(b, FONT_SIZE)),
         ];
@@ -71,7 +74,7 @@ export class SettingsScreen {
         ctx.textAlign = 'center';
         ctx.textBaseline = 'top';
         ctx.font = `${TITLE_SIZE}px "IBMVGA"`;
-        ctx.fillText('SETTINGS', cx, TITLE_Y * vScale(this.canvas));
+        ctx.fillText('SETTINGS', cx, bandTop(this.canvas) + TITLE_Y);
 
         this.ui.sliders.forEach(s => {
             drawSlider(ctx, s, this.ui.elapsed, FONT_SIZE);

@@ -33,7 +33,7 @@ export class CRTEffect {
             bloomThreshold: 0.03,
             rgbShift: 0.0,
             adaptiveIntensity: 3.0,
-            vignetteStrength: 0.93,
+            vignetteStrength: 0.99,
             curvature: 0.2,
             flickerStrength: 0.03
         };
@@ -228,7 +228,7 @@ export class CRTEffect {
                 pixel.rgb += 0.09 * phosphor;
 
                 // Vignette applied last — no color distortion
-                float vigStart = vignetteStrength;          // 0.0–1.0, how far in it starts
+                float vigStart = vignetteStrength - 0.2;          // 0.0–1.0, how far in it starts
                 float vigEnd = vignetteStrength + 0.09;     // feather width fixed at 0.08
                 float vigEdge = max(abs(uv * 2.0 - 1.0).x, abs(uv * 2.0 - 1.0).y);
                 float vignette = 1.0 - smoothstep(vigStart, vigEnd, vigEdge);

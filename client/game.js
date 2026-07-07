@@ -70,14 +70,19 @@ const displayScale = isMobile
     ? Math.min(Math.max(window.screen.width, window.screen.height) / LOGICAL_W,
                Math.min(window.screen.width, window.screen.height) / 1080)
     : 1;
-let LOGICAL_H = Math.min((window.innerHeight || 1080) / displayScale, 1080);
-// The layout's reference height: gaps scale relative to this, so the load-time
-// layout is untouched and only a later resize (fullscreen) redistributes.
+// FIXED design height. The canvas — and therefore the CRT shader — is ALWAYS 1920×1080, so the
+// shader/curve/vignette never change with the window. The window simply crops this fixed view.
+const LOGICAL_H = 1080;
+// Reference height for vScale. Equal to LOGICAL_H, so vScale === 1 everywhere: the layout is
+// fixed-size and never stretches. (vScale is kept as a harmless ×1 to avoid touching every screen.)
 setBaseHeight(LOGICAL_H);
 // The maximized (windowed) height — the content "band". Fullscreen grows the CANVAS past
 // this, but edge elements stay within the band so they survive the crop back to maximized.
 // It only ever grows (maximizing from a smaller window); a smaller window crops instead.
-let maximizedH = LOGICAL_H;
+// The "safe band": the height guaranteed to be visible, so no button/title/text is ever cropped.
+// Initialised to the current viewport height (in logical units); it only grows as the window is
+// maximized/enlarged — a smaller window just crops the decorative CRT margins.
+let maximizedH = Math.min((window.innerHeight || 1080) / displayScale, 1080);
 setBandHeight(maximizedH);
 
 function resizeCanvas() {
@@ -123,21 +128,14 @@ window.addEventListener('resize', () => {
 });
 
 function refitToWindow() {
-    // Viewport height in LOGICAL units (÷ displayScale, so mobile and desktop share this logic),
-    // capped at the design height.
+    // The canvas is a FIXED 1920×1080 and never resizes. The safe band is locked to the MAXIMIZED
+    // (windowed) height and is NEVER expanded — going fullscreen only reveals empty CRT margin
+    // above/below that band, so no button/title/text ever moves between maximized and fullscreen.
+    // Same logic on mobile (viewport ÷ displayScale).
+    if (document.fullscreenElement) return;        // fullscreen just reveals margin — nothing moves
     const winH = Math.min((window.innerHeight || 1080) / displayScale, 1080);
-    let h;
-    if (document.fullscreenElement) {
-        h = winH;                                  // fullscreen: canvas fills the screen (shader + all)
-    } else {
-        maximizedH = Math.max(maximizedH, winH);   // maximized is the content band; smaller only crops
-        setBandHeight(maximizedH);
-        h = maximizedH;
-    }
-    if (h === LOGICAL_H) return;
-    LOGICAL_H = h;
-    resizeCanvas();      // applies canvas.height = LOGICAL_H (CRT re-sizes on next render)
-    layoutDisplay();
+    maximizedH = Math.max(maximizedH, winH);       // the content band = the maximized height
+    setBandHeight(maximizedH);
     relayoutCurrentScreen();
 }
 
@@ -204,7 +202,7 @@ function relayoutCurrentScreen() {
     if (s && typeof s.relayout === 'function') s.relayout();
 }
 
-const uiManager = new UIManager(canvas, ctx);
+const uiManager = new UIManager(canvas, ctx, isMobile);
 const transition = new Transition(canvas, ctx);
 
 // Map screen names to their objects so the transition can drive them generically.

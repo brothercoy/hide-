@@ -1,7 +1,7 @@
 import { makeButton, drawButton, drawButtonPartial, buttonRows, drawChar, GLOW_SPEED, Z_FLOAT_MIN } from '../ui/Button.js';
 import { charWidth } from '../ui/Font.js';
 import { theme, glow } from '../ui/colors.js';
-import { vScale } from '../ui/viewport.js';
+import { vScale, bandTop } from '../ui/viewport.js';
 
 const FONT_SIZE = 54;
 
@@ -95,11 +95,16 @@ export class MainMenu {
     // re-block input and reset the intro). Called by the resize re-fit. HIDE/specials
     // are drawn from scaled constants every frame, so they need no work here.
     relayout() {
+        // Re-center X too, not just Y: on mobile the canvas width changes between the portrait
+        // rotate-gate (1080) and the landscape game (1920). MainMenu is laid out during the gate at
+        // startup, so its buttons were centered on 540; without re-centering X here they'd stay
+        // left-shifted after rotating to landscape.
+        const cx = this.canvas.width / 2;
         const { startY, btnSpacing } = this._btnLayout();
         const play = this.ui.buttons.find(b => b.label === 'PLAY');
         const settings = this.ui.buttons.find(b => b.label === 'SETTINGS');
-        if (play) play.y = startY;
-        if (settings) settings.y = startY + btnSpacing;
+        if (play) { play.x = cx; play.y = startY; }
+        if (settings) { settings.x = cx; settings.y = startY + btnSpacing; }
     }
 
     // opts.typed === true when entered via the typed-scroll transition (returning
@@ -224,8 +229,8 @@ export class MainMenu {
         const spTotal = sp.length * spCharW + (sp.length - 1) * SPECIAL_SPACING;
         const spX0 = cx - spTotal / 2;
 
-        const vs = vScale(this.canvas);
-        const GROUP_Y = SPECIAL_Y * vs; // anchors the merged row (lowest element)
+        const bt = bandTop(this.canvas);
+        const GROUP_Y = bt + SPECIAL_Y; // anchors the merged row (lowest element)
         let order = 0;
         const pushGlyph = (char, drawX, drawY, size, z) => {
             rows.push({
@@ -235,8 +240,8 @@ export class MainMenu {
         };
         const maxLen = Math.max(hideChars.length, sp.length);
         for (let i = 0; i < maxLen; i++) {
-            if (i < sp.length) pushGlyph(sp[i].char, spX0 + i * (spCharW + SPECIAL_SPACING), SPECIAL_Y * vs, SPECIAL_SIZE, SPECIAL_Z);
-            if (i < hideChars.length) pushGlyph(hideChars[i], hideX0 + i * (hideCharW + HIDE_SPACING), HIDE_Y * vs, HIDE_SIZE, HIDE_Z);
+            if (i < sp.length) pushGlyph(sp[i].char, spX0 + i * (spCharW + SPECIAL_SPACING), bt + SPECIAL_Y, SPECIAL_SIZE, SPECIAL_Z);
+            if (i < hideChars.length) pushGlyph(hideChars[i], hideX0 + i * (hideCharW + HIDE_SPACING), bt + HIDE_Y, HIDE_SIZE, HIDE_Z);
         }
 
         // buttons (3 rows each)
@@ -351,7 +356,7 @@ export class MainMenu {
                 if (t >= this.hideTimestamps[i]) visibleCount = i + 1;
             }
         }
-        const hideY = HIDE_Y * vScale(this.canvas);
+        const hideY = bandTop(this.canvas) + HIDE_Y;
         const visible = chars.slice(0, visibleCount);
         const totalW = visible.length * charW + (visible.length - 1) * HIDE_SPACING;
         let x = cx - totalW / 2;
@@ -370,7 +375,7 @@ export class MainMenu {
         const charW = ctx.measureText('M').width;
         const totalW = this.specialChars.length * charW + (this.specialChars.length - 1) * SPECIAL_SPACING;
         let x = cx - totalW / 2;
-        const specialY = SPECIAL_Y * vScale(this.canvas); // scaled so glyph + hit-rect move together
+        const specialY = bandTop(this.canvas) + SPECIAL_Y; // band-anchored so glyph + hit-rect move together
 
         const introElapsed = this.introStart === null ? 0 : elapsed - this.introStart;
 
