@@ -27,6 +27,7 @@ export class UIManager {
         // focused custom input. Desktop keeps the richer window-keydown path below.
         this.useMobileKeyboard = !!isMobile;
         this._mobileInput = null;
+        this._touchActive = false;
 
         this._bindEvents();
         if (this.useMobileKeyboard) this._mobileInput = this._createMobileInput();
@@ -38,6 +39,44 @@ export class UIManager {
         this.canvas.addEventListener('mouseup', e => this._onMouseUp(e));
         this.canvas.addEventListener('dblclick', e => this._onDoubleClick(e));
         window.addEventListener('keydown', e => this._onKeyDown(e));
+        // Touch: mobile browsers only EMULATE mouse events for taps, never for drags — so sliders
+        // (which need a drag) never update. Drive the same handlers from real touch events instead.
+        this.canvas.addEventListener('touchstart', e => this._onTouchStart(e), { passive: false });
+        this.canvas.addEventListener('touchmove', e => this._onTouchMove(e), { passive: false });
+        this.canvas.addEventListener('touchend', e => this._onTouchEnd(e), { passive: false });
+    }
+
+    _onTouchStart(e) {
+        if (this.blocked) return;
+        const t = e.touches[0];
+        if (!t) return;
+        this._onMouseDown({ clientX: t.clientX, clientY: t.clientY });
+        // Own the gesture only when a button or slider is grabbed: drive it via touch (drag support)
+        // and preventDefault to stop the page scrolling AND to suppress the emulated mouse/click so
+        // it can't fire a second time. For a slider, jump the value to the touch point immediately.
+        // Inputs and empty taps are left to pass through: the emulated tap keeps the keyboard-focus
+        // path unchanged and lets game.js's HUD/game tap handlers still fire.
+        if (this.pressedButton || this.draggingSlider) {
+            if (this.draggingSlider) this._onMouseMove({ clientX: t.clientX, clientY: t.clientY });
+            this._touchActive = true;
+            e.preventDefault();
+        }
+    }
+
+    _onTouchMove(e) {
+        if (!this._touchActive) return;
+        const t = e.touches[0];
+        if (!t) return;
+        this._onMouseMove({ clientX: t.clientX, clientY: t.clientY });
+        e.preventDefault();
+    }
+
+    _onTouchEnd(e) {
+        if (!this._touchActive) return;
+        const t = e.changedTouches[0];
+        this._onMouseUp({ clientX: t ? t.clientX : 0, clientY: t ? t.clientY : 0 });
+        this._touchActive = false;
+        e.preventDefault();
     }
 
     // A hidden, focusable <input> used only on mobile. Focusing it (from within a tap handler)

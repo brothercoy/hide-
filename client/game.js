@@ -64,12 +64,15 @@ const ctx = canvas.getContext('2d', { alpha: false });
 // crops the sides; mobile's scale fits 1920×1080 into the device screen, so the full width always
 // shows and only the height band crops.
 const LOGICAL_W = 1920;
-// One-time shrink-to-fit for small screens; 1 (native) on desktop. Based on the physical screen
-// (stable), so the address bar showing/hiding only crops — it never rescales the world.
-const displayScale = isMobile
-    ? Math.min(Math.max(window.screen.width, window.screen.height) / LOGICAL_W,
-               Math.min(window.screen.width, window.screen.height) / 1080)
-    : 1;
+// One-time scale of the fixed 1920×1080 view to the PHYSICAL screen, so the game fills the display
+// on any monitor (a 2560×1440 or 4K screen fills it instead of showing a 1920-wide island of game
+// surrounded by black; a phone shrinks the whole scene to fit). A smaller window then just crops.
+// Based on screen.width/height (stable — chrome/address-bar changes only crop, never rescale) and
+// orientation-independent: fit the long side to 1920 and the short side to 1080, take the tighter.
+const displayScale = Math.min(
+    Math.max(window.screen.width, window.screen.height) / LOGICAL_W,
+    Math.min(window.screen.width, window.screen.height) / 1080
+);
 // FIXED design height. The canvas — and therefore the CRT shader — is ALWAYS 1920×1080, so the
 // shader/curve/vignette never change with the window. The window simply crops this fixed view.
 const LOGICAL_H = 1080;

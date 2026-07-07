@@ -435,16 +435,81 @@ function inkOffset(ch, fs) {
     return res;
 }
 
+// ── Dim-step animation (preview only — copy into RotateGate.js if it looks good) ──
+// A bright window SNAPS around the loop in discrete steps (no gradient). One full cycle:
+//   all bright (held long) → all dim → 1st glyph → 1st+2nd → 2nd+3rd → … (a GROUP-wide window
+//   sliding around the ring) → last glyph → all dim → back to all bright, repeat.
+const GROUP         = 2;      // how many glyphs are lit in the sliding window
+const STEP_MS       = 260;    // hold time per animation step (snap cadence — raise to slow down)
+const ALL_BRIGHT_MS = 1400;   // how long the fully-bright frame lingers before the cycle restarts
+const DIM_MIN       = 0.18;   // dim glyph brightness (0..1)
+const DIM_MAX       = 1.0;    // bright glyph brightness (0..1)
+const START_CHAR    = '(';    // glyph the window starts on; it then travels around, ending one before it
+
+// Clockwise position [0,1) of an (x,y) offset around the loop, starting from the top.
+function loopPos(x, y) {
+    return ((Math.atan2(x, -y) / (Math.PI * 2)) + 1) % 1;
+}
+// Dim the phosphor green (#00ff41) by a 0..1 factor.
+function dimGreen(b) {
+    return `rgb(0, ${Math.round(255 * b)}, ${Math.round(65 * b)})`;
+}
+
+// Ring slots: glyphs ordered CLOCKWISE, then ROTATED so slot 0 is START_CHAR ('('). slotOf[i] is the
+// slot of ROTATE_PARTS[i]. This is why the window starts on '(' and ends on the bottom-left '<'
+// (the glyph just before '(' going clockwise) rather than top → top-left.
+const _cw = ROTATE_PARTS
+    .map(([ch, x, y], i) => ({ i, p: loopPos(x, y) }))
+    .sort((a, b) => a.p - b.p)
+    .map(o => o.i);
+const _startAt = _cw.indexOf(ROTATE_PARTS.findIndex(([ch]) => ch === START_CHAR));
+const cwOrder = _cw.slice(_startAt).concat(_cw.slice(0, _startAt));
+const slotOf = [];
+cwOrder.forEach((partIdx, slot) => { slotOf[partIdx] = slot; });
+
+// Ordered list of lit-slot sets, one per step. `null` = ALL lit; [] = all dim.
+function buildSteps(n, group) {
+    const steps = [null, []];                             // all bright, then all dim
+    for (let head = 0; head <= n + group - 1; head++) {   // width-`group` window slides in and out
+        const set = [];
+        for (let k = 0; k < group; k++) {
+            const s = head - k;
+            if (s >= 0 && s < n) set.push(s);
+        }
+        steps.push(set);                                  // final iteration is [] → "last glyph now dim"
+    }
+    return steps;
+}
+const STEPS = buildSteps(ROTATE_PARTS.length, GROUP);
+
+// Per-step hold time — the all-bright frame (step 0) lingers; every other step uses STEP_MS.
+const _durations = STEPS.map((s, i) => (i === 0 ? ALL_BRIGHT_MS : STEP_MS));
+const _cycleMs = _durations.reduce((a, b) => a + b, 0);
+function currentStep() {
+    let t = (elapsed * 1000) % _cycleMs;
+    for (let i = 0; i < STEPS.length; i++) {
+        if (t < _durations[i]) return STEPS[i];
+        t -= _durations[i];
+    }
+    return STEPS[STEPS.length - 1];
+}
+
+// Is ROTATE_PARTS[i] lit this frame?
+function rotateLit(i) {
+    const step = currentStep();
+    return step === null || step.includes(slotOf[i]);
+}
+
 function drawRotateIcon(cx, cy, S, color) {
     ctx.font = `${S}px "IBMVGA"`;
     ctx.textAlign = 'left';
     ctx.textBaseline = 'top';
-    ctx.fillStyle = color || '#00ff41';
     ctx.globalAlpha = 1;
-    for (const [ch, x, y] of ROTATE_PARTS) {
+    ROTATE_PARTS.forEach(([ch, x, y], i) => {
         const o = inkOffset(ch, S);
-        ctx.fillText(ch, cx + x * S - o.cx, cy + y * S - o.cy);   // place ink center at (x,y)
-    }
+        ctx.fillStyle = dimGreen(rotateLit(i) ? DIM_MAX : DIM_MIN);   // snap: bright or dim
+        ctx.fillText(ch, cx + x * S - o.cx, cy + y * S - o.cy);       // place ink center at (x,y)
+    });
 }
 
 function drawRotatePreview() {

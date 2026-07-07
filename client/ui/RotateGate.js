@@ -1,4 +1,4 @@
-import { theme } from './colors.js';
+import { theme, dim } from './colors.js';
 
 // The "rotate device" prompt shown in portrait on mobile. A tight clockwise loop built from
 // ( ) - < and an apostrophe, each glyph placed by its ACTUAL INK (not its cell) so the shape is
@@ -41,16 +41,68 @@ function inkOffset(ch, fs) {
     return res;
 }
 
-function drawRotateIcon(ctx, cx, cy, S, color) {
+// ── Dim-step spin animation ──────────────────────────────────────────────────────
+// A bright window SNAPS around the loop in discrete steps (no gradient): all bright (held long)
+// → all dim → a GROUP-wide window sliding clockwise around the ring, starting on '(' and ending
+// on '<' → all dim → repeat. Tuned in client/button-test.html.
+const GROUP         = 2;      // glyphs lit in the sliding window
+const STEP_MS       = 260;    // hold per step, ms (higher = slower)
+const ALL_BRIGHT_MS = 1400;   // how long the fully-bright frame lingers before the cycle restarts
+const DIM_MIN       = 0.18;   // dim-glyph brightness (0..1) — an alpha of fg over the black gate
+const START_CHAR    = '(';    // glyph the window starts on; it ends one before it going clockwise
+
+// Clockwise position [0,1) of an (x,y) offset around the loop, starting from the top.
+function loopPos(x, y) {
+    return ((Math.atan2(x, -y) / (Math.PI * 2)) + 1) % 1;
+}
+
+// Ring slots ordered CLOCKWISE, rotated so slot 0 is START_CHAR ('('). _slotOf[i] = the ring slot
+// of ROTATE_PARTS[i] — this is what makes the window start on '(' and end on the bottom-left '<'.
+const _cw = ROTATE_PARTS
+    .map(([ch, x, y], i) => ({ i, p: loopPos(x, y) }))
+    .sort((a, b) => a.p - b.p)
+    .map(o => o.i);
+const _startAt = _cw.indexOf(ROTATE_PARTS.findIndex(([ch]) => ch === START_CHAR));
+const _cwOrder = _cw.slice(_startAt).concat(_cw.slice(0, _startAt));
+const _slotOf = [];
+_cwOrder.forEach((partIdx, slot) => { _slotOf[partIdx] = slot; });
+
+// Ordered lit-slot sets, one per step. null = ALL lit; [] = all dim.
+const _steps = (() => {
+    const n = ROTATE_PARTS.length, steps = [null, []];      // all bright, then all dim
+    for (let head = 0; head <= n + GROUP - 1; head++) {     // width-GROUP window slides in and out
+        const set = [];
+        for (let k = 0; k < GROUP; k++) { const s = head - k; if (s >= 0 && s < n) set.push(s); }
+        steps.push(set);                                    // final iteration is [] → "last glyph now dim"
+    }
+    return steps;
+})();
+const _durations = _steps.map((s, i) => (i === 0 ? ALL_BRIGHT_MS : STEP_MS));
+const _cycleMs = _durations.reduce((a, b) => a + b, 0);
+
+// The lit-set active right now (self-timed off wall-clock; the gate only draws while portrait).
+function _currentStep() {
+    let t = performance.now() % _cycleMs;
+    for (let i = 0; i < _steps.length; i++) {
+        if (t < _durations[i]) return _steps[i];
+        t -= _durations[i];
+    }
+    return _steps[_steps.length - 1];
+}
+
+function drawRotateIcon(ctx, cx, cy, S) {
     ctx.font = `${S}px "IBMVGA"`;
     ctx.textAlign = 'left';
     ctx.textBaseline = 'top';
-    ctx.fillStyle = color;
     ctx.globalAlpha = 1;
-    for (const [ch, x, y] of ROTATE_PARTS) {
+    const step = _currentStep();
+    const litColor = theme.fg, dimColor = dim(DIM_MIN);
+    ROTATE_PARTS.forEach(([ch, x, y], i) => {
         const o = inkOffset(ch, S);
-        ctx.fillText(ch, cx + x * S - o.cx, cy + y * S - o.cy);   // place ink center at (x,y)
-    }
+        const lit = step === null || step.includes(_slotOf[i]);
+        ctx.fillStyle = lit ? litColor : dimColor;                  // snap: bright or dim
+        ctx.fillText(ch, cx + x * S - o.cx, cy + y * S - o.cy);     // place ink center at (x,y)
+    });
 }
 
 // Fill the canvas with the portrait "ROTATE DEVICE" prompt (loop icon + label, centered).
@@ -60,7 +112,7 @@ export function drawRotateGate(ctx, w, h) {
 
     const S = Math.round(Math.min(w, h) * 0.26);   // icon size relative to the screen
     const iconCY = Math.round(h / 2 - S * 0.35);   // icon sits a little above center; label below
-    drawRotateIcon(ctx, Math.round(w / 2), iconCY, S, theme.fg);
+    drawRotateIcon(ctx, Math.round(w / 2), iconCY, S);
 
     ctx.font = `${Math.round(S * 0.5)}px "IBMVGA"`;
     ctx.textAlign = 'center';
