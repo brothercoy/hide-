@@ -22,15 +22,17 @@ export class UIManager {
         // interact with elements where you SEE them mid-scroll. 0 when not animating.
         this.offsetY = 0;
 
-        // Mobile: canvas inputs can't summon the on-screen keyboard on their own, so we focus a
-        // hidden real <input> (inside the tap gesture) to bring it up and mirror its value into the
-        // focused custom input. Desktop keeps the richer window-keydown path below.
+        // Mobile: canvas inputs can't summon the on-screen keyboard on their own. Rather than
+        // programmatically focus()-ing a hidden field (flaky across phones — iOS in particular
+        // dismisses it), we lay a REAL but see-through <input> exactly over each canvas field. The
+        // finger lands on that, so the browser natively focuses it and raises the keyboard — the one
+        // path every mobile browser honors. Its value is mirrored into the canvas field, which draws
+        // the visible text/cursor. Desktop keeps the richer window-keydown path below.
         this.useMobileKeyboard = !!isMobile;
-        this._mobileInput = null;
+        this._overlays = new Map();   // canvas input -> its transparent DOM <input> overlay
         this._touchActive = false;
 
         this._bindEvents();
-        if (this.useMobileKeyboard) this._mobileInput = this._createMobileInput();
     }
 
     _bindEvents() {
@@ -52,11 +54,10 @@ export class UIManager {
         const t = e.touches[0];
         if (!t) return;
         this._onMouseDown({ clientX: t.clientX, clientY: t.clientY });
-        // Own the gesture only when a button or slider is grabbed: drive it via touch (drag support)
-        // and preventDefault to stop the page scrolling AND to suppress the emulated mouse/click so
-        // it can't fire a second time. For a slider, jump the value to the touch point immediately.
-        // Inputs and empty taps are left to pass through: the emulated tap keeps the keyboard-focus
-        // path unchanged and lets game.js's HUD/game tap handlers still fire.
+        // Own the gesture when a button/slider is grabbed: preventDefault stops the page scrolling
+        // and suppresses the emulated mouse/click; for a slider, jump the value to the touch point.
+        // Input taps never reach here — they land on the transparent DOM overlay instead — and EMPTY
+        // taps pass through so game.js's HUD/game handlers still fire.
         if (this.pressedButton || this.draggingSlider) {
             if (this.draggingSlider) this._onMouseMove({ clientX: t.clientX, clientY: t.clientY });
             this._touchActive = true;
@@ -80,33 +81,39 @@ export class UIManager {
         e.preventDefault();
     }
 
-    // A hidden, focusable <input> used only on mobile. Focusing it (from within a tap handler)
-    // opens the OS keyboard; its `input` event is mirrored into the focused canvas input.
-    _createMobileInput() {
+    // Build the transparent, real <input> that sits over one canvas field. Tapping it natively
+    // focuses it (raising the keyboard); typing mirrors into the canvas field, which draws the
+    // visible text/cursor. Positioned/sized each frame by _syncInputOverlays.
+    _makeInputOverlay(inp) {
         const el = document.createElement('input');
         el.type = 'text';
         el.autocomplete = 'off';
         el.autocapitalize = 'characters';
         el.setAttribute('autocorrect', 'off');
         el.spellcheck = false;
-        el.setAttribute('aria-hidden', 'true');
-        el.tabIndex = -1;
-        // Invisible and non-interactive to touch, but still focusable (opacity, NOT display:none —
-        // a hidden/removed element can't hold focus or raise the keyboard). 16px font stops iOS
-        // from zooming the page on focus.
+        el.maxLength = inp.maxLength;
+        el.value = inp.value;
+        // See-through but genuinely present: opacity 0 (NOT display/visibility:hidden — those can't
+        // receive taps or hold focus). caretColor transparent hides the native caret (we draw our
+        // own); 16px font stops iOS zooming the page on focus.
         Object.assign(el.style, {
-            position: 'fixed', left: '50%', top: '0px', width: '1px', height: '1px',
-            opacity: '0', border: '0', padding: '0', margin: '0', zIndex: '-1',
-            pointerEvents: 'none', background: 'transparent', color: 'transparent',
-            caretColor: 'transparent', fontSize: '16px'
+            position: 'fixed', margin: '0', padding: '0', border: '0', outline: 'none',
+            background: 'transparent', color: 'transparent', caretColor: 'transparent',
+            opacity: '0', zIndex: '2147483000', fontSize: '16px', borderRadius: '0',
+            WebkitAppearance: 'none', textAlign: 'center'
         });
-        document.body.appendChild(el);
 
+        el.addEventListener('focus', () => {
+            for (const i of this.inputs) i.focused = (i === inp);
+            this.focusedInput = inp;
+            inp.cursorPos = inp.selStart = inp.selEnd = inp.value.length;
+            inp.cursorVisible = true;
+            inp.lastBlink = performance.now();
+            try { el.setSelectionRange(el.value.length, el.value.length); } catch (_) { /* noop */ }
+        });
         el.addEventListener('input', () => {
-            const inp = this.focusedInput;
-            if (!inp) return;
             const v = el.value.toUpperCase().slice(0, inp.maxLength);
-            el.value = v;                              // reflect casing/clamp back to the field
+            el.value = v;                              // reflect casing/clamp back into the overlay
             inp.value = v;
             const caret = el.selectionStart == null ? v.length : Math.min(v.length, el.selectionStart);
             inp.cursorPos = caret;
@@ -115,35 +122,58 @@ export class UIManager {
             inp.cursorVisible = true;
             inp.lastBlink = performance.now();
         });
-        // Soft-keyboard Enter fires here (keydown bubbles to window but _onKeyDown early-returns on
-        // mobile), so trigger the default button directly.
+        // Soft-keyboard Enter bubbles to window, but _onKeyDown early-returns on mobile, so fire the
+        // default button here.
         el.addEventListener('keydown', e => {
             if (e.key === 'Enter') {
                 const btn = this.buttons.find(b => b.isDefault);
                 if (btn) btn.onClick();
             }
         });
-        // Dismissing the keyboard unfocuses the field.
         el.addEventListener('blur', () => {
-            for (const inp of this.inputs) inp.focused = false;
-            this.focusedInput = null;
+            inp.focused = false;
+            if (this.focusedInput === inp) this.focusedInput = null;
         });
+        document.body.appendChild(el);
         return el;
     }
 
-    // Raise/lower the mobile keyboard to match the focused canvas input. Must be called
-    // synchronously from within the tap handler or the OS won't open the keyboard.
-    _syncMobileFocus(inp) {
-        const el = this._mobileInput;
-        if (!el) return;
-        if (inp) {
-            el.maxLength = inp.maxLength;
-            el.value = inp.value;
-            el.focus();
-            try { el.setSelectionRange(inp.value.length, inp.value.length); } catch (_) { /* noop */ }
-        } else {
-            el.blur();
+    // Keep one transparent overlay per canvas input, aligned to where the field is drawn. Called
+    // every frame on mobile. Torn down during blocking transitions (which also drops the keyboard).
+    _syncInputOverlays() {
+        if (!this.useMobileKeyboard) return;
+        if (this.blocked) { this._clearOverlays(); return; }
+
+        const cr = this.canvas.getBoundingClientRect();
+        const sx = cr.width / this.canvas.width;      // canvas.width is the logical width (1920)
+        const sy = cr.height / this.canvas.height;
+        const PAD = 10;                               // grow the hit area a touch for easy tapping
+
+        // Drop overlays whose input no longer exists.
+        for (const [inp, el] of this._overlays) {
+            if (!this.inputs.includes(inp)) { el.remove(); this._overlays.delete(inp); }
         }
+        // Create/position an overlay over each current field. inp.rect is set during draw; the field
+        // is drawn at rect.y + offsetY. The CRT curve (a shader on top) is ignored — negligible near
+        // centre, and PAD absorbs it.
+        for (const inp of this.inputs) {
+            if (!inp.rect) continue;
+            let el = this._overlays.get(inp);
+            if (!el) { el = this._makeInputOverlay(inp); this._overlays.set(inp, el); }
+            el.maxLength = inp.maxLength;
+            // Reflect programmatic value changes (e.g. a prefilled name) unless the user is typing.
+            if (document.activeElement !== el && el.value !== inp.value) el.value = inp.value;
+            el.style.left   = (cr.left + inp.rect.x * sx - PAD) + 'px';
+            el.style.top    = (cr.top + (inp.rect.y + this.offsetY) * sy - PAD) + 'px';
+            el.style.width  = (inp.rect.w * sx + PAD * 2) + 'px';
+            el.style.height = (inp.rect.h * sy + PAD * 2) + 'px';
+        }
+    }
+
+    _clearOverlays() {
+        if (!this._overlays.size) return;
+        for (const [, el] of this._overlays) el.remove();
+        this._overlays.clear();
     }
 
     _getPos(e) {
@@ -191,30 +221,30 @@ export class UIManager {
             }
         });
 
-        let clickedInput = null;
-        this.inputs.forEach(inp => {
-            if (inp.rect && this._hitTest(inp.rect, x, hy)) {
-                clickedInput = inp;
-            }
-        });
+        // On mobile the transparent DOM overlays own input focus (native tap → keyboard), so the
+        // canvas never hit-tests inputs. Desktop handles focus/caret/selection here.
+        if (!this.useMobileKeyboard) {
+            let clickedInput = null;
+            this.inputs.forEach(inp => {
+                if (inp.rect && this._hitTest(inp.rect, x, hy)) {
+                    clickedInput = inp;
+                }
+            });
 
-        this.inputs.forEach(inp => {
-            inp.focused = inp === clickedInput;
-            if (inp === clickedInput) {
-                const idx = this._getCharIndex(inp, x);
-                inp.cursorPos = idx;
-                inp.selStart = idx;
-                inp.selEnd = idx;
-                inp.selecting = true;
-            }
-            inp.cursorVisible = true;
-            inp.lastBlink = performance.now();
-        });
-        this.focusedInput = clickedInput;
-
-        // Mobile: open the OS keyboard for the tapped field (or close it if we tapped elsewhere).
-        // Must happen here, synchronously in the tap, for the keyboard to appear.
-        if (this.useMobileKeyboard) this._syncMobileFocus(clickedInput);
+            this.inputs.forEach(inp => {
+                inp.focused = inp === clickedInput;
+                if (inp === clickedInput) {
+                    const idx = this._getCharIndex(inp, x);
+                    inp.cursorPos = idx;
+                    inp.selStart = idx;
+                    inp.selEnd = idx;
+                    inp.selecting = true;
+                }
+                inp.cursorVisible = true;
+                inp.lastBlink = performance.now();
+            });
+            this.focusedInput = clickedInput;
+        }
 
         this.sliders.forEach(s => {
             if (s.disabled) return;
@@ -438,6 +468,9 @@ export class UIManager {
 
         this.elapsed += dt / 1000;
 
+        // Keep the mobile keyboard overlays aligned to their fields (and torn down when blocked).
+        this._syncInputOverlays();
+
         const my = this.mouseY - this.offsetY; // hit-test against where elements are drawn
 
         this.buttons.forEach(btn => {
@@ -488,6 +521,6 @@ export class UIManager {
         this.blocked = false;
         this.offsetY = 0;
         this.lastTime = performance.now();
-        if (this._mobileInput) this._mobileInput.blur();   // close the keyboard on screen change
+        this._clearOverlays();   // remove field overlays / close the keyboard on screen change
     }
 }

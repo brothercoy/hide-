@@ -526,6 +526,42 @@ function drawRotatePreview() {
 }
 
 // ── Loop ──────────────────────────────────────────────────────────────────────
+// ── Full printable-ASCII grid (game font) ──────────────────────────────────────
+// Every visible ASCII char, 33 ('!') … 126 ('~'), in the game's IBMVGA font, with its decimal
+// code under it — so we can eyeball which glyphs collide when rotated/flipped.
+function drawAsciiTable() {
+    const first = 33, last = 126;          // 33..126 = all VISIBLE printable ASCII (space + controls excluded)
+    const count = last - first + 1;        // 94
+    const cols = 16;
+    const rows = Math.ceil(count / cols);  // 6
+    const marginX = 60, marginTop = 100, marginBottom = 40;
+    const cellW = (canvas.width - marginX * 2) / cols;
+    const cellH = (canvas.height - marginTop - marginBottom) / rows;
+    const charSize = Math.min(64, Math.floor(cellH * 0.5));
+    const codeSize = 16;
+
+    ctx.fillStyle = '#00ff41';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'alphabetic';
+    ctx.font = `30px "IBMVGA"`;
+    ctx.fillText('ASCII 33-126  —  IBMVGA (game font)', canvas.width / 2, 56);
+
+    for (let n = first; n <= last; n++) {
+        const idx = n - first;
+        const gx = marginX + (idx % cols) * cellW + cellW / 2;
+        const gy = marginTop + Math.floor(idx / cols) * cellH + cellH / 2;
+        ctx.font = `${charSize}px "IBMVGA"`;
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillStyle = '#00ff41';
+        ctx.fillText(String.fromCharCode(n), gx, gy);
+        ctx.font = `${codeSize}px "IBMVGA"`;
+        ctx.textBaseline = 'alphabetic';
+        ctx.fillStyle = '#007a1f';
+        ctx.fillText(String(n), gx, gy + charSize / 2 + 18);
+    }
+}
+
 function loop() {
     const now = performance.now();
     update(now);
@@ -533,8 +569,9 @@ function loop() {
     ctx.fillStyle = 'black';
     ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-    // Rotate-prompt preview. Comment this out and restore the three lines below to test buttons.
-    drawRotatePreview();
+    // Full printable-ASCII grid in the game font. Swap for drawRotatePreview() / the buttons below.
+    drawAsciiTable();
+    // drawRotatePreview();
     // inputs.forEach(inp => drawInput(inp));
     // buttons.forEach(btn => drawButton(btn));
     // sliders.forEach(s => drawSlider(s));

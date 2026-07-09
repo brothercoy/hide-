@@ -1,8 +1,8 @@
 export const GAME_MODES = {
     redacted: {
         id: 'redacted',
-        name: 'Redacted',
-        description: 'Each round, you will have thirty seconds to find the target character. The last player to find it loses a life. After losing three lives, a player is redacted and eliminated from the match. Last player standing wins.',
+        name: 'DEL',
+        description: 'Each round, you will have thirty seconds to find the target character. The last player to find it loses a life. After losing three lives, a player is DELETED and eliminated from the match. Last player standing wins.',
         minPlayers: 2,
         maxPlayers: 10,
         defaultSettings: {
@@ -51,8 +51,8 @@ export const GAME_MODES = {
 
     frequency: {
         id: 'frequency',
-        name: 'Frequency',
-        description: 'Find the target. Each round will get more difficult. After ten rounds, the player who found the target first the most wins.',
+        name: 'ACK',
+        description: 'Players will earn points by being the fastest to ACKNOWLEDGE the target. Each round will get more difficult and yield more points. After ten rounds, the player with the highest score wins.',
         minPlayers: 2,
         maxPlayers: 10,
         defaultSettings: {

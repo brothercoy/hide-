@@ -213,7 +213,7 @@ export class LobbyScreen {
             ly += MODE_SPACING;
         });
         // CUSTOM toggle (bracket button)
-        this.customBtn = makeBracketButton('CUSTOM', leftX, ly, () => this._toggleCustom(), { active: this.customOpen, toggle: true, toggledAt: this.customToggledAt, disabled: !this.isHost });
+        this.customBtn = makeBracketButton('ESC', leftX, ly, () => this._toggleCustom(), { active: this.customOpen, toggle: true, toggledAt: this.customToggledAt, disabled: !this.isHost });
         this.ui.buttons.push(this.customBtn);
         ly += MODE_SPACING;
         // description (unchanged behavior, under the column)

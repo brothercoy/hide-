@@ -95,6 +95,7 @@ export class DELMode {
                 this.countdownActive = true;
                 this.countdownStartTime = Date.now() - ((data.elapsedSeconds || 0) * 1000);
                 this.countdownMs = data.countdownMs || this.countdownMs;
+                if (data.timeLeft != null) this.timeLeft = data.timeLeft;   // full round time, so the box timer shows it during the countdown
                 // New round: end any life-loss callout and flush the held list.
                 this.lifeCallout.clear();
                 if (this.pendingPlayerList) { this.playerList = this.pendingPlayerList; this.pendingPlayerList = null; }
@@ -162,6 +163,10 @@ export class DELMode {
             }
 
             case 'matchOver':
+                // On the FINAL match the server fires gameOver immediately after this, so showing
+                // the match-over summary would flash for a frame before the winner screen. Skip it
+                // and let the round-over state ride straight into game over.
+                if (data.match >= data.totalMatches) break;
                 this.showMatchOver = true;
                 this.matchOverData = data;
                 this.showRoundOver = false;

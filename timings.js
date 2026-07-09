@@ -42,3 +42,14 @@ export const LIFE_LOSS_ELIM_DEL_MS = 600;    // consume "0 Life" (6 cells) one a
 export const LIFE_LOSS_ELIM_TYPE_MS = 700;   // type "DELETED" (7 chars)
 export const LIFE_LOSS_ELIM_MS =             // extra total for an elimination entry
     LIFE_LOSS_WORD_PAUSE_MS + LIFE_LOSS_ELIM_DEL_MS + LIFE_LOSS_WORD_GAP_MS + LIFE_LOSS_ELIM_TYPE_MS;
+
+// Match-over screen — client: GameScreen._drawMatchOver types "Match X: <winner>"; server:
+// startNextRound waits MATCH_OVER_MS before the next match's countdown. Summed here so both stay
+// in sync (worst case a full-length player name).
+export const MO_HOLD_MS   = 1000;   // "Match X:" holds before the winner name types
+export const MO_TYPE_MS   = 100;    // per-character type of the winner name
+export const MO_CURSOR_MS = 500;    // cursor blink half-period
+export const MO_TAIL_MS   = 900;    // hold the finished screen before the next round starts
+export const MO_MAX_NAME  = 12;     // max player-name length — worst case for the derived hold
+export const MATCH_OVER_MS =
+    MO_HOLD_MS + MO_MAX_NAME * MO_TYPE_MS + MO_TAIL_MS;

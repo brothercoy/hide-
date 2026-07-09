@@ -1,8 +1,30 @@
 import { Room } from '@colyseus/core';
 import { GAME_MODES } from '../gameModes.js';
-import { COUNTDOWN_MS, LIFE_LOSS_INTRO_MS, LIFE_LOSS_ENTRY_MS, LIFE_LOSS_WORD_MS, LIFE_LOSS_ELIM_MS } from '../timings.js';
+import { COUNTDOWN_MS, LIFE_LOSS_INTRO_MS, LIFE_LOSS_ENTRY_MS, LIFE_LOSS_WORD_MS, LIFE_LOSS_ELIM_MS, MATCH_OVER_MS } from '../timings.js';
 
-const LETTERS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789!@#$%^&*';
+// The full visible printable-ASCII set (33 '!' … 126 '~') — every glyph a target/field char can
+// be. Shared by ALL game modes (generateChars draws from here). Which confusable glyphs may not
+// co-exist in one game (rotation look-alikes) is layered on top separately.
+const LETTERS = Array.from({ length: 126 - 33 + 1 }, (_, i) => String.fromCharCode(33 + i)).join('');
+
+// Glyphs that look like each other when a character rotates/flips. Enforced TARGET-FIRST and
+// PER-ROUND: the target can be any glyph, but if it belongs to a group, that group's OTHER members
+// are kept out of THAT round's field (so a look-alike can't be mistaken for the target). It's never
+// the reverse — every glyph is still free to be the target on any round, so nothing is banished for
+// the whole game (e.g. 6 as target one round doesn't stop 9 from being the target later).
+// Populate from the confusable-glyph list; list a 3+-way look-alike as one group. (Empty = no rule.)
+const CONFLICT_GROUPS = [
+    ["'", ','],   // apostrophe / comma
+    ['n', 'u'],
+    ['[', ']'],
+    ['<', '>'],
+    ['(', ')'],
+    ['{', '}'],
+    ['-', '_'],
+];
+// glyph -> glyphs it must not share a round with (derived once from the groups above)
+const CONFLICTS = {};
+for (const group of CONFLICT_GROUPS) for (const c of group) CONFLICTS[c] = group.filter(x => x !== c);
 const TICK_RATE = 50;
 const LOBBY_TIMEOUT = 1000 * 60 * 10;
 
@@ -12,7 +34,9 @@ const DEFAULT_MODE = GAME_MODES.redacted;
 // one beat per player who lost a life (must match LifeLossCallout ENTRY_MS on the
 // client), plus a short hold on the final value.
 const ROUND_OVER_HOLD_MS = 1300; // cursor blinks on the last player for this long before advancing
-const MATCH_OVER_DISPLAY_MS = 3000;
+// The post-match hold is DERIVED from the client's match-over animation phases (timings.js), so it
+// always lasts exactly as long as the animation — no separate display time to keep in sync.
+const MATCH_OVER_DISPLAY_MS = MATCH_OVER_MS;
 
 // Server-side tap validation (anti-cheat): the server — not the client — decides whether a tap
 // actually hit the target. Because the client renders the field slightly in the past (the
@@ -417,11 +441,14 @@ class GameRoom extends Room {
         const chars = [];
         this.targetChar = LETTERS[Math.floor(Math.random() * LETTERS.length)];
 
+        // This round's field pool: every glyph EXCEPT the target and its rotation look-alikes.
+        // Pre-filtered once (no per-character re-roll loop).
+        const forbidden = new Set(CONFLICTS[this.targetChar] || []);
+        forbidden.add(this.targetChar);
+        const pool = [...LETTERS].filter(c => !forbidden.has(c));
+
         for (let i = 0; i < this.settings.charCount - 1; i++) {
-            let char;
-            do {
-                char = LETTERS[Math.floor(Math.random() * LETTERS.length)];
-            } while (char === this.targetChar);
+            const char = pool[Math.floor(Math.random() * pool.length)];
             chars.push(this.createChar(char, false));
         }
 
@@ -521,7 +548,8 @@ class GameRoom extends Room {
             round: this.currentRound,
             match: this.currentMatch,
             chars: this.charInit(),
-            countdownMs: COUNTDOWN_MS
+            countdownMs: COUNTDOWN_MS,
+            timeLeft: this.timeLeft   // full round time — the client shows it on the box timer during the countdown
         });
 
         this.clock.setTimeout(() => {

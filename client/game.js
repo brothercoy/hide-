@@ -460,7 +460,10 @@ function maybeEnterLobby() {
 
 let gameOverBtns = { playAgain: null, returnToLobby: null, mainMenu: null };
 let gameCopyBtn = null;
-const GAME_OVER_SCRIM = 0.72;   // opacity of the black dim behind the end-of-game modal (0..1)
+const GAME_OVER_SCRIM = 0.9;   // opacity of the black dim behind the end-of-game modal (0..1)
+const GO_TITLE_SIZE   = 140;    // winner-line font (much bigger than the in-box frame font)
+const GO_BTN_SIZE     = 42;     // vote-button font
+const GO_BTN_SPACING  = 120;    // vertical gap between the stacked vote-button centers
 
 // Scripted game-over reveal timeline (ms from when the overlay appears).
 let gameOverStart = 0;
@@ -497,9 +500,11 @@ function copyGameCode() {
 function layoutGameOverButtons() {
     const cx = canvas.width / 2;        // whole-screen center, not the left-offset game box
     const cy = canvas.height / 2;
-    if (gameOverBtns.playAgain) { gameOverBtns.playAgain.x = cx; gameOverBtns.playAgain.y = cy + 60; }
-    if (gameOverBtns.returnToLobby) { gameOverBtns.returnToLobby.x = cx; gameOverBtns.returnToLobby.y = cy + 155; }
-    if (gameOverBtns.mainMenu) { gameOverBtns.mainMenu.x = cx; gameOverBtns.mainMenu.y = cy + 250; }
+    const y0 = cy + 20, gap = GO_BTN_SPACING;   // stacked lower, below the (bigger) winner title
+    const mainMenuDrop = 70;                     // MAIN MENU sits extra-low, set apart from the two vote buttons
+    if (gameOverBtns.playAgain) { gameOverBtns.playAgain.x = cx; gameOverBtns.playAgain.y = y0; }
+    if (gameOverBtns.returnToLobby) { gameOverBtns.returnToLobby.x = cx; gameOverBtns.returnToLobby.y = y0 + gap; }
+    if (gameOverBtns.mainMenu) { gameOverBtns.mainMenu.x = cx; gameOverBtns.mainMenu.y = y0 + 2 * gap + mainMenuDrop; }
 }
 
 // The scripted end-of-game reveal: the scrim fades in while "Winner:" shows with a blinking cursor,
@@ -512,7 +517,7 @@ function drawGameOverModal() {
     ctx.fillStyle = bgAlpha(Math.min(1, t / GO_SCRIM_MS) * GAME_OVER_SCRIM);
     ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-    const cx = canvas.width / 2, cy = canvas.height / 2, wy = cy - 100;
+    const cx = canvas.width / 2, cy = canvas.height / 2, wy = cy - 220;
     const prefix = 'Winner: ';
     const typed = (winnerId || '') + '!';          // the part that types in after the prefix
 
@@ -527,7 +532,7 @@ function drawGameOverModal() {
 
     // Winner line — CENTER-aligned on the revealed text, so the already-typed characters drift left
     // as each new one centers in (the whole visible line stays centered on the screen).
-    ctx.font = `${gameScreen.FRAME_SIZE}px "IBMVGA"`;
+    ctx.font = `${GO_TITLE_SIZE}px "IBMVGA"`;
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     ctx.fillStyle = theme.fg;
@@ -538,8 +543,9 @@ function drawGameOverModal() {
     // the cursor blinks on and off.
     if (Math.floor(t / GO_CURSOR_MS) % 2 === 0) {
         const curX = cx + ctx.measureText(shown).width / 2 + 2;
-        const chH = gameScreen.FRAME_SIZE * 0.8;
-        ctx.fillRect(curX, wy - chH / 2, ctx.measureText('M').width * 0.85, chH);
+        const cw = ctx.measureText('M').width;
+        const chH = GO_TITLE_SIZE - 4;   // same block proportions as the input / countdown cursors, at the title size
+        ctx.fillRect(curX, wy - chH / 2, cw - 2, chH);
     }
 
     // Vote buttons type in one after another; drawButtonPartial reflects live hover/press and sets
@@ -551,8 +557,8 @@ function drawGameOverModal() {
         if (t < start) continue;
         const b = btns[i];
         const p = Math.min(1, (t - start) / GO_BTN_MS);
-        if (p >= 1) drawButton(ctx, b, uiManager.elapsed, FONT_SIZE);
-        else drawButtonPartial(ctx, b, Math.ceil(p * buttonCharCount(b, FONT_SIZE)), uiManager.elapsed, FONT_SIZE);
+        if (p >= 1) drawButton(ctx, b, uiManager.elapsed, GO_BTN_SIZE);
+        else drawButtonPartial(ctx, b, Math.ceil(p * buttonCharCount(b, GO_BTN_SIZE)), uiManager.elapsed, GO_BTN_SIZE);
     }
 }
 
@@ -811,7 +817,11 @@ function drawModal() {
 // are fixed (independent of the hover animation) so hovering doesn't toggle.
 // The *action* fires from the click handler (keeps fullscreen's user-gesture and
 // avoids the settings-panel double-toggle); the press/glow here is visual only.
-const HUD_FONT = 36;
+const HUD_FONT = isMobile ? 58 : 36;
+// On mobile the whole 1920-wide canvas is shrunk to fit the phone, so the desktop-size HUD buttons
+// become tiny and hard to tap individually. Use bigger, further-apart hit targets there. Anchored by
+// their BOTTOM a fixed gap above the band so the taller rect never spills past the visible area.
+const HUD_M = { w: 130, h: 100, bottomGap: 30, gearX: 400, fullX: 180 };   // mobile-only HUD metrics
 const HUD_Z_REST = 1.3;        // resting depth (full opacity)
 const HUD_Z_PRESSED = 2.5;     // held — fades back
 const HUD_Z_GLOW = 1.0;        // overshoot on release — glow fires here
@@ -856,13 +866,23 @@ function hudBtnGap() {
     return Math.max(45, 90 - (1080 - maximizedH) * 0.3);
 }
 
+// A big mobile HUD hit-rect, anchored by its bottom above the band (rightX = its left edge's
+// distance from the canvas's right edge).
+function hudMobileRect(rightX) {
+    const bottom = canvas.height - bandTop(canvas) - HUD_M.bottomGap;
+    return { x: canvas.width - rightX, y: bottom - HUD_M.h, w: HUD_M.w, h: HUD_M.h };
+}
+
 const hudItems = [
     {
         id: 'settings',
         hover: 0, z: HUD_Z_REST, releasePhase: null, glowT: 0, _rect: null,
         _animT: 0, _char: SETTINGS_REST_CHAR,
         typeChars: SETTINGS_REST_CHAR,
-        getRect() { return { x: canvas.width - 200, y: canvas.height - bandTop(canvas) - hudBtnGap(), w: 60, h: 40 }; },
+        getRect() {
+            return isMobile ? hudMobileRect(HUD_M.gearX)
+                            : { x: canvas.width - 200, y: canvas.height - bandTop(canvas) - hudBtnGap(), w: 60, h: 40 };
+        },
         // Rests on '%'; on hover it immediately swaps - -> \ -> ; then pauses back
         // on '%' (swap first so the animation starts at once, like the brackets).
         tick(dt, over) {
@@ -903,7 +923,10 @@ const hudItems = [
         hover: 0, z: HUD_Z_REST, releasePhase: null, glowT: 0, _rect: null,
         _animT: 0, _spread: 0,
         typeChars: '[]',
-        getRect() { return { x: canvas.width - 120, y: canvas.height - bandTop(canvas) - hudBtnGap(), w: 70, h: 40 }; },
+        getRect() {
+            return isMobile ? hudMobileRect(HUD_M.fullX)
+                            : { x: canvas.width - 120, y: canvas.height - bandTop(canvas) - hudBtnGap(), w: 70, h: 40 };
+        },
         // Inactive (windowed): rests closed, hover snaps OUT twice then returns.
         // Active (fullscreen): rests expanded, hover snaps IN twice then reverts.
         tick(dt, over) {
@@ -1254,7 +1277,15 @@ canvas.addEventListener('click', (e) => {
 
 requestAnimationFrame(loop);
 
+let _screenKey = window.screen.width + 'x' + window.screen.height;
 function loop() {
+    // Moving the window to a different-resolution monitor (or window.screen reporting the wrong
+    // monitor at load) changes window.screen but often fires NO resize event — so poll it here and
+    // re-scale to the current screen. Otherwise the game stays at the old, possibly smaller, size
+    // until a manual refresh. Cheap: two property reads + a string compare per frame.
+    const sk = window.screen.width + 'x' + window.screen.height;
+    if (sk !== _screenKey) { _screenKey = sk; refreshLayout(); }
+
     if (isPortraitGate()) {
         if (!gateActive || canvas.width !== GATE_W) enterGate();
         drawRotateGate(ctx, canvas.width, canvas.height);
