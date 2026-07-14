@@ -3,8 +3,9 @@ import { makeSlider, drawSlider, sliderRows } from '../ui/Slider.js';
 import { makeBracketButton, drawBracketButton, bracketButtonRows, BRACKET_REST } from '../ui/BracketButton.js';
 import { textRow } from '../ui/Transition.js';
 import { GAME_MODES } from '../../gameModes.js';
-import { theme, disabledColor, DISCONNECTED_ALPHA } from '../ui/colors.js';
+import { theme, disabledColor, DISCONNECTED_ALPHA, disconnectGlyph } from '../ui/colors.js';
 import { bandTop } from '../ui/viewport.js';
+import { RowReveal, drawRevealSegments } from '../ui/RowReveal.js';
 
 const FONT_SIZE = 28;
 const TITLE_FONT = 96;   // big room code
@@ -21,9 +22,12 @@ const COL_TOP = 240;         // top of the three columns
 const TITLE_GAP = 30;        // underline below a column title
 const MODE_GAP = 70;         // gap from underline to first mode button
 const MODE_SPACING = 90;     // between mode buttons / CUSTOM
-const PREVIEW_W = 35;        // preview box width in chars
-const PREVIEW_H = 10;        // preview box height in rows (a touch taller than the true
-                            // play-box ratio — reads better in the lobby)
+const PREVIEW_W = 35;        // preview box width in chars — matches the game play box (35×10 = 1.75:1)
+const PREVIEW_H = 10;        // preview box height in rows
+const PREVIEW_FONT = 36;     // border font — larger than the 28pt body so the 35×10 box fills more space.
+                            // Aspect is font-independent (35 cols × ½-line-height ÷ 10 rows = 1.75), so
+                            // scaling the font keeps the exact game-box ratio.
+const PREVIEW_NUDGE_Y = 3;   // fine vertical tweak — box sits this far below the ink-aligned tilde line
 const SETTING_SLIDER_GAP = 78;
 const SETTING_OPTION_GAP = 95;
 const ACTION_GAP = 40;         // START GAME below the settings editor (CUSTOM)
@@ -58,6 +62,9 @@ export class LobbyScreen {
         this.texts = [];
         this.copyBtn = null;
         this.previewBox = null;
+        // Types in a player row when someone joins after the lobby is already up (the initial roster is
+        // typed by the screen transition, so it's shown instantly here).
+        this.rowReveal = new RowReveal();
         this.playerLayout = { listX: 0, startY: 0, rowH: PLAYER_ROW_H, rowW: 360 };
     }
 
@@ -83,12 +90,18 @@ export class LobbyScreen {
         this.settings = {};
         this.customOpen = false;
         this.customToggledAt = null;
+        this.rowReveal.reset();   // fresh room → next roster is the initial batch (no per-row typing)
         this.dirty = true;
     }
 
     // --- setters from game.js (server-driven) ---
     setRoomCode(code) { this.roomCode = code; }            // drawn live, no rebuild
-    setPlayers(players) { this.players = players; this.dirty = true; }
+    setPlayers(players) { this.players = players; this.rowReveal.sync(players.map(p => p.id)); this.dirty = true; }
+    // A new room connection: drop any stale roster so maybeEnterLobby() waits for THIS room's real
+    // player list before the type-in transition begins — otherwise the transition fires on the previous
+    // room's roster (missing the joiner) and their name pops in afterward. rowReveal.reset() makes the
+    // incoming roster the initial batch (typed by the transition), not per-row joins.
+    resetRoster() { this.players = []; this.rowReveal.reset(); this.dirty = true; }
     setHost(isHost) { if (this.isHost !== isHost) { this.isHost = isHost; this.dirty = true; } }
 
     applyRemoteSettings(mode, settings, customOpen) {
@@ -265,10 +278,14 @@ export class LobbyScreen {
             });
             centerBottom = ry;
         } else {
-            // Top aligned with the column underlines (tildes); buttons sit lower.
-            const previewTop = COL_TOP + TITLE_GAP;
+            // Align the box's top '=' rule with the header underline (tildes) by matching their INK
+            // centers. '=' ink sits mid-cell and '~' rides high (and they're different font sizes), so
+            // lift the box by the difference — measured from real ink bounds so it holds at any font.
+            const underlineTop = COL_TOP + TITLE_GAP;
+            const previewTop = underlineTop + PREVIEW_NUDGE_Y
+                + this._inkCenterBelowTop('~', HEADER_FONT) - this._inkCenterBelowTop('=', PREVIEW_FONT);
             this.previewBox = { cx, top: previewTop, w: PREVIEW_W, h: PREVIEW_H };
-            centerBottom = previewTop + PREVIEW_H * FONT_SIZE;
+            centerBottom = previewTop + PREVIEW_H * PREVIEW_FONT;
             actionGap = PREVIEW_ACTION_GAP;
         }
 
@@ -296,6 +313,13 @@ export class LobbyScreen {
                 const mh = makeBracketButton('MAKE HOST', roleRightX - labelW / 2, rowY,
                     () => this.onMakeHost(p.id));
                 mh.fontSize = LIST_FONT;
+                // Reveal gate: stay hidden until the row has typed the whole { MAKE HOST } — i.e. through
+                // the right bracket at roleRightX + BRACKET_REST — so the typed segments and the real
+                // button never double up. Must match the row loop's doneCol exactly.
+                const cwList = this.ctx.measureText('M').width;
+                const mhRightX = roleRightX + BRACKET_REST - cwList / 2;   // '}' left edge (matches row loop)
+                mh.revealKey = p.id;
+                mh.revealDoneCol = Math.round((mhRightX - this.playerLayout.listX) / cwList) + 1;
                 this.ui.buttons.push(mh);
             }
         });
@@ -382,11 +406,33 @@ export class LobbyScreen {
 
     // Box outline as typeable rows: the `=` top/bottom type across; each `]   [`
     // side row types just its two brackets; the PREVIEW label types centered.
+    // Ink center of a glyph in px below the text-top (textBaseline:'top'), measured by rasterizing —
+    // this bitmap font's metrics don't line up with canvas baselines, so measureText can't be trusted
+    // for vertical alignment. Used to line the box's top '=' rule up with the header tildes.
+    _inkCenterBelowTop(ch, size) {
+        const cv = document.createElement('canvas');
+        cv.width = Math.ceil(size) + 4;
+        cv.height = Math.ceil(size * 2);
+        const g = cv.getContext('2d');
+        g.font = `${size}px "IBMVGA"`;
+        g.textBaseline = 'top';
+        g.fillStyle = '#fff';
+        g.fillText(ch, 2, 0);
+        const data = g.getImageData(0, 0, cv.width, cv.height).data;
+        let top = -1, bottom = -1;
+        for (let y = 0; y < cv.height; y++) {
+            for (let x = 0; x < cv.width; x++) {
+                if (data[(y * cv.width + x) * 4 + 3] > 0) { if (top < 0) top = y; bottom = y; break; }
+            }
+        }
+        return top < 0 ? size / 2 : (top + bottom) / 2;
+    }
+
     _previewRows(box) {
         const ctx = this.ctx;
-        ctx.font = `${FONT_SIZE}px "IBMVGA"`;
+        ctx.font = `${PREVIEW_FONT}px "IBMVGA"`;
         const cw = ctx.measureText('M').width;
-        const lh = FONT_SIZE;
+        const lh = PREVIEW_FONT;
         const left = box.cx - (box.w * cw) / 2;
         const rightX = left + (box.w - 1) * cw;
         const topRow = '='.repeat(box.w);
@@ -398,7 +444,7 @@ export class LobbyScreen {
             rows.push({
                 y, x: left, cost: edge ? box.w : 2,
                 draw: (c, n) => {
-                    c.font = `${FONT_SIZE}px "IBMVGA"`;
+                    c.font = `${PREVIEW_FONT}px "IBMVGA"`;
                     c.textAlign = 'left'; c.textBaseline = 'top';
                     c.fillStyle = fg; c.globalAlpha = 1;
                     if (edge) { c.fillText(topRow.slice(0, n), left, y); }
@@ -412,11 +458,11 @@ export class LobbyScreen {
     }
 
     _drawPreviewBox(ctx, box) {
-        ctx.font = `${FONT_SIZE}px "IBMVGA"`;
+        ctx.font = `${PREVIEW_FONT}px "IBMVGA"`;
         ctx.textAlign = 'left';
         ctx.textBaseline = 'top';
         const cw = ctx.measureText('M').width;
-        const lh = FONT_SIZE;
+        const lh = PREVIEW_FONT;
         const left = box.cx - (box.w * cw) / 2;
         const topRow = '='.repeat(box.w);
         const midRow = ']' + ' '.repeat(box.w - 2) + '[';
@@ -449,20 +495,41 @@ export class LobbyScreen {
         ctx.textBaseline = 'middle';
         const { listX, startY, rowH, rowW } = this.playerLayout;
         const playerColor = this.isHost ? theme.fg : disabledColor();
+        const cw = ctx.measureText('M').width;   // monospace column width at LIST_FONT
         this.players.forEach((p, i) => {
             const rowY = startY + i * rowH;
             // Disconnected rows use an ABSOLUTE opacity (solid fg + globalAlpha) so they read
             // the same for host and non-host; connected rows use the normal row color.
             const rowColor = p.connected ? playerColor : theme.fg;
             ctx.globalAlpha = p.connected ? 1 : DISCONNECTED_ALPHA;
-            ctx.textAlign = 'left';
             ctx.fillStyle = rowColor;
-            ctx.fillText(p.name, listX, rowY);
-            if (!(this.isHost && !p.isHost && p.connected)) {
-                ctx.textAlign = 'right';
-                ctx.fillStyle = rowColor;
-                ctx.fillText(p.isHost ? 'HOST' : 'PLAYER', listX + rowW, rowY);
+            // A newly-joined row types the WHOLE row in one left-to-right sweep: name, then (after the
+            // gap) the role label. The disconnect glyph rides on the name at the same dim alpha.
+            const nameText = p.name + (p.connected ? '' : ' ' + disconnectGlyph());
+            const segs = [{ text: nameText, x: listX, col: 0 }];
+            // The role text types in with the row. For a host viewing a connected non-host it's the
+            // MAKE HOST button: type the whole { MAKE HOST } — brackets included — as three segments at
+            // the EXACT positions drawBracketButton uses (label centered, brackets BRACKET_REST out and
+            // center-aligned), so when it's fully typed the real interactive button takes over with zero
+            // pop. The button stays hidden until its matching revealDoneCol (set in rebuild()).
+            const isMakeHost = this.isHost && !p.isHost && p.connected;
+            if (isMakeHost) {
+                const label = 'MAKE HOST';
+                const labelX = listX + rowW - ctx.measureText(label).width;   // label left edge
+                const leftX = labelX - BRACKET_REST - cw / 2;                  // '{' left edge (centered char)
+                const rightX = listX + rowW + BRACKET_REST - cw / 2;          // '}' left edge
+                const doneCol = Math.round((rightX - listX) / cw) + 1;
+                if (this.rowReveal.count(p.id) < doneCol) {
+                    segs.push({ text: '{', x: leftX, col: Math.round((leftX - listX) / cw) });
+                    segs.push({ text: label, x: labelX, col: Math.round((labelX - listX) / cw) });
+                    segs.push({ text: '}', x: rightX, col: Math.round((rightX - listX) / cw) });
+                }
+            } else {
+                const label = p.isHost ? 'HOST' : 'PLAYER';
+                const labelX = listX + rowW - ctx.measureText(label).width;   // right-aligned left edge
+                segs.push({ text: label, x: labelX, col: Math.round((labelX - listX) / cw) });
             }
+            drawRevealSegments(ctx, segs, this.rowReveal.count(p.id), rowY);
         });
         ctx.globalAlpha = 1;
 
@@ -480,6 +547,9 @@ export class LobbyScreen {
 
         this.ui.sliders.forEach(s => drawSlider(ctx, s, this.ui.elapsed, FONT_SIZE));
         this.ui.buttons.forEach(b => {
+            // A MAKE HOST button waits for its row to finish typing the text (the row loop draws it as a
+            // typed segment until then), so the two never overlap.
+            if (b.revealKey && this.rowReveal.count(b.revealKey) < b.revealDoneCol) return;
             if (b.bracket) drawBracketButton(ctx, b, this.ui.elapsed, b.fontSize || FONT_SIZE);
             else drawButton(ctx, b, this.ui.elapsed, FONT_SIZE);
         });

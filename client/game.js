@@ -14,6 +14,7 @@ import { setBaseHeight, setBandHeight, bandTop } from './ui/viewport.js';
 import { CRTEffect } from './CRTShader.js';
 import { Transition } from './ui/Transition.js';
 import { DELMode } from './modes/DELmode.js';
+import { FrequencyMode } from './modes/FrequencyMode.js';
 import { drawRotateGate } from './ui/RotateGate.js';
 
 const colyseusClient = new Client(
@@ -435,14 +436,16 @@ function onRoomJoined(r) {
     localStorage.setItem('reconnectionToken', room.reconnectionToken);
     room.onLeave(() => {
         localStorage.removeItem('reconnectionToken');
-        showScreen(leaveDestination);
+        showScreen(leaveDestination);   // snapshots the live game frame for the scroll BEFORE we tear it down
         leaveDestination = 'main';
         if (currentMode) currentMode.reset();
+        currentMode = null;             // drop the stale mode (matches returnedToLobby) so nothing lingers
     });
     // Don't show the lobby yet — wait for its initial state (room code, players,
     // and the host's current selections) so it types in the REAL state instead of
     // an empty screen. maybeEnterLobby() fires once that's in.
     pendingLobbyEntry = true;
+    lobbyScreen.resetRoster();   // drop any stale roster so the transition waits for THIS room's list
     setupRoomMessages();
 }
 
@@ -645,6 +648,9 @@ function setupRoomMessages(isReconnecting = false) {
     room.onMessage('gameStarted', (data) => {
         pendingLobbyEntry = false; // going to the game, not the lobby
         if (transition.isActive()) transition.cancelToEnd();
+        hideGameOverOverlay();     // clear any leftover game-over overlay (winnerId/vote buttons) from a
+                                   // previous game — e.g. after leaving to the menu via the settings panel,
+                                   // which doesn't clear it — so it can't paint over the new game.
         currentMode = createMode(data.mode, data);
         currentScreen = 'game';
         uiManager.clear();
@@ -659,12 +665,22 @@ function setupRoomMessages(isReconnecting = false) {
         // reset() zeroes these; gameRestarted carries no `mode`, so createMode is skipped —
         // restore them here or the match-win "(x)" counter (guarded on totalMatches>1) vanishes.
         if (currentMode) { currentMode.totalMatches = data.totalMatches || 1; currentMode.currentMatch = data.match || 1; }
+        if (currentMode && data.totalRounds) currentMode.totalRounds = data.totalRounds;
         currentScreen = 'game';
         hideGameOverOverlay();   // clears uiManager (incl. the copy button)…
         setupGameHud();          // …so re-register it
     });
 
     room.onMessage('returnedToLobby', () => {
+        // The final vote arrived as returnToLobbyVotes ("2/2") immediately before this, updating the
+        // button label but WITHOUT a repaint — and the scroll transition snapshots the canvas's last
+        // painted frame. So paint one fresh game-over frame now (mode/overlay still alive) or the
+        // lifted-away screen would show the stale "1/2". Then tear down and transition.
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        ctx.fillStyle = theme.bg;
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        drawScreenInto('game');
+
         if (currentMode) currentMode.reset();
         currentMode = null;
         hideGameOverOverlay();
@@ -687,7 +703,7 @@ function setupRoomMessages(isReconnecting = false) {
 
     const modeMessages = [
         'roundCountdown', 'roundStart', 'gameState', 'charUpdate',
-        'roundOver', 'timeUp', 'matchOver', 'gameOver', 'reconnected'
+        'roundOver', 'timeUp', 'roundResult', 'matchOver', 'gameOver', 'reconnected'
     ];
     modeMessages.forEach(type => {
         room.onMessage(type, (data) => {
@@ -712,13 +728,21 @@ function createMode(modeId, data) {
         onGameOver: (winner) => showGameOverOverlay(winner)
     };
     switch (modeId) {
+        case 'frequency': {
+            const mode = new FrequencyMode(canvas, ctx, uiManager, room, callbacks);
+            mode.totalRounds = data.totalRounds || 5;
+            mode.currentRound = data.round || 1;
+            gameScreen.setMode('frequency');
+            return mode;
+        }
         case 'redacted':
-        default:
+        default: {
             const mode = new DELMode(canvas, ctx, uiManager, room, callbacks);
             mode.totalMatches = data.totalMatches || 1;
             mode.currentMatch = data.match || 1;
-            gameScreen.setMode(modeId);   // GameScreen shows/hides the Round label by mode
+            gameScreen.setMode('redacted');   // GameScreen shows/hides the Round label by mode
             return mode;
+        }
     }
 }
 
@@ -1205,6 +1229,7 @@ canvas.addEventListener('mousedown', (e) => {
     // slides away) and begins the press-dim; a press elsewhere in the field glitches.
     if (currentScreen === 'game' && currentMode && !settingsPanelOpen
         && !currentMode.countdownActive && !currentMode.showRoundOver
+        && !currentMode.showRoundResult   // Frequency's round-over scoreboard beat — no taps/glitch while it's up
         && !currentMode.showMatchOver && !currentMode.winnerId) {
         const cx = x - gameScreen.boxCenterX, cy = y - canvas.height / 2;
         const hit = currentMode.hitTest(gameScreen, cx, cy);
@@ -1250,10 +1275,12 @@ canvas.addEventListener('click', (e) => {
     if (settingsPanelOpen) {
         if (hits(getSettingsPanelRect())) {
             settingsPanelOpen = false;
-            if (currentMode) currentMode.reset();
-            // In a room, leaving navigates to main via room.onLeave — don't ALSO
-            // navigate directly, or the two transitions fight (a partial title
-            // typed then restarted, visible once there's network latency).
+            hideGameOverOverlay();   // leaving from game over? clear the overlay (like the game-over Main Menu button)
+            // Do NOT reset currentMode here: the game must stay live in the frame the scroll transition
+            // snapshots, or the timer/field would show its reset state while scrolling away. room.onLeave
+            // resets it AFTER the snapshot. In a room, leaving navigates to main via room.onLeave — don't
+            // ALSO navigate directly, or the two transitions fight (a partial title typed then restarted,
+            // visible once there's network latency).
             if (room) {
                 leaveDestination = 'main';
                 room.send('leaveToMenu');

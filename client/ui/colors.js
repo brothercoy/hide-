@@ -31,6 +31,29 @@ export const disabledColor = () => dim(0.3);
 // of the signal, so this needn't be too low.
 export const DISCONNECTED_ALPHA = 0.22;
 
+// Disconnected players show an animated "bouncing dot" beside their name (drawn at the name's own
+// dim alpha — never brighter). It's a sequence of glyphs, each held for its OWN duration so the
+// motion eases in and out (lingering at the top/bottom of the bounce, quick through the middle)
+// instead of ticking uniformly. Time-driven so every disconnected player animates in sync. Tune any
+// single frame's glyph or its ms freely — [glyph, ms].
+const DC_FRAMES = [
+    ['.', 150],   // resting low — lingers
+    ['!', 200],    // shooting up
+    ["^", 300],    // apex, passing quick
+    ['O', 150],   // top of the bounce — lingers
+    ['o', 100],    // dropping
+    ['_', 60],   // near the bottom
+];
+const DC_TOTAL = DC_FRAMES.reduce((sum, f) => sum + f[1], 0);
+export function disconnectGlyph(now = Date.now()) {
+    let t = now % DC_TOTAL;
+    for (const [glyph, ms] of DC_FRAMES) {
+        if (t < ms) return glyph;
+        t -= ms;
+    }
+    return DC_FRAMES[0][0];
+}
+
 // Background at reduced opacity (modal / overlay scrims).
 export function bgAlpha(alpha) {
     const [r, g, b] = rgbOf(theme.bg);

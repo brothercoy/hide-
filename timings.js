@@ -53,3 +53,30 @@ export const MO_TAIL_MS   = 900;    // hold the finished screen before the next 
 export const MO_MAX_NAME  = 12;     // max player-name length — worst case for the derived hold
 export const MATCH_OVER_MS =
     MO_HOLD_MS + MO_MAX_NAME * MO_TYPE_MS + MO_TAIL_MS;
+
+// Frequency (ACK) round-result screen — after each round the "Round X:" title shows, then a cursor
+// drops into the gap under it and steps DOWN the player list, typing "+points" onto each row. The
+// total scales with the player count, so the server derives its between-round wait from these phase
+// constants (client: GameScreen._drawRoundResult).
+// Title phase: "Round X:" holds, then " COMPLETED" TYPES in, then holds again — before the cursor
+// drops to the list. RR_TITLE_MS (the whole phase) is DERIVED from these, so downstream timing is
+// untouched; tune the three beats to taste.
+export const RR_TITLE_HOLD_MS    = 450;   // beat on "Round X:" before COMPLETED types
+export const RR_COMPLETE_TYPE_MS = 90;    // per-character type of " COMPLETED"
+export const RR_COMPLETE_HOLD_MS = 750;   // beat on "Round X: COMPLETED" before the cursor drops
+export const RR_COMPLETE_TEXT    = ' COMPLETED';
+export const RR_TITLE_MS = RR_TITLE_HOLD_MS + RR_COMPLETE_TEXT.length * RR_COMPLETE_TYPE_MS + RR_COMPLETE_HOLD_MS;
+export const RR_GAP_MS   = 300;   // cursor sits centered in the gap under the title
+export const RR_ROW_MOVE_MS = 300;  // per player: the cursor snaps to their row and waits this beat...
+export const RR_TYPE_MS  = 200;    // ...then types "+points", a character every this long...
+export const RR_ROW_SETTLE_MS = 350;  // ...then lingers this long on the finished "+points" before stepping to the next row
+export const RR_PAUSE_MS = 1000;   // cursor rests at the end — all "+points" shown, still the OLD scores
+export const RR_HOLD_MS  = 1500;   // then "+points" clear and scores snap to their new totals; hold this long
+// The "+points" text drawn/typed on each row (single source, so the typed string and the timing that
+// depends on its length never drift).
+export const rrPlus = (gained) => `+${gained}`;
+// One player's row takes exactly its arrival beat + the time to type its "+points" — nothing else. So
+// the whole screen's duration is the sum over players, which the server computes from the point gains.
+export const rrRowMs = (gained) => RR_ROW_MOVE_MS + rrPlus(gained).length * RR_TYPE_MS + RR_ROW_SETTLE_MS;
+export const roundResultMs = (gainedList) =>
+    RR_TITLE_MS + RR_GAP_MS + gainedList.reduce((s, g) => s + rrRowMs(g), 0) + RR_PAUSE_MS + RR_HOLD_MS;

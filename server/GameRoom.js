@@ -1,6 +1,7 @@
 import { Room } from '@colyseus/core';
 import { GAME_MODES } from '../gameModes.js';
-import { COUNTDOWN_MS, LIFE_LOSS_INTRO_MS, LIFE_LOSS_ENTRY_MS, LIFE_LOSS_WORD_MS, LIFE_LOSS_ELIM_MS, MATCH_OVER_MS } from '../timings.js';
+import { COUNTDOWN_MS, LIFE_LOSS_INTRO_MS, LIFE_LOSS_ENTRY_MS, LIFE_LOSS_WORD_MS, LIFE_LOSS_ELIM_MS, MATCH_OVER_MS, roundResultMs } from '../timings.js';
+import { confusionDecoys, pickConfusionTarget, TEST_PAIRS_IN_ORDER, nextTestPair } from '../confusables.js';
 
 // The full visible printable-ASCII set (33 '!' … 126 '~') — every glyph a target/field char can
 // be. Shared by ALL game modes (generateChars draws from here). Which confusable glyphs may not
@@ -27,6 +28,23 @@ const CONFLICTS = {};
 for (const group of CONFLICT_GROUPS) for (const c of group) CONFLICTS[c] = group.filter(x => x !== c);
 const TICK_RATE = 50;
 const LOBBY_TIMEOUT = 1000 * 60 * 10;
+
+// ACK (Frequency) difficulty ramp. Round 1 uses the player's SETTING as-is; the ramp climbs linearly
+// to a harder END reached at the MAX round count (the rounds slider max, 20). For charCount/speed the
+// END adds the FULL slider RANGE to the setting — so the easy-end DEFAULT (setting = slider min)
+// reaches the slider MAX at round 20, and a higher starting setting scales PAST the max, clamped to a
+// reasonable ceiling. roundTime shrinks toward a fraction of the setting, floored. So the scaling is
+// dynamic and setting-driven, never a fixed target. Defaults (chars 30, speed 0.1/Slow, time 30s) give
+// 30→150 chars, slow→fast, 30s→10s over 20 rounds — so a default 10-round game lands on the midpoint.
+const ACK_RAMP = {
+    charCount:  { kind: 'plusRange', cap: 200 },              // → slider max (150) at 20 rounds; up to 200
+    speedScale: { kind: 'plusRange', cap: 0.6 },              // → slider max (0.4/Fast) at 20 rounds; up to 0.6
+    roundTime:  { kind: 'shrink', mult: 1 / 3, floor: 5 },    // 30s → 10s at 20 rounds; floor 5s
+};
+// Spawn confusion: fraction of the field filled with the target's look-alikes (vs random noise). Ramps
+// 0 (round 1) → this at the final round. 1.0 means the final round is PURE camouflage — the field is
+// nothing but the target's nearest twins (the "two options"), no random noise.
+const CONFUSION_MAX = 1.0;
 
 const DEFAULT_MODE = GAME_MODES.redacted;
 
@@ -95,6 +113,8 @@ class GameRoom extends Room {
             if (!player || !player.alive) return;
             if (this.taps.find(t => t.id === client.sessionId)) return;
             if (!this._tapHitsTarget(data)) return;   // server decides the hit — the client isn't trusted
+
+            if (this.gameMode.id === 'frequency') { this._frequencyTap(client.sessionId); return; }
 
             this.taps.push({ id: client.sessionId, time: Date.now() });
             this.broadcastPlayerList();
@@ -206,52 +226,7 @@ class GameRoom extends Room {
                 this.broadcast('newHost', { id: playerIds[1] });
             }
 
-            if (this.gameStarted && !this.gameOver && this.activePlayers[client.sessionId]) {
-                this.activePlayers[client.sessionId].alive = false;
-                this.activePlayers[client.sessionId].lives = 0;
-                this.broadcastPlayerList();
-
-                const alivePlayers = this.getAlivePlayers();
-
-                if (alivePlayers.length <= 1) {
-                    this.taps = [];
-                    this.inCountdown = false;
-                    this.roundActive = false;
-                    this.timeUpHandled = true;
-                    this.startNextRound();
-                } else if (this.roundActive) {
-                    const tappedIds = this.taps.map(t => t.id);
-                    const tappedAlive = tappedIds.filter(id =>
-                        this.activePlayers[id] && this.activePlayers[id].alive
-                    ).length;
-
-                    if (tappedAlive >= alivePlayers.length - 1) {
-                        const eliminatedId = alivePlayers.find(id => !tappedIds.includes(id));
-                        if (eliminatedId) {
-                            this.activePlayers[eliminatedId].lives -= 1;
-                            if (this.activePlayers[eliminatedId].lives <= 0) {
-                                this.activePlayers[eliminatedId].alive = false;
-                            }
-                            const msg = {
-                                id: eliminatedId,
-                                lostLifeName: this.activePlayers[eliminatedId].name,
-                                eliminatedName: this.activePlayers[eliminatedId].name,
-                                livesRemaining: this.activePlayers[eliminatedId].lives,
-                                lostLife: this.activePlayers[eliminatedId].lives > 0
-                            };
-                            this.currentRoundOverMessage = msg;
-                            this.broadcast('roundOver', msg);
-                            this.startNextRound(1, msg.lostLife && msg.livesRemaining === 1 ? 1 : 0,
-                                msg.lostLife ? 0 : 1);
-                        }
-                    }
-                }
-            }
-
-            delete this.players[client.sessionId];
-            this.broadcastPlayerList();
-            this.returnToLobbyVotes.delete(client.sessionId);
-            this.playAgainVotes.delete(client.sessionId);
+            this._removeFromMatchMidGame(client.sessionId);   // re-evaluate the round/match, then DQ them
             client.leave(1000);
         });
 
@@ -263,19 +238,26 @@ class GameRoom extends Room {
                 return;
             }
 
-            this.settings = {
-                ...this.gameMode.defaultSettings,
-                lives: data.settings.lives || this.gameMode.defaultSettings.lives,
-                roundTime: data.settings.roundTime || this.gameMode.defaultSettings.roundTime,
-                speedScale: data.settings.speedScale || this.gameMode.defaultSettings.speedScale,
-                charCount: data.settings.charCount || this.gameMode.defaultSettings.charCount,
-                matches: data.settings.matches || this.gameMode.defaultSettings.matches,
-                minPlayers: this.gameMode.defaultSettings.minPlayers
-            };
+            // Resolve the actual game mode (the room only tracked the selection until now) and build
+            // its settings generically — each mode exposes a different set of keys, so we start from
+            // its defaults and override with any provided value. minPlayers is always the mode default.
+            const modeId = this.selectedMode || 'redacted';
+            this.gameMode = GAME_MODES[modeId] || DEFAULT_MODE;
+            const provided = data.settings || {};
+            this.settings = { ...this.gameMode.defaultSettings };
+            for (const key of Object.keys(this.gameMode.defaultSettings)) {
+                if (provided[key] != null) this.settings[key] = provided[key];
+            }
+            this.settings.minPlayers = this.gameMode.defaultSettings.minPlayers;
 
+            const isFreq = this.gameMode.id === 'frequency';
             this.activePlayers = {};
             connected.forEach(id => {
-                this.activePlayers[id] = { ...this.players[id], tapped: false, lives: this.settings.lives };
+                this.activePlayers[id] = {
+                    ...this.players[id], tapped: false,
+                    lives: isFreq ? null : this.settings.lives,   // Frequency has no lives
+                    score: 0, roundScore: 0, place: null
+                };
                 this.matchWins[id] = 0;
             });
 
@@ -290,6 +272,7 @@ class GameRoom extends Room {
             this.broadcast('gameStarted', {
                 match: this.currentMatch,
                 totalMatches: this.settings.matches,
+                totalRounds: this.settings.rounds,   // Frequency: total rounds for the "Round X/N" label
                 mode: this.selectedMode || 'redacted'
             });
             this.broadcastPlayerList();
@@ -352,7 +335,13 @@ class GameRoom extends Room {
                 tapped: tappedIds.includes(p.id),
                 matchWins: this.matchWins[p.id] || 0,
                 isHost: p.id === hostId,
-                lives: this.activePlayers[p.id] ? this.activePlayers[p.id].lives : null
+                lives: this.activePlayers[p.id] ? this.activePlayers[p.id].lives : null,
+                score: this.activePlayers[p.id] ? (this.activePlayers[p.id].score || 0) : 0,   // Frequency
+                // Frequency: points gained THIS round. The frozen side-list score everyone shows is
+                // score - roundScore (the round-start total), so it's fully server-derivable — a
+                // reconnecting client computes the same value instead of guessing from a stale snapshot.
+                roundScore: this.activePlayers[p.id] ? (this.activePlayers[p.id].roundScore || 0) : 0,
+                spectator: !this.activePlayers[p.id]   // joined after the game started → spectates
             }))
         });
     }
@@ -374,6 +363,7 @@ class GameRoom extends Room {
                 round: this.currentRound,
                 match: this.currentMatch,
                 totalMatches: this.settings.matches,
+                totalRounds: this.settings.rounds,
                 gameStarted: true,
                 gameOver: this.gameOver,
                 winnerName: this.gameOver ? this.lastWinnerName : null,
@@ -392,7 +382,7 @@ class GameRoom extends Room {
                     elapsedSeconds: elapsed
                 });
             } else if (this.currentRoundOverMessage && !this.roundActive) {
-                client.send('roundOver', this.currentRoundOverMessage);
+                client.send(this.gameMode.id === 'frequency' ? 'roundResult' : 'roundOver', this.currentRoundOverMessage);
             }
         } else {
             this.broadcastPlayerList();
@@ -409,6 +399,8 @@ class GameRoom extends Room {
     }
 
     handleTimeUp() {
+        if (this.gameMode.id === 'frequency') { this._endFrequencyRound(); return; }
+
         const tappedIds = this.taps.map(t => t.id);
         const untapped = this.getAlivePlayers().filter(id => !tappedIds.includes(id));
 
@@ -437,22 +429,204 @@ class GameRoom extends Room {
             eliminated.length);
     }
 
+    // ---- Frequency (ACK) mode ------------------------------------------------------------------
+    // No lives: every player keeps hunting until the round ends (all found, or time up). A valid tap
+    // scores immediately by finishing order, so the side list's running total ticks up live.
+
+    _frequencyTap(id) {
+        const active = this.getAlivePlayers();
+        const place = this.taps.length + 1;                 // 1 = first to find it this round
+        this.taps.push({ id, time: Date.now() });
+        const pts = this._pointsFor(place, this.currentRound, active.length);
+        const p = this.activePlayers[id];
+        p.score = (p.score || 0) + pts;
+        p.roundScore = (p.roundScore || 0) + pts;
+        p.place = place;
+        // Broadcast so the side list LIGHTS this player up (found-the-target), like Redacted. The
+        // SCORE stays frozen on the client — it shows round-start scores and ignores the live value —
+        // so only the lit/dim state moves during the round; totals move on the round-end scoreboard.
+        this.broadcastPlayerList();
+        // Round ends the moment every ACTIVE player has found it (stale taps from players who left
+        // mid-round don't count).
+        const tappedActive = this.taps.filter(t => this.activePlayers[t.id] && this.activePlayers[t.id].alive).length;
+        if (tappedActive >= active.length) this._endFrequencyRound();
+    }
+
+    // Points for finishing in `place` (1-based) out of `n` players this round; a miss scores 0
+    // (simply never awarded). See _roundMultiplier for the per-round scaling.
+    _pointsFor(place, round, n) {
+        return Math.max(0, n - place + 1) * this._roundMultiplier(round);
+    }
+
+    // Per-round multiplier: points scale by the round NUMBER (round 1 = ×1 … round R = ×R), so late
+    // rounds matter more and the final round is already the single biggest prize (×R). We tested an
+    // EXTRA ×3 on the final (Monte Carlo, scratchpad/ack_final_mult.mjs): it flipped the pre-final
+    // leader >50% of the time and lowered fairness — the last round counted too much — so it's OUT.
+    // To bring it back: `return round === this.settings.rounds ? round * 3 : round;`.
+    _roundMultiplier(round) {
+        return round;
+    }
+
+    // End the current Frequency round (all found, or time up): freeze the tick loop, broadcast the
+    // scoreboard beat (points gained + running totals), then advance once the client has shown it.
+    _endFrequencyRound() {
+        if (!this.roundActive) return;
+        this.roundActive = false;
+        this.timeUpHandled = true;
+        const active = this.getAlivePlayers();
+        const msg = {
+            round: this.currentRound,
+            totalRounds: this.settings.rounds,
+            isFinal: this.currentRound >= this.settings.rounds,
+            multiplier: this._roundMultiplier(this.currentRound),
+            players: active.map(id => {
+                const p = this.activePlayers[id];
+                return { id, name: p.name, gained: p.roundScore || 0, total: p.score || 0,
+                         place: p.place || null, found: !!p.place };
+            })
+        };
+        this.currentRoundOverMessage = msg;
+        this.broadcast('roundResult', msg);
+        // Wait exactly as long as the client's cursor takes to type "+points" down every row — which
+        // depends on each player's gain (how many digits), so derive it from the actual points.
+        this.clock.setTimeout(() => this._advanceFrequency(), roundResultMs(msg.players.map(p => p.gained)));
+    }
+
+    // After the scoreboard beat: end the game if that was the last round, else reset per-round state
+    // and count down the next round.
+    _advanceFrequency() {
+        if (this.gameOver) return;
+        this.taps = [];
+        this.timeUpHandled = false;
+        if (this.currentRound >= this.settings.rounds) { this._endFrequencyGame(); return; }
+        this.currentRound += 1;
+        this.timeLeft = this._effRoundTime();   // shorter each round in Frequency
+        Object.keys(this.activePlayers).forEach(id => {
+            this.activePlayers[id].roundScore = 0;
+            this.activePlayers[id].place = null;
+        });
+        this.broadcastPlayerList();
+        this.startRoundCountdown();
+    }
+
+    // Game over after the final round — highest total score wins (tie → 'Tie', nobody scored → 'Nobody').
+    _endFrequencyGame() {
+        this.gameOver = true;
+        const ranked = Object.keys(this.activePlayers)
+            .map(id => [id, this.activePlayers[id].score || 0])
+            .sort(([, a], [, b]) => b - a);
+        const topScore = ranked[0] ? ranked[0][1] : 0;
+        const topPlayers = ranked.filter(([, s]) => s === topScore);
+        this.lastWinnerName =
+            ranked.length === 0 ? 'Nobody'
+            // A lone remaining player (everyone else left / was disqualified) wins even with 0 points.
+            : ranked.length === 1 ? (this.activePlayers[ranked[0][0]]?.name || 'Nobody')
+            : topScore === 0 ? 'Nobody'
+            : topPlayers.length === 1 ? (this.activePlayers[topPlayers[0][0]]?.name || 'Nobody')
+            : 'Tie';
+        // The final scoreboard beat has already played, so clear this round's gains — the frozen side
+        // list (score - roundScore) then shows the FULL final totals at game over.
+        Object.keys(this.activePlayers).forEach(id => { this.activePlayers[id].roundScore = 0; });
+        this.broadcastPlayerList();
+        this.broadcast('gameOver', {
+            winnerName: this.lastWinnerName,
+            scores: Object.fromEntries(ranked.map(([id, s]) => [this.activePlayers[id]?.name || id, s])),
+            isTie: topPlayers.length > 1
+        });
+        this.checkPlayAgainVotes();
+        this.checkReturnToLobbyVotes();
+    }
+
+    // The effective value of a ramped setting for `round` (1-based) in Frequency. The ramp climbs
+    // linearly from the SETTING (round 1) to the slider max, reached at the MAX round count (the rounds
+    // slider max, 20). So FEWER rounds end the climb early — a genuinely easier game; e.g. a default
+    // 10-round game stops at the midpoint — and only a full 20-round game reaches the top. A given
+    // round is the same difficulty regardless of the chosen round count. charCount/roundTime rounded.
+    _ackRoundValue(param, round) {
+        const start = this.settings[param];
+        const cfg = ACK_RAMP[param];
+        const ref = this.gameMode.settingsOptions.rounds.max;   // full ramp spans the MAX round count (20)
+        const p = ref > 1 ? (round - 1) / (ref - 1) : 0;
+        let v;
+        if (cfg.kind === 'plusRange') {
+            const opt = this.gameMode.settingsOptions[param];
+            const range = opt.options ? (opt.options[opt.options.length - 1] - opt.options[0]) : (opt.max - opt.min);
+            v = Math.min(cfg.cap, start + range * p);      // hits the slider max at round `ref`, then climbs to the cap
+        } else {   // 'shrink' — toward a fraction of the setting, floored
+            v = Math.max(cfg.floor, start + (start * cfg.mult - start) * p);
+        }
+        return param === 'speedScale' ? v : Math.round(v);
+    }
+    // Per-round effective values — ramped in Frequency, the flat setting in every other mode.
+    _effCharCount() {
+        return this.gameMode.id === 'frequency' ? this._ackRoundValue('charCount', this.currentRound) : this.settings.charCount;
+    }
+    _effSpeed() {
+        return this.gameMode.id === 'frequency' ? this._ackRoundValue('speedScale', this.currentRound) : this.settings.speedScale;
+    }
+    _effRoundTime() {
+        return this.gameMode.id === 'frequency' ? this._ackRoundValue('roundTime', this.currentRound) : this.settings.roundTime;
+    }
+    // Fraction of the field to fill with the target's look-alikes this round (0 outside Frequency and on
+    // round 1, ramping to CONFUSION_MAX at the FINAL round). UNLIKE the other axes, confusion scales to
+    // the CHOSEN round count — so every game, long or short, ends on a pure two-option field.
+    _effConfusion() {
+        if (this.gameMode.id !== 'frequency') return 0;
+        const ref = this.settings.rounds;
+        // A 1-round game IS its own final round — treat it as p=1 (full confusion), not p=0, so the
+        // single round still delivers the two-option climax instead of the easy round-1 noise field.
+        const p = ref > 1 ? Math.min(1, (this.currentRound - 1) / (ref - 1)) : 1;
+        return p * CONFUSION_MAX;
+    }
+    // --------------------------------------------------------------------------------------------
+
     generateChars() {
         const chars = [];
-        this.targetChar = LETTERS[Math.floor(Math.random() * LETTERS.length)];
+        // TEST: on a Frequency FINAL round with TEST_PAIRS_IN_ORDER on, walk the tier-2 pairs in order
+        // instead of picking randomly (target = pair[0], field = copies of pair[1]) so every pair can be
+        // reviewed once, in order, by playing 1-round games back to back. See confusables.js.
+        const testWalk = (TEST_PAIRS_IN_ORDER && this.gameMode.id === 'frequency'
+            && this.currentRound >= this.settings.rounds) ? nextTestPair() : null;
+        // Frequency's target: early rounds from ALL glyphs, but a rising chance (→100% by the final
+        // round) to instead draw a glyph grouped at the current confusion tier — so the last round always
+        // lands on one with a pair twin. Other modes use the full set uniformly.
+        this.targetChar = testWalk
+            ? testWalk.pair[0]
+            : (this.gameMode.id === 'frequency'
+                ? pickConfusionTarget(this.currentRound, this.settings.rounds, LETTERS)
+                : LETTERS[Math.floor(Math.random() * LETTERS.length)]);
+        const charCount = this._effCharCount();   // ramps up per round in Frequency; flat setting otherwise
 
         // This round's field pool: every glyph EXCEPT the target and its rotation look-alikes.
         // Pre-filtered once (no per-character re-roll loop).
         const forbidden = new Set(CONFLICTS[this.targetChar] || []);
         forbidden.add(this.targetChar);
         const pool = [...LETTERS].filter(c => !forbidden.has(c));
+        // The target's visual near-twins for THIS round: the confusion tier narrows with difficulty
+        // (broad family → subgroup → nearest pair), minus the rotation-conflicts already barred above.
+        // `confusion` of the field is filled with them to camouflage the target; the rest is random
+        // noise. Both scale to the CHOSEN round count, so the final round is always the nearest pair at
+        // 100% (0 on round 1 / in Redacted — confusionDecoys narrows against the same round count).
+        const totalRounds = this.gameMode.id === 'frequency' ? this.settings.rounds : 0;
+        // TEST walk: force this pair's partner as the sole decoy at full confusion, bypassing the
+        // conflict filter so even normally-barred pairs (6/9, M/W…) render as a clean two-option field.
+        const twins = testWalk
+            ? [testWalk.pair[1]]
+            : confusionDecoys(this.targetChar, this.currentRound, totalRounds).filter(c => !forbidden.has(c));
+        const confusion = testWalk ? 1 : (twins.length ? this._effConfusion() : 0);
+        if (testWalk) {
+            const barred = (CONFLICTS[testWalk.pair[0]] || []).includes(testWalk.pair[1]);
+            console.log(`[ACK TEST] pair ${testWalk.idx + 1}/${testWalk.total}${testWalk.reversed ? ' (reverse)' : ' (forward)'}: '${testWalk.pair[0]}' hidden among '${testWalk.pair[1]}'${barred ? '  (conflict-filtered in real play)' : ''}`);
+        }
 
-        for (let i = 0; i < this.settings.charCount - 1; i++) {
-            const char = pool[Math.floor(Math.random() * pool.length)];
+        for (let i = 0; i < charCount - 1; i++) {
+            const char = (confusion && Math.random() < confusion)
+                ? twins[Math.floor(Math.random() * twins.length)]         // a near-twin (camouflage)
+                : pool[Math.floor(Math.random() * pool.length)];          // random noise
             chars.push(this.createChar(char, false));
         }
 
-        const targetIndex = Math.floor(Math.random() * this.settings.charCount);
+        const targetIndex = Math.floor(Math.random() * charCount);
         const target = this.createChar(this.targetChar, true);
         chars.splice(targetIndex, 0, target);
 
@@ -486,6 +660,7 @@ class GameRoom extends Room {
         // client's radii table arrives. Spawn anywhere the whole glyph fits inside
         // the field (so it never starts overlapping the frame).
         const rr = this.charRadii[char] || { rx: 0.03, ry: 0.05 };
+        const speed = this._effSpeed();   // ramps up per round in Frequency; flat setting otherwise
         return {
             char: char,
             isTarget: isTarget,
@@ -493,8 +668,8 @@ class GameRoom extends Room {
             ry: rr.ry,
             x: (Math.random() * 2 - 1) * (1 - rr.rx),
             y: (Math.random() * 2 - 1) * (1 - rr.ry),
-            speedX: (Math.random() - 0.5) * this.settings.speedScale,
-            speedY: (Math.random() - 0.5) * this.settings.speedScale,
+            speedX: (Math.random() - 0.5) * speed,
+            speedY: (Math.random() - 0.5) * speed,
             rotation: Math.random() * Math.PI * 2,
             rotationSpeed: Math.random() < 0.05 ? 0 : (Math.random() - 0.5) * 2
         };
@@ -631,11 +806,13 @@ class GameRoom extends Room {
         const topWins = sortedPlayers[0]?.[1] || 0;
         const topPlayers = sortedPlayers.filter(([, wins]) => wins === topWins);
 
-        this.lastWinnerName = topWins === 0
-            ? 'Nobody'
-            : topPlayers.length === 1
-                ? this.activePlayers[topPlayers[0][0]]?.name || 'Nobody'
-                : 'Tie';
+        this.lastWinnerName =
+            sortedPlayers.length === 0 ? 'Nobody'
+            // A lone remaining player (everyone else left / was disqualified) wins the match.
+            : sortedPlayers.length === 1 ? (this.activePlayers[sortedPlayers[0][0]]?.name || 'Nobody')
+            : topWins === 0 ? 'Nobody'
+            : topPlayers.length === 1 ? (this.activePlayers[topPlayers[0][0]]?.name || 'Nobody')
+            : 'Tie';
 
         this.broadcastPlayerList();
 
@@ -711,10 +888,15 @@ class GameRoom extends Room {
         this.currentRoundOverMessage = null;
         this.matchWins = {};
 
+        const isFreq = this.gameMode.id === 'frequency';
         const connected = this.getConnectedPlayers();
         this.activePlayers = {};
         connected.forEach(id => {
-            this.activePlayers[id] = { ...this.players[id], tapped: false, lives: this.settings.lives };
+            this.activePlayers[id] = {
+                ...this.players[id], tapped: false,
+                lives: isFreq ? null : this.settings.lives,
+                score: 0, roundScore: 0, place: null
+            };
             this.matchWins[id] = 0;
         });
 
@@ -722,7 +904,8 @@ class GameRoom extends Room {
 
         this.broadcast('gameRestarted', {
             match: this.currentMatch,
-            totalMatches: this.settings.matches
+            totalMatches: this.settings.matches,
+            totalRounds: this.settings.rounds
         });
         this.broadcastPlayerList();
         this.startRoundCountdown();
@@ -742,10 +925,93 @@ class GameRoom extends Room {
         }
     }
 
+    // Out of the match entirely — gone from the player list, the score/winner ranking, and match wins.
+    // Used both for an intentional leave (disqualified) and for a disconnect that never reconnected.
+    // Doesn't broadcast; the caller decides when.
+    _dropFromMatch(sid) {
+        delete this.players[sid];
+        delete this.activePlayers[sid];
+        delete this.matchWins[sid];
+        this.playAgainVotes.delete(sid);
+        this.returnToLobbyVotes.delete(sid);
+    }
+
+    // A player exits the match mid-game — an intentional leave OR a disconnect whose reconnection window
+    // expired. Re-evaluate the round/match exactly as if they were eliminated, THEN remove them:
+    //   • Frequency: if everyone still in the round has now found the target, end the round (and the game
+    //     if it was the final round).
+    //   • DEL: if only one player is left, they win the match; otherwise if the exit leaves exactly one
+    //     player yet to find the target, that player loses a life and the round ends.
+    _removeFromMatchMidGame(sid) {
+        if (this.gameStarted && !this.gameOver && this.activePlayers[sid]) {
+            this.activePlayers[sid].alive = false;
+            if (this.gameMode.id === 'frequency') {
+                // No lives/elimination — they just drop out of the round. If they were the last one
+                // still searching, the round can now end.
+                this.broadcastPlayerList();
+                const active = this.getAlivePlayers();
+                if (this.roundActive && active.length >= 1) {
+                    const tappedActive = this.taps.filter(t => this.activePlayers[t.id] && this.activePlayers[t.id].alive).length;
+                    if (tappedActive >= active.length) this._endFrequencyRound();
+                }
+            } else {
+                this.activePlayers[sid].lives = 0;
+                this.broadcastPlayerList();
+
+                const alivePlayers = this.getAlivePlayers();
+
+                if (alivePlayers.length <= 1) {
+                    this.taps = [];
+                    this.inCountdown = false;
+                    this.roundActive = false;
+                    this.timeUpHandled = true;
+                    this.startNextRound();
+                } else if (this.roundActive) {
+                    const tappedIds = this.taps.map(t => t.id);
+                    const tappedAlive = tappedIds.filter(id =>
+                        this.activePlayers[id] && this.activePlayers[id].alive
+                    ).length;
+
+                    if (tappedAlive >= alivePlayers.length - 1) {
+                        const eliminatedId = alivePlayers.find(id => !tappedIds.includes(id));
+                        if (eliminatedId) {
+                            this.activePlayers[eliminatedId].lives -= 1;
+                            if (this.activePlayers[eliminatedId].lives <= 0) {
+                                this.activePlayers[eliminatedId].alive = false;
+                            }
+                            const msg = {
+                                id: eliminatedId,
+                                lostLifeName: this.activePlayers[eliminatedId].name,
+                                eliminatedName: this.activePlayers[eliminatedId].name,
+                                livesRemaining: this.activePlayers[eliminatedId].lives,
+                                lostLife: this.activePlayers[eliminatedId].lives > 0
+                            };
+                            this.currentRoundOverMessage = msg;
+                            this.broadcast('roundOver', msg);
+                            this.startNextRound(1, msg.lostLife && msg.livesRemaining === 1 ? 1 : 0,
+                                msg.lostLife ? 0 : 1);
+                        }
+                    }
+                }
+            }
+        }
+
+        this._dropFromMatch(sid);   // out of the match entirely
+        this.broadcastPlayerList();
+    }
+
+    // Unexpected disconnect (connection dropped, NOT an intentional leave). Keep the player IN the match
+    // — flagged disconnected so the client shows the disconnected icon and they still appear on the
+    // player list / round-complete screen — and give them a window to reconnect. If it expires, onLeave
+    // (below) fires and removes them.
     onDrop(client) {
-        this.playAgainVotes.delete(client.sessionId);
-        this.returnToLobbyVotes.delete(client.sessionId);
-        this.players[client.sessionId].connected = false;
+        const sid = client.sessionId;
+        // An intentional leaveToMenu already removed this player, then called client.leave() which
+        // re-enters here — nothing to disconnect, no reconnection to allow.
+        if (!this.players[sid]) return;
+        this.playAgainVotes.delete(sid);
+        this.returnToLobbyVotes.delete(sid);
+        this.players[sid].connected = false;
         this.broadcastPlayerList();
         if (this.gameOver) {
             this.checkPlayAgainVotes();
@@ -755,23 +1021,35 @@ class GameRoom extends Room {
     }
 
     onReconnect(client) {
-        this.players[client.sessionId].connected = true;
+        const sid = client.sessionId;
+        if (!this.players[sid]) return;
+        this.players[sid].connected = true;
         this.sendPlayerState(client);
+        this.broadcastPlayerList();
         if (this.gameOver) {
             this.checkPlayAgainVotes();
             this.checkReturnToLobbyVotes();
         }
     }
 
+    // Fires after an intentional leave (leaveToMenu already removed them — just re-check votes) OR after
+    // a disconnected player's reconnection window expires (remove them from the match for good).
     onLeave(client, code) {
-        this.playAgainVotes.delete(client.sessionId);
-        this.returnToLobbyVotes.delete(client.sessionId);
+        const sid = client.sessionId;
+        if (this.players[sid]) {
+            // Disconnected and never reconnected → treat exactly like a mid-game leave: re-evaluate the
+            // round/match (end it / dock a life as appropriate), then remove them.
+            this._removeFromMatchMidGame(sid);
+        } else {
+            // Intentional leave — leaveToMenu already handled + removed them; just clear stale votes.
+            this.playAgainVotes.delete(sid);
+            this.returnToLobbyVotes.delete(sid);
+            this.broadcastPlayerList();
+        }
         if (this.gameOver) {
             this.checkPlayAgainVotes();
             this.checkReturnToLobbyVotes();
         }
-        delete this.players[client.sessionId];
-        this.broadcastPlayerList();
     }
 }
 
