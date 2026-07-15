@@ -6,6 +6,7 @@ import { GAME_MODES } from '../../gameModes.js';
 import { theme, disabledColor, DISCONNECTED_ALPHA, disconnectGlyph } from '../ui/colors.js';
 import { bandTop } from '../ui/viewport.js';
 import { RowReveal, drawRevealSegments } from '../ui/RowReveal.js';
+import { ModePreview } from './ModePreview.js';
 
 const FONT_SIZE = 28;
 const TITLE_FONT = 96;   // big room code
@@ -37,6 +38,9 @@ const PLAYER_GAP = 70;       // first player row below the underline (= MODE_GAP
                              // first player lines up with the first mode button's label)
 const PLAYER_ROW_H = 32;
 const UNDERLINE_W = 360;     // px width of a column header rule (~ spans the column)
+// How far the mode description wraps PAST the column edge, on EACH side. Was BRACKET_REST(22) +
+// half a LIST glyph (~7) ≈ 29px to match MAKE HOST's bracket overhang. Lower = narrower text.
+const DESC_OVERHANG = 20;
 
 
 export class LobbyScreen {
@@ -62,6 +66,8 @@ export class LobbyScreen {
         this.texts = [];
         this.copyBtn = null;
         this.previewBox = null;
+        this.modePreview = new ModePreview();   // live per-mode animation inside the preview box
+        this._previewShown = false;             // was the preview box drawn last rebuild? (restart it when it reappears)
         // Types in a player row when someone joins after the lobby is already up (the initial roster is
         // typed by the screen transition, so it's shown instantly here).
         this.rowReveal = new RowReveal();
@@ -231,12 +237,9 @@ export class LobbyScreen {
         ly += MODE_SPACING;
         // description (unchanged behavior, under the column)
         if (this.modeId) {
-            // Extend the wrap past the column (underline) width by the same amount
-            // MAKE HOST's bracket overhangs its column edge — on each side. That
-            // overhang = the rest gap + half a bracket glyph at LIST_FONT.
-            this.ctx.font = `${LIST_FONT}px "IBMVGA"`;
-            const overhang = BRACKET_REST + this.ctx.measureText('M').width / 2;
-            const lines = this._wrap(GAME_MODES[this.modeId].description, UNDERLINE_W + 2 * overhang, `${DESC_FONT}px "IBMVGA"`);
+            // The wrap extends past the column (underline) width by DESC_OVERHANG on each side
+            // (originally sized to match MAKE HOST's bracket overhang) — tweak DESC_OVERHANG to taste.
+            const lines = this._wrap(GAME_MODES[this.modeId].description, UNDERLINE_W + 2 * DESC_OVERHANG, `${DESC_FONT}px "IBMVGA"`);
             const descColor = this.isHost ? theme.fg : disabledColor();
             lines.forEach((ln, i) =>
                 this.texts.push({ text: ln, x: leftX, y: ly + i * 28, align: 'center', font: DESC_FONT, color: descColor }));
@@ -285,9 +288,11 @@ export class LobbyScreen {
             const previewTop = underlineTop + PREVIEW_NUDGE_Y
                 + this._inkCenterBelowTop('~', HEADER_FONT) - this._inkCenterBelowTop('=', PREVIEW_FONT);
             this.previewBox = { cx, top: previewTop, w: PREVIEW_W, h: PREVIEW_H };
+            if (!this._previewShown) this.modePreview.restart();   // box reappeared (e.g. CUSTOM closed) → replay from Find: X
             centerBottom = previewTop + PREVIEW_H * PREVIEW_FONT;
             actionGap = PREVIEW_ACTION_GAP;
         }
+        this._previewShown = this.previewBox !== null;
 
         // START / BACK below the center content
         let by = centerBottom + actionGap;
@@ -466,14 +471,21 @@ export class LobbyScreen {
         const left = box.cx - (box.w * cw) / 2;
         const topRow = '='.repeat(box.w);
         const midRow = ']' + ' '.repeat(box.w - 2) + '[';
-        ctx.fillStyle = this.isHost ? theme.fg : disabledColor();
+        const color = this.isHost ? theme.fg : disabledColor();
+        ctx.fillStyle = color;
         for (let i = 0; i < box.h; i++) {
             ctx.fillText(i === 0 || i === box.h - 1 ? topRow : midRow, left, box.top + i * lh);
         }
-        ctx.textAlign = 'center';
-        ctx.textBaseline = 'middle';
-        ctx.font = `${LABEL_FONT}px "IBMVGA"`;
-        ctx.fillText('PREVIEW', box.cx, box.top + (box.h * lh) / 2);
+        // Interior: the live mode preview (DEL for now); otherwise the "PREVIEW" placeholder
+        // (no mode selected, or a mode whose preview isn't built yet).
+        this.modePreview.setMode(this.modeId);
+        if (!this.modePreview.draw(ctx, box, PREVIEW_FONT, color)) {
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.font = `${LABEL_FONT}px "IBMVGA"`;
+            ctx.fillStyle = color;
+            ctx.fillText('PREVIEW', box.cx, box.top + (box.h * lh) / 2);
+        }
     }
 
     draw() {

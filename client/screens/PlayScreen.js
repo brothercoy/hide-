@@ -83,7 +83,7 @@ export class PlayScreen {
         const qjX = cx - BTN_PAIR_GAP / 2 - qjW / 2;
         const crX = cx + BTN_PAIR_GAP / 2 + crW / 2;
 
-        this.ui.buttons.push(makeButton('QUICK JOIN',  qjX, btnRowY, () => this.onQuickJoin(this.nameInput.value),  { blocksInput: true }));
+        this.ui.buttons.push(makeButton('QUICK JOIN',  qjX, btnRowY, () => this.onQuickJoin(this.nameInput.value),  { blocksInput: true, disabled: true }));   // not implemented yet — dimmed + non-interactive
         this.ui.buttons.push(makeButton('CREATE ROOM', crX, btnRowY, () => this.onCreateRoom(this.nameInput.value), { blocksInput: true }));
 
         // ROOM CODE input + JOIN ROOM button side by side with : between them
