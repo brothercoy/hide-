@@ -83,7 +83,7 @@ export class PlayScreen {
         const qjX = cx - BTN_PAIR_GAP / 2 - qjW / 2;
         const crX = cx + BTN_PAIR_GAP / 2 + crW / 2;
 
-        this.ui.buttons.push(makeButton('QUICK JOIN',  qjX, btnRowY, () => this.onQuickJoin(this.nameInput.value),  { blocksInput: true, disabled: true }));   // not implemented yet — dimmed + non-interactive
+        this.ui.buttons.push(makeButton('QUICK JOIN',  qjX, btnRowY, () => this.onQuickJoin(this.nameInput.value),  { blocksInput: true, disabled: true, disabledAlpha: 0.15 }));   // not implemented yet — extra-dim + non-interactive
         this.ui.buttons.push(makeButton('CREATE ROOM', crX, btnRowY, () => this.onCreateRoom(this.nameInput.value), { blocksInput: true }));
 
         // ROOM CODE input + JOIN ROOM button side by side with : between them
@@ -98,6 +98,7 @@ export class PlayScreen {
         const joinX = rowLeft + codeW + COLON_GAP + colonW + COLON_GAP + jrW / 2;
 
         this.codeInput = makeInput('ROOM CODE', codeX, codeRowY, 6);
+        this.codeInput.fontSize = FONT_SIZE;   // so the input overlay can match the canvas font for caret math
         this.ui.inputs.push(this.codeInput);
 
         this.ui.buttons.push(makeButton('JOIN ROOM', joinX, codeRowY, () => this.onJoinRoom(this.nameInput.value, this.codeInput.value), { blocksInput: true }));
