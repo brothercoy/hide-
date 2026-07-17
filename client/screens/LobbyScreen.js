@@ -471,7 +471,10 @@ export class LobbyScreen {
         const left = box.cx - (box.w * cw) / 2;
         const topRow = '='.repeat(box.w);
         const midRow = ']' + ' '.repeat(box.w - 2) + '[';
-        const color = this.isHost ? theme.fg : disabledColor();
+        // The preview is a visual representation of the game, not an interactive control, so it
+        // reads at full opacity for everyone — non-hosts included (unlike the dimmed mode buttons/
+        // settings they can't touch).
+        const color = theme.fg;
         ctx.fillStyle = color;
         for (let i = 0; i < box.h; i++) {
             ctx.fillText(i === 0 || i === box.h - 1 ? topRow : midRow, left, box.top + i * lh);

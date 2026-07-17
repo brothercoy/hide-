@@ -5,6 +5,19 @@
 // Round countdown — client: GameScreen._drawCountdown; server: startRoundCountdown timeout.
 export const COUNTDOWN_MS = 6000;
 
+// Game type-in — the game's static furniture (room code + frame) types in row by row, like
+// every other screen, BEFORE the round intro plays. The client fits the WHOLE feed (scroll
+// steps + typing) into exactly this budget; the server holds the first countdown for the
+// same span so "Find: X" starts the moment the feed lands. ONE knob: raise it and the
+// type-in slows AND the game's start moves back to match — no other change needed.
+// Only the FIRST countdown waits; later rounds are already on screen and start as before.
+//
+// 3000 is the value that matches the other screens. They type at Transition's TYPE_CHAR_MS
+// (20ms/char) and this feed is ~140 characters — the frame's two = edges are ~46 each — so its
+// natural pace is ~2.8s of typing plus ~0.3s of scroll steps ≈ 3.1s. Budgeting 3000 lands within
+// a few percent of 20ms/char, i.e. the same typing speed as everywhere else.
+export const GAME_INTRO_MS = 3000;
+
 // Life-loss callout — the player-list "X Lives" decrement animation.
 //   client: LifeLossCallout (the typing/backspacing rhythm)
 //   server: startNextRound waits INTRO + lossCount*ENTRY (+hold) before the next countdown.

@@ -7,6 +7,26 @@ export const theme = {
     glowHi: '#aaffba',  // bright end of the click-glow pulse (rgb 170,255,186)
 };
 
+// Selectable palettes (Settings → Theme). Each sets the foreground and the click-glow's bright end;
+// the background stays black for all. Every derived shade (dim/disabled/placeholder), the click glow,
+// and the CRT phosphor tint (recomputed each frame from theme.fg) follow automatically — so applying
+// a theme re-colours the ENTIRE game live, no other wiring needed.
+export const THEMES = {
+    green:  { fg: '#00ff41', glowHi: '#aaffba' },  // phosphor green (default)
+    orange: { fg: '#ff8a00', glowHi: '#ffd296' },  // amber/orange
+    white:  { fg: '#a6abb3', glowHi: '#ffffff' },  // cool blue-grey — pushed toward grey for the cold
+                                                   // CRT phosphor look; well below pure white so it
+                                                   // isn't blinding and the click-glow reads on press
+};
+
+// Switch the active palette in place. Mutates `theme` (not reassigns) so every module that imported
+// the object sees the change; helpers read it at call time, so the swap is immediate and global.
+export function applyTheme(id) {
+    const t = THEMES[id] || THEMES.green;
+    theme.fg = t.fg;
+    theme.glowHi = t.glowHi;
+}
+
 function rgbOf(hex) {
     const n = parseInt(hex.slice(1), 16);
     return [(n >> 16) & 255, (n >> 8) & 255, n & 255];

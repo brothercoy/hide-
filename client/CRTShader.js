@@ -265,12 +265,13 @@ export class CRTEffect {
         });
     }
 
-    // theme.fg as a normalized vec3 (brightest channel = 1) for the phosphor tint.
+    // theme.fg as a vec3 (0..1 per channel) for the phosphor tint. Scaled by TRUE brightness
+    // (÷255), NOT the brightest channel — so a dim theme glows dimly. A fully-saturated theme
+    // (green #00ff41 / orange #ff8a00, each with a 255 channel) is unaffected, but the paperwhite
+    // grey no longer gets boosted back to a full-intensity haze that washed the dimming out.
     _phosphor() {
         const n = parseInt(theme.fg.slice(1), 16);
-        const r = (n >> 16) & 255, g = (n >> 8) & 255, b = n & 255;
-        const max = Math.max(r, g, b) || 1;
-        return [r / max, g / max, b / max];
+        return [((n >> 16) & 255) / 255, ((n >> 8) & 255) / 255, (n & 255) / 255];
     }
 
     _compile(type, src) {

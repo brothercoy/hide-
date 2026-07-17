@@ -7,8 +7,8 @@ import { SettingsScreen } from './screens/SettingsScreen.js';
 import { LobbyScreen } from './screens/LobbyScreen.js';
 import { GameScreen } from './screens/GameScreen.js';
 import { makeButton, drawButton, drawButtonPartial, buttonCharCount, zToAlpha } from './ui/Button.js';
-import { makeBracketButton, drawBracketButton } from './ui/BracketButton.js';
-import { theme, bgAlpha, glow } from './ui/colors.js';
+import { makeBracketButton, drawBracketButton, bracketButtonRows } from './ui/BracketButton.js';
+import { theme, bgAlpha, glow, applyTheme } from './ui/colors.js';
 import { initFont } from './ui/Font.js';
 import { setBaseHeight, setBandHeight, bandTop } from './ui/viewport.js';
 import { CRTEffect } from './CRTShader.js';
@@ -16,6 +16,12 @@ import { Transition } from './ui/Transition.js';
 import { DELMode } from './modes/DELmode.js';
 import { FrequencyMode } from './modes/FrequencyMode.js';
 import { drawRotateGate } from './ui/RotateGate.js';
+import { GAME_INTRO_MS } from '../timings.js';   // shared: the server holds the first countdown this long
+import { getPref } from './prefs.js';
+
+// Apply the saved theme before anything paints (default green). `theme` is read live everywhere —
+// UI shades, the click glow, and the CRT phosphor tint — so this one call colours the whole game.
+applyTheme(getPref('theme', 'green'));
 
 const colyseusClient = new Client(
     window.location.hostname === 'localhost'
@@ -93,8 +99,10 @@ let maximizedH = Math.min((window.innerHeight || 1080) / displayScale, 1080);
 setBandHeight(maximizedH);
 
 function resizeCanvas() {
-    canvas.width = LOGICAL_W;
-    canvas.height = LOGICAL_H;
+    // Guarded: assigning width/height WIPES the canvas even when the value is unchanged, and
+    // the game's type-in snapshots the outgoing screen's last frame right after this runs.
+    if (canvas.width !== LOGICAL_W) canvas.width = LOGICAL_W;
+    if (canvas.height !== LOGICAL_H) canvas.height = LOGICAL_H;
 }
 
 function applyDisplayRect(left, top, w, h) {
@@ -346,6 +354,46 @@ function showScreen(name, opts = {}) {
     }
 }
 
+// The game doesn't go through showScreen (the server drives entry, and game.js owns the
+// HUD/mode setup), so it feeds the typeout itself: its static furniture types in while the
+// outgoing screen scrolls off, and the live screen — bouncing characters, player list,
+// timer, "Find: X" — takes over the frame the feed lands. The whole feed is squeezed into
+// GAME_INTRO_MS, the same span the server holds the first countdown for.
+// Call AFTER the HUD/mode setup but BEFORE anything repaints: begin() snapshots the canvas,
+// which still holds the outgoing screen's last frame.
+function typeGameIn() {
+    if (!fontReady) return;   // no metrics to lay rows out with — let it pop, as before
+    // Input stays UNBLOCKED so COPY CODE (and the HUD) are interactive while the screen types in,
+    // exactly like the buttons on every other screen's typeout. The game field itself has nothing
+    // to tap yet (no characters until the round starts), and its canvas handler ignores taps
+    // during a transition anyway.
+    uiManager.blocked = false;
+    const timeLeft = currentMode ? currentMode.timeLeft : undefined;
+    // Group the HUD (settings/fullscreen) onto the timer's = underline row so they type in as
+    // one row with it, rather than popping in after — they still DRAW at their real screen rect.
+    const hudY = gameScreen.hudFeedY(timeLeft);
+    const hudRows = getHudRows().map(r => ({ ...r, y: hudY }));
+    // COPY CODE: keep its real draw position (r's draw uses gameCopyBtn.y) but GROUP it above the
+    // box top row so it types between the room code and the PLAYERS row, not after the top edge.
+    const copyRows = gameCopyBtn
+        ? bracketButtonRows(gameCopyBtn, FONT_SIZE).map(r => ({ ...r, y: Math.min(r.y, gameScreen.copyFeedY) }))
+        : [];
+    transition.begin({
+        typeables: [
+            ...gameScreen.getTypeables({ timeLeft }),
+            ...copyRows,   // } COPY CODE { — grouped just under the room code
+            ...hudRows,
+        ],
+        totalMs: GAME_INTRO_MS,
+        onComplete: () => {
+            if (!modalMessage) {
+                uiManager.blocked = false;
+                uiManager.lastTime = performance.now();
+            }
+        }
+    });
+}
+
 function handleCreateRoom(name) {
     if (!name) { showModal('?INVALID NAME'); return; }
     playerName = name;
@@ -436,6 +484,19 @@ function onRoomJoined(r) {
     localStorage.setItem('reconnectionToken', room.reconnectionToken);
     room.onLeave(() => {
         localStorage.removeItem('reconnectionToken');
+        // Leaving from the game-over screen: repaint the game-over frame NOW (winnerId still set)
+        // and clear the overlay, so showScreen snapshots the game-over screen for the scroll —
+        // not a bright, torn-down game. This mirrors the vote-to-return-to-lobby flow. The overlay
+        // is left ALIVE until here (the MAIN MENU button and settings-panel leave no longer clear
+        // it early) precisely so this snapshot has something to capture. Non-game-over leaves
+        // (BACK from lobby, mid-round settings leave) just snapshot the current frame, unchanged.
+        if (winnerId) {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            ctx.fillStyle = theme.bg;
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            drawScreenInto('game');
+            hideGameOverOverlay();
+        }
         showScreen(leaveDestination);   // snapshots the live game frame for the scroll BEFORE we tear it down
         leaveDestination = 'main';
         if (currentMode) currentMode.reset();
@@ -585,7 +646,9 @@ function showGameOverOverlay(winner) {
     gameOverBtns.returnToLobby = makeButton('RETURN TO LOBBY', 0, 0,
         () => room.send('voteReturnToLobby'), modeOpts);
     gameOverBtns.mainMenu = makeButton('MAIN MENU', 0, 0,   // a normal button — not a vote toggle
-        () => { hideGameOverOverlay(); room.send('leaveToMenu'); }, { blocksInput: true });
+        // Keep the overlay ALIVE (don't clear it here) so it persists and scrolls up when the
+        // transition snapshots it; room.onLeave repaints + clears it right before the scroll.
+        () => room.send('leaveToMenu'), { blocksInput: true });
 
     uiManager.buttons.push(gameOverBtns.playAgain);
     uiManager.buttons.push(gameOverBtns.returnToLobby);
@@ -652,10 +715,19 @@ function setupRoomMessages(isReconnecting = false) {
                                    // previous game — e.g. after leaving to the menu via the settings panel,
                                    // which doesn't clear it — so it can't paint over the new game.
         currentMode = createMode(data.mode, data);
+        // The server holds the first countdown until the type-in lands, so there's a beat where the
+        // screen is up with no round state yet. Park the mode in the countdown branch with NO start
+        // time: the frame/list/timer draw, the round intro doesn't (GameScreen._drawCountdown returns
+        // early). Without this the live-round layout — round label and all — flashes for the frame or
+        // two between the feed finishing and roundCountdown arriving.
+        currentMode.countdownActive = true;
+        currentMode.countdownStartTime = null;
+        if (data.timeLeft != null) currentMode.timeLeft = data.timeLeft;   // box timer shows the real round time from frame one
         currentScreen = 'game';
         uiManager.clear();
         setupGameHud();
         resizeCanvas();
+        typeGameIn();   // lobby scrolls off, the game's frame types in, then the round intro plays
     });
 
     room.onMessage('gameRestarted', (data) => {
@@ -717,6 +789,10 @@ function setupRoomMessages(isReconnecting = false) {
                 uiManager.blocked = false;
                 uiManager.lastTime = performance.now();
                 resizeCanvas();
+                // A RESUMED session drops straight back into the live round, as it always has —
+                // no type-in for a reconnect. A fresh arrival mid-game (joining as a spectator)
+                // is landing on the screen for the first time, so it types in like any other.
+                if (!data.resumed) typeGameIn();
             }
             if (currentMode) currentMode.onMessage(type, data);
         });
@@ -1220,6 +1296,14 @@ function hudEventPos(e) {
     return curveInverse(e.clientX - rect.left, e.clientY - rect.top);
 }
 
+// When the tab goes hidden, requestAnimationFrame pauses, so a button whose navigation is still
+// waiting on its glow animation would freeze and never fire until you returned. Commit those
+// pending clicks now, so switching away right after clicking (e.g. PLAY) still advances — you come
+// back to the loaded screen instead of a stuck, mid-glow button.
+document.addEventListener('visibilitychange', () => {
+    if (document.hidden) uiManager.flushPendingClicks();
+});
+
 canvas.addEventListener('mousedown', (e) => {
     if (gateActive) return;   // portrait rotate gate — ignore input
     if (transition.isActive() || modalMessage || hudIntroPending) return;
@@ -1275,16 +1359,17 @@ canvas.addEventListener('click', (e) => {
     if (settingsPanelOpen) {
         if (hits(getSettingsPanelRect())) {
             settingsPanelOpen = false;
-            hideGameOverOverlay();   // leaving from game over? clear the overlay (like the game-over Main Menu button)
-            // Do NOT reset currentMode here: the game must stay live in the frame the scroll transition
-            // snapshots, or the timer/field would show its reset state while scrolling away. room.onLeave
-            // resets it AFTER the snapshot. In a room, leaving navigates to main via room.onLeave — don't
-            // ALSO navigate directly, or the two transitions fight (a partial title typed then restarted,
-            // visible once there's network latency).
+            // Do NOT reset currentMode OR clear the game-over overlay here: both must stay live in
+            // the frame the scroll transition snapshots, or the timer/field would show its reset
+            // state (and the game-over screen would flash bright) while scrolling away. room.onLeave
+            // repaints + tears both down AFTER the snapshot. In a room, leaving navigates to main via
+            // room.onLeave — don't ALSO navigate directly, or the two transitions fight (a partial
+            // title typed then restarted, visible once there's network latency).
             if (room) {
                 leaveDestination = 'main';
                 room.send('leaveToMenu');
             } else {
+                hideGameOverOverlay();   // no room (no onLeave to clean up) → clear any overlay here
                 showScreen('main');
             }
         } else {

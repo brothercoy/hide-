@@ -111,7 +111,10 @@ export class Transition {
     }
 
     // Typeout feed: type B in row by row while A scrolls off in steps.
-    begin({ typeables, onComplete }) {
+    // `totalMs` (optional) fits the whole feed — scroll steps AND typing — into exactly
+    // that span, instead of letting it run at the natural rate. Used by the game, whose
+    // server-side start delay is the same constant, so the two can't drift.
+    begin({ typeables, onComplete, totalMs }) {
         this._snapshot();
         const H = this.H;
 
@@ -153,6 +156,16 @@ export class Transition {
             prevOffset = r.offset;
         }
         this.totalDur = Math.max(1, cursor);
+
+        // Stretch/squeeze the finished timeline onto the budget. typeCharMs scales with it —
+        // _rowReveal divides by it to count characters, so it has to track the type phases'
+        // durations or a row would finish revealing off its own phase.
+        if (totalMs > 0) {
+            const s = totalMs / this.totalDur;
+            this.typeCharMs *= s;
+            for (const p of this.phases) { p.start *= s; p.dur *= s; }
+            this.totalDur = totalMs;
+        }
         this.active = true;
     }
 

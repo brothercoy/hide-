@@ -2,6 +2,7 @@ import { theme, disconnectGlyph } from '../ui/colors.js';
 import { RowReveal, drawRevealSegments } from '../ui/RowReveal.js';
 import { otFont } from '../ui/Font.js';
 import { bandTop } from '../ui/viewport.js';
+import { textRow } from '../ui/Transition.js';
 import { GLOW_SPEED } from '../ui/Button.js';   // share the buttons'/specials' glow length
 import { MO_HOLD_MS, MO_TYPE_MS, MO_CURSOR_MS, RR_TITLE_MS, RR_TITLE_HOLD_MS, RR_COMPLETE_TYPE_MS, RR_COMPLETE_TEXT, RR_GAP_MS, rrRowMs, rrPlus, RR_ROW_MOVE_MS, RR_TYPE_MS, RR_PAUSE_MS } from '../../timings.js';   // shared so the server's holds derive from these
 
@@ -186,6 +187,11 @@ export class GameScreen {
         const rowInkTop = boxTop + (eq.top >= 0 ? eq.top : this.FRAME_SIZE * 0.4);
         return Math.min(codeBottom + COPY_GAP, rowInkTop - 16);
     }
+
+    // The y the COPY CODE button is GROUPED at in the type-in feed — just above the box's top
+    // row, so it types right after the room code. Its real draw y (copyBtnY) sits a hair lower,
+    // on the top row's = ink, which by raw y-sort alone would land it just AFTER that row.
+    get copyFeedY() { return this.canvas.height / 2 - this.boxH / 2 - 1; }
 
     // Char width at the FRAME font — the box is a grid of frame-font cells.
     _frameCW() {
@@ -440,15 +446,10 @@ export class GameScreen {
     // continuously across both. The game box keeps its ] (left) and [ (right); the
     // player column is closed on the far right with a ] and has no left border (it
     // opens off the game box).
-    _drawFrame(ctx, cx, cy) {
-        const lh = this.FRAME_SIZE;
-        const left = cx - this.boxW / 2;       // game box left edge
-        const top = cy - this.boxH / 2;
+    // The frame's three row strings + the player column's bracket columns. Shared by the
+    // drawn frame and the transition feed that types it in, so the two can't drift.
+    _frameStrings() {
         const total = this._totalCols;
-        ctx.fillStyle = theme.fg;
-        ctx.textAlign = 'left';
-        ctx.textBaseline = 'top';
-        ctx.font = `${this.FRAME_SIZE}px "IBMVGA"`;
         const edgeRow = '='.repeat(total);
 
         // Top edge: the player section gets symmetric [ ] brackets — one cell in from the
@@ -462,13 +463,79 @@ export class GameScreen {
         for (let i = bracketL; i <= bracketR; i++) topEdge[i] = ' ';
         topEdge[bracketL] = '[';
         topEdge[bracketR] = ']';
-        const topRow = topEdge.join('');
 
         const mid = new Array(total).fill(' ');
         mid[0] = ']';              // game box left
         mid[BOX_COLS - 1] = '[';   // game box right
         mid[total - 1] = ']';      // player column right (mirrors the game box's side)
-        const midRow = mid.join('');
+
+        return { edgeRow, topRow: topEdge.join(''), midRow: mid.join(''), bracketL, bracketR };
+    }
+
+    // Row segments for the transition feed — the game's STATIC furniture types in like every
+    // other screen: the room code (top-left, so it goes first), then the frame row by row, then
+    // the timer compartment. Everything that can't be typed — the bouncing characters, the
+    // player list, the "Find: X" intro — pops in when the feed lands and the live screen takes
+    // over. `timeLeft` sets the typed clock so it matches the live timer that replaces it.
+    getTypeables({ timeLeft } = {}) {
+        const lh = this.FRAME_SIZE;
+        const cw = this._frameCW();
+        const cx = this.boxCenterX, cy = this.canvas.height / 2;
+        const left = cx - this.boxW / 2;
+        const top = cy - this.boxH / 2;
+        const font = `${lh}px "IBMVGA"`;
+        const { edgeRow, topRow, midRow, bracketL, bracketR } = this._frameStrings();
+        const colCenterX = left + (bracketL + 1 + bracketR) / 2 * cw;
+        const row = (text, x, y, align) => textRow(text, x, y, font, align || 'left', 'top', theme.fg);
+
+        const out = [];
+        if (this.roomCode) out.push(row(this.roomCode, BOX_LEFT_MARGIN, bandTop(this.canvas) + ROOMCODE_TOP));
+
+        for (let i = 0; i < BOX_ROWS; i++) {
+            const y = top + i * lh;
+            if (i === 0) {
+                // The top edge reads left-to-right as ONE sweep: the game-box = edge, the player
+                // section's [ , PLAYERS in the gap, its ] , then the trailing =. Split at those
+                // x's (same y → one row, ordered by x) so PLAYERS types AS the sweep reaches its
+                // gap — not the whole = line finishing first and PLAYERS filling in afterward.
+                out.push(row(topRow.slice(0, bracketL), left, y));                        // leading =
+                out.push(row('[', left + bracketL * cw, y));
+                out.push(row('PLAYERS', colCenterX, y, 'center'));
+                out.push(row(']', left + bracketR * cw, y));
+                out.push(row(topRow.slice(bracketR + 1), left + (bracketR + 1) * cw, y)); // trailing =
+            } else if (i === BOX_ROWS - 1) {
+                out.push(row(edgeRow, left, y));   // solid bottom =
+            } else {
+                // A bracket row is three glyphs in a sea of spaces. Typed as one string it would
+                // cost a full row's characters to show three, so feed the glyphs (same y, ordered
+                // by x). SPECTATORS rides row 5, appearing mid-sweep at the column's midpoint.
+                out.push(row(midRow[0], left, y));
+                out.push(row(midRow[BOX_COLS - 1], left + (BOX_COLS - 1) * cw, y));
+                out.push(row(midRow[midRow.length - 1], left + (midRow.length - 1) * cw, y));
+                if (i === 5) out.push(row('SPECTATORS', colCenterX, y, 'center'));
+            }
+        }
+
+        // Timer compartment: | clock | on one row, its = underline on the next (the HUD buttons
+        // are grouped onto that = row by game.js via hudFeedY, so they type together).
+        const tg = this._timerGeom(timeLeft, cx, cy);
+        out.push(row('|', tg.fLeft, tg.clockY));
+        out.push(row(tg.clock, tg.fLeft + (tg.COMP_COLS / 2) * cw, tg.clockY, 'center'));
+        out.push(row('|', tg.fLeft + (tg.COMP_COLS - 1) * cw, tg.clockY));
+        out.push(row('='.repeat(tg.COMP_COLS), tg.fLeft, tg.botEqY));
+
+        return out;
+    }
+
+    _drawFrame(ctx, cx, cy) {
+        const lh = this.FRAME_SIZE;
+        const left = cx - this.boxW / 2;       // game box left edge
+        const top = cy - this.boxH / 2;
+        ctx.fillStyle = theme.fg;
+        ctx.textAlign = 'left';
+        ctx.textBaseline = 'top';
+        ctx.font = `${this.FRAME_SIZE}px "IBMVGA"`;
+        const { edgeRow, topRow, midRow, bracketL, bracketR } = this._frameStrings();
         for (let i = 0; i < BOX_ROWS; i++) {
             const row = i === 0 ? topRow : (i === BOX_ROWS - 1 ? edgeRow : midRow);
             ctx.fillText(row, left, top + i * lh);
@@ -591,6 +658,11 @@ export class GameScreen {
     }
 
     _drawCountdown(ctx, FS, chars, prevChars, targetChar, countdownStartTime, lastUpdateTime, cx, cy, countdownMs, isFinal) {
+        // No start time = the screen is up but the server hasn't started the countdown yet (it's
+        // waiting out the game's type-in). The furniture above has already drawn; the round intro
+        // begins the moment roundCountdown lands. Parking here keeps the LIVE-round layout off
+        // screen in the meantime — see game.js's gameStarted handler.
+        if (countdownStartTime == null) return;
         const elapsed = (Date.now() - countdownStartTime) / 1000;
 
         // Typewriter countdown at the frame font. ADAPTIVE: the intro is fixed and the
@@ -672,28 +744,41 @@ export class GameScreen {
     // box's bottom-left, with a matching = line below. Drawn as part of the box background (from
     // draw()) so it's present during the countdown too, not only once the round starts. Dims to a
     // floor; in the final 10s each new second pulses brighter then eases back.
-    _drawTimer(ctx, cx, cy, timeLeft, countdownActive) {
-        const now = Date.now();
+    // Timer compartment geometry — the | clock | box under the game box's bottom-left and its
+    // = underline. Shared by _drawTimer and the transition feed (getTypeables) so the typed-in
+    // timer lands exactly where the live one draws. 8-cell compartment: | at column 0, | one
+    // column past the clock, the clock pixel-centered between them, = underline below.
+    _timerGeom(timeLeft, cx, cy) {
         const halfW = this.boxW / 2, halfH = this.boxH / 2;
         const T_GAP = 20;    // vertical gap: box edge → timer, and timer → bottom = line
         const fLeft = cx - halfW;       // game box left edge (column 0, where the ] sits)
         const fTop = cy - halfH;
         const lh = this.FRAME_SIZE;
-        const totalSec = Math.max(0, Math.ceil(timeLeft));
+        const totalSec = Math.max(0, Math.ceil(timeLeft || 0));
         const clock = `${String(Math.floor(totalSec / 60)).padStart(2, '0')}:${String(totalSec % 60).padStart(2, '0')}`;
         const eqB = this._inkBounds('=');
         const codeB = this._inkBounds('M0');
+        const cw = this._frameCW();
+        const COMP_COLS = 8;
+        const boxEqInkBot = fTop + (BOX_ROWS - 1) * lh + eqB.bottom;   // bottom of box's bottom = ink
+        const clockY = boxEqInkBot + T_GAP - codeB.top;               // timer ink T_GAP below it
+        const botEqY = clockY + codeB.bottom + T_GAP - eqB.top;       // bottom = ink T_GAP below timer
+        return { fLeft, cw, COMP_COLS, clock, clockY, botEqY };
+    }
+
+    // The y the game's HUD (settings/fullscreen) is grouped onto in the type-in feed, so it
+    // types as ONE row with the timer's = underline instead of popping in after everything.
+    hudFeedY(timeLeft) {
+        return this._timerGeom(timeLeft, this.boxCenterX, this.canvas.height / 2).botEqY;
+    }
+
+    _drawTimer(ctx, cx, cy, timeLeft, countdownActive) {
+        const now = Date.now();
+        const { fLeft, cw, COMP_COLS, clock, clockY, botEqY } = this._timerGeom(timeLeft, cx, cy);
         ctx.font = `${this.FRAME_SIZE}px "IBMVGA"`;
         ctx.textBaseline = 'top';
         ctx.textAlign = 'left';
         ctx.fillStyle = theme.fg;
-        const boxEqInkBot = fTop + (BOX_ROWS - 1) * lh + eqB.bottom;   // bottom of box's bottom = ink
-        const clockY = boxEqInkBot + T_GAP - codeB.top;               // timer ink T_GAP below it
-        const botEqY = clockY + codeB.bottom + T_GAP - eqB.top;       // bottom = ink T_GAP below timer
-        // 8-cell compartment: | at column 0, | one column past the clock, the clock pixel-centered
-        // between them, and a matching 8-wide = line below.
-        const cw = this._frameCW();
-        const COMP_COLS = 8;
         ctx.fillText('|', fLeft, clockY);                          // left bar (column 0)
         ctx.fillText('|', fLeft + (COMP_COLS - 1) * cw, clockY);   // right bar (one column over)
         // Clock digits: dim normally; in the final 10s they pulse — brighten up over the first

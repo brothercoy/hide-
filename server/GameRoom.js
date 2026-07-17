@@ -1,6 +1,6 @@
 import { Room } from '@colyseus/core';
 import { GAME_MODES } from '../gameModes.js';
-import { COUNTDOWN_MS, LIFE_LOSS_INTRO_MS, LIFE_LOSS_ENTRY_MS, LIFE_LOSS_WORD_MS, LIFE_LOSS_ELIM_MS, MATCH_OVER_MS, roundResultMs } from '../timings.js';
+import { COUNTDOWN_MS, GAME_INTRO_MS, LIFE_LOSS_INTRO_MS, LIFE_LOSS_ENTRY_MS, LIFE_LOSS_WORD_MS, LIFE_LOSS_ELIM_MS, MATCH_OVER_MS, roundResultMs } from '../timings.js';
 import { confusionDecoys, pickConfusionTarget, TEST_PAIRS_IN_ORDER, nextTestPair } from '../confusables.js';
 
 // The full visible printable-ASCII set (33 '!' … 126 '~') — every glyph a target/field char can
@@ -271,12 +271,16 @@ class GameRoom extends Room {
 
             this.broadcast('gameStarted', {
                 match: this.currentMatch,
+                timeLeft: this.timeLeft,             // full round time, so the box timer is right from the first frame
                 totalMatches: this.settings.matches,
                 totalRounds: this.settings.rounds,   // Frequency: total rounds for the "Round X/N" label
                 mode: this.selectedMode || 'redacted'
             });
             this.broadcastPlayerList();
-            this.startRoundCountdown();
+            // Hold the FIRST countdown while the clients type the game screen in (the lobby
+            // scrolls off, the frame types), so "Find: X" starts as the feed lands. Later
+            // rounds don't wait — the screen is already up. Same constant both sides.
+            this.clock.setTimeout(() => this.startRoundCountdown(), GAME_INTRO_MS);
         });
 
         this.setSimulationInterval(() => {
@@ -346,7 +350,12 @@ class GameRoom extends Room {
         });
     }
 
-    sendPlayerState(client) {
+    // `resumed` — true only when this client's session is being RESTORED (onReconnect), false
+    // for a fresh arrival (onJoin), including someone joining a live game as a spectator. It
+    // can't be derived from the state here: a reconnecting spectator and a new spectator look
+    // identical, so only the call site knows. The client uses it to decide whether the game
+    // screen types in (fresh) or just loads mid-round (resumed).
+    sendPlayerState(client, resumed = false) {
         client.send('roomCode', { code: this.roomCode });
         if (this.selectedMode) {
             client.send('settingsUpdated', {
@@ -365,6 +374,7 @@ class GameRoom extends Room {
                 totalMatches: this.settings.matches,
                 totalRounds: this.settings.rounds,
                 gameStarted: true,
+                resumed,
                 gameOver: this.gameOver,
                 winnerName: this.gameOver ? this.lastWinnerName : null,
                 mode: this.selectedMode || 'redacted'
@@ -918,7 +928,7 @@ class GameRoom extends Room {
             alive: true,
             connected: true
         };
-        this.sendPlayerState(client);
+        this.sendPlayerState(client, false);   // fresh arrival — a live game types in for them
         if (this.gameOver) {
             this.checkPlayAgainVotes();
             this.checkReturnToLobbyVotes();
@@ -1024,7 +1034,7 @@ class GameRoom extends Room {
         const sid = client.sessionId;
         if (!this.players[sid]) return;
         this.players[sid].connected = true;
-        this.sendPlayerState(client);
+        this.sendPlayerState(client, true);    // session restored — load straight into the round, no type-in
         this.broadcastPlayerList();
         if (this.gameOver) {
             this.checkPlayAgainVotes();

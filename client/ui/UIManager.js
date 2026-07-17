@@ -405,6 +405,26 @@ export class UIManager {
         if (this.focusedInput) this.focusedInput.selecting = false;
     }
 
+    // Fire any click still pending behind a button's release/glow animation. A normal button's
+    // onClick fires only when its glow finishes (updateButtonZ → _fireClick), and the glow is
+    // driven by requestAnimationFrame — which the browser PAUSES when the tab is hidden. So
+    // clicking e.g. PLAY and immediately switching away would freeze the glow mid-cycle and the
+    // navigation would never fire until you came back. Call this when the tab goes hidden so the
+    // action commits at once; any transition it starts then catches up on return (same as one
+    // that was already mid-transition when you left). fireOnRelease/plain buttons already fired.
+    flushPendingClicks() {
+        const pending = this.buttons.filter(btn =>
+            btn._fireClick ||
+            (!btn.fireOnRelease && (btn.releasePhase === 'releasing' || btn.releasePhase === 'glowing')));
+        // Snapshot first — onClick can rebuild this.buttons (e.g. navigation clears them).
+        for (const btn of pending) {
+            btn._fireClick = false;
+            btn.releasePhase = null;
+            btn.glowT = 0;
+            btn.onClick();
+        }
+    }
+
     _onDoubleClick(e) {
         const { x, y } = this._getPos(e);
         this.inputs.forEach(inp => {
