@@ -367,6 +367,12 @@ export class UIManager {
             if (s.disabled) return;
             if (s.rect && this._hitTest(s.rect, x, hy)) {
                 this.draggingSlider = s;
+                // Click-to-set: jump the handle to the press position immediately (then drag from
+                // there), so a plain click on the track sets the value — same feel as the overlay.
+                const r = s.rect;
+                const t = Math.max(0, Math.min(1, (x - r.left) / r.trackWidth));
+                s.value = Math.round(s.min + t * (s.max - s.min));
+                if (s.onChange) s.onChange(s.value);
             }
         });
     }

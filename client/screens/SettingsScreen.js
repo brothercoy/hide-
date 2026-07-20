@@ -101,6 +101,10 @@ export class SettingsScreen {
     enter() {
         this.ui.clear();
 
+        // Re-read the saved theme so this screen reflects a change made via the in-game settings
+        // overlay (both read/write the same pref). Volumes are re-read below when the sliders build.
+        this.selectedTheme = getPref(PREF_THEME, 'green');
+
         const cx = this.canvas.width / 2;
         const L = this._layout();
 

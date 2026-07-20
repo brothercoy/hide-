@@ -37,6 +37,14 @@ const ACTION_SPACING = 90;   // MAIN MENU below START GAME
 const PLAYER_GAP = 70;       // first player row below the underline (= MODE_GAP, so the
                              // first player lines up with the first mode button's label)
 const PLAYER_ROW_H = 32;
+// Public/Private lobby options — bracket buttons under the PLAYER LIST header (drawn at HEADER_FONT).
+const PRIVACY_GAP = 25;      // header underline → privacy buttons (center)
+const PRIVACY_TO_LIST = 44;  // privacy buttons → first player row
+const PRIVACY_SPACING = 200; // between PUBLIC and PRIVATE
+const PRIVACY_OPTIONS = [
+    { id: 'public', label: 'PUBLIC' },
+    { id: 'private', label: 'PRIVATE' },
+];
 const UNDERLINE_W = 360;     // px width of a column header rule (~ spans the column)
 // How far the mode description wraps PAST the column edge, on EACH side. Was BRACKET_REST(22) +
 // half a LIST glyph (~7) ≈ 29px to match MAKE HOST's bracket overhang. Lower = narrower text.
@@ -59,6 +67,7 @@ export class LobbyScreen {
         this.modeId = null;
         this.settings = {};
         this.isHost = false;
+        this.privacy = 'public';   // lobby visibility — Public by default (server sync wired later)
         this.customOpen = false;
         this.customToggledAt = null;  // elapsed time CUSTOM was last toggled (either way)
 
@@ -156,6 +165,14 @@ export class LobbyScreen {
         this.settings[key] = v;
         this.dirty = true;                                          // discrete -> rebuild next frame
         this.onUpdateSettings(this.modeId, { ...this.settings }, this.customOpen);
+    }
+
+    // Public/Private lobby visibility. Local selection for now; the actual room-privacy sync
+    // (matchmaking visibility, quick-join eligibility) is wired in a later pass.
+    _selectPrivacy(id) {
+        if (this.privacy === id) return;   // already selected — one is always active, no toggle-off
+        this.privacy = id;
+        this.dirty = true;                 // rebuild to flip which option is `active`
     }
 
     _copyCode() {
@@ -304,7 +321,18 @@ export class LobbyScreen {
 
         // --- RIGHT COLUMN: PLAYER LIST ---
         this._title('PLAYER LIST', rightX, COL_TOP);
-        const listTop = COL_TOP + TITLE_GAP + PLAYER_GAP;
+        // Public / Private lobby visibility — bracket buttons under the header, one always selected
+        // (like the theme/speed options). Host-controlled (dim for non-host) like every lobby setting.
+        const privacyY = COL_TOP + TITLE_GAP + PRIVACY_GAP;
+        const pStartX = rightX - PRIVACY_SPACING * (PRIVACY_OPTIONS.length - 1) / 2;
+        PRIVACY_OPTIONS.forEach((opt, i) => {
+            const b = makeBracketButton(opt.label, pStartX + i * PRIVACY_SPACING, privacyY,
+                () => this._selectPrivacy(opt.id),
+                { active: this.privacy === opt.id, disabled: !this.isHost });
+            b.fontSize = HEADER_FONT;   // smaller — matches the column header
+            this.ui.buttons.push(b);
+        });
+        const listTop = privacyY + PRIVACY_TO_LIST;
         this.playerLayout = { listX: rightX - 180, startY: listTop, rowH: PLAYER_ROW_H, rowW: 360 };
         this.players.forEach((p, i) => {
             const rowY = listTop + i * PLAYER_ROW_H;

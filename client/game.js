@@ -4,11 +4,12 @@ import { UIManager } from './ui/UIManager.js';
 import { MainMenu } from './screens/MainMenu.js';
 import { PlayScreen } from './screens/PlayScreen.js';
 import { SettingsScreen } from './screens/SettingsScreen.js';
+import { SettingsOverlay } from './screens/SettingsOverlay.js';
 import { LobbyScreen } from './screens/LobbyScreen.js';
 import { GameScreen } from './screens/GameScreen.js';
 import { makeButton, drawButton, drawButtonPartial, buttonCharCount, zToAlpha } from './ui/Button.js';
 import { makeBracketButton, drawBracketButton, bracketButtonRows } from './ui/BracketButton.js';
-import { theme, bgAlpha, glow, applyTheme } from './ui/colors.js';
+import { theme, bgAlpha, glow, applyTheme, THEMES } from './ui/colors.js';
 import { initFont } from './ui/Font.js';
 import { setBaseHeight, setBandHeight, bandTop } from './ui/viewport.js';
 import { CRTEffect } from './CRTShader.js';
@@ -270,6 +271,11 @@ const lobbyScreen = new LobbyScreen(canvas, ctx, uiManager,
 
 const gameScreen = new GameScreen(canvas, ctx, isMobile);
 
+// In-game settings overlay (opened by the HUD gear → settingsPanelOpen). Draws the dimmed modal;
+// MAIN MENU is wired (theme/sliders are a later pass). uiManager is blocked behind it, so the
+// overlay drives its own buttons' input (onMouseDown/Up/update) and hit-tests them in the handlers.
+const settingsOverlay = new SettingsOverlay(canvas, ctx, { onMainMenu: leaveToMainMenu });
+
 screens.main = mainMenu;
 screens.play = playScreen;
 screens.settings = settingsScreen;
@@ -427,6 +433,8 @@ async function tryReconnect() {
             localStorage.removeItem('reconnectionToken');
             showScreen('main');
             if (currentMode) currentMode.reset();
+            currentMode = null;
+            room = null;   // clear the ref so `if (room)` reflects reality after leaving
         });
         // Defer like a fresh join — the lobby (or game) shows once state arrives.
         pendingLobbyEntry = true;
@@ -501,7 +509,8 @@ function onRoomJoined(r) {
         leaveDestination = 'main';
         if (currentMode) currentMode.reset();
         currentMode = null;             // drop the stale mode (matches returnedToLobby) so nothing lingers
-    });
+        room = null;                    // the room is gone — clear the ref so `if (room)` reflects reality
+    });                                 // (else a leftover room makes the settings MAIN MENU send into the void)
     // Don't show the lobby yet — wait for its initial state (room code, players,
     // and the host's current selections) so it types in the REAL state instead of
     // an empty screen. maybeEnterLobby() fires once that's in.
@@ -941,6 +950,10 @@ const HUD_SNAP_PAUSE_MS = 300; // extra rest after each "snap snap return" cycle
 // speed, and pause are all tweakable here).
 const SETTINGS_REST_CHAR = '%';
 const SETTINGS_CYCLE_CHARS = ['-', '\\', ';'];
+// Each cycle char flashes in one THEME's colour (green / orange / white), regardless of the current
+// theme — a hint that this button is where you change the theme. Pulled from the palette so a retuned
+// theme colour stays in sync. The resting '%' still uses the CURRENT theme colour.
+const SETTINGS_CYCLE_COLORS = [THEMES.green.fg, THEMES.orange.fg, THEMES.white.fg];
 const SETTINGS_SWAP_MS = 90;   // ms on each cycle char during the hover swap
 const SETTINGS_PAUSE_MS = 730; // ms paused on '%' between cycles
 
@@ -977,8 +990,11 @@ const hudItems = [
     {
         id: 'settings',
         hover: 0, z: HUD_Z_REST, releasePhase: null, glowT: 0, _rect: null,
-        _animT: 0, _char: SETTINGS_REST_CHAR,
+        _animT: 0, _char: SETTINGS_REST_CHAR, _charColor: null,
         typeChars: SETTINGS_REST_CHAR,
+        // Hidden on the full settings SCREEN — opening a settings overlay there is redundant. Hidden
+        // means not drawn, not typed in during the transition, not hoverable, and not clickable.
+        hidden: () => currentScreen === 'settings',
         getRect() {
             return isMobile ? hudMobileRect(HUD_M.gearX)
                             : { x: canvas.width - 200, y: canvas.height - bandTop(canvas) - hudBtnGap(), w: 60, h: 40 };
@@ -990,17 +1006,24 @@ const hudItems = [
                 this._animT += dt;
                 const swapTotal = SETTINGS_CYCLE_CHARS.length * SETTINGS_SWAP_MS;
                 const t = this._animT % (swapTotal + SETTINGS_PAUSE_MS);
-                this._char = t < swapTotal
-                    ? SETTINGS_CYCLE_CHARS[Math.floor(t / SETTINGS_SWAP_MS)]
-                    : SETTINGS_REST_CHAR;
+                if (t < swapTotal) {
+                    const i = Math.floor(t / SETTINGS_SWAP_MS);
+                    this._char = SETTINGS_CYCLE_CHARS[i];
+                    this._charColor = SETTINGS_CYCLE_COLORS[i];   // flash this theme's colour
+                } else {
+                    this._char = SETTINGS_REST_CHAR;
+                    this._charColor = null;                       // paused on '%' → current theme
+                }
             } else {
                 this._animT = 0;
                 this._char = SETTINGS_REST_CHAR;
+                this._charColor = null;
             }
         },
         render(ctx, r, hover, alpha, color) {
             ctx.globalAlpha = alpha;
-            ctx.fillStyle = color;
+            // Cycle chars flash their fixed theme colour; the resting '%' follows the current theme.
+            ctx.fillStyle = this._charColor || color;
             ctx.font = `${HUD_FONT}px "IBMVGA"`;
             ctx.textAlign = 'center';
             ctx.textBaseline = 'middle';
@@ -1016,7 +1039,7 @@ const hudItems = [
             ctx.textBaseline = 'middle';
             if (n >= 1) ctx.fillText(SETTINGS_REST_CHAR, r.x + r.w / 2, r.y + r.h / 2);
         },
-        onClick() { settingsPanelOpen = !settingsPanelOpen; }
+        onClick() { setSettingsOverlay(!settingsPanelOpen); }   // toggle — gear opens; gear/outside closes
     },
     {
         id: 'fullscreen',
@@ -1081,12 +1104,21 @@ const hudItems = [
     }
 ];
 
+// A HUD item is shown unless it declares itself hidden for the current screen (e.g. the gear on
+// the settings screen). Used to skip it in draw / hit-test / hover / the transition feed.
+function hudShown(it) {
+    return !(it.hidden && it.hidden());
+}
+
 function updateHUD(dt) {
     const mx = uiManager.mouseX, my = uiManager.mouseY;
     for (const it of hudItems) {
+        if (!hudShown(it)) { it.hover = 0; it.releasePhase = null; it._rect = null; continue; }
         const r = it.getRect();
         it._rect = r;
-        const over = mx >= r.x && mx <= r.x + r.w && my >= r.y && my <= r.y + r.h;
+        // While the settings overlay is up, the HUD is behind it — no hover/press animations
+        // (the overlay is closed via the click handler, not via HUD hover).
+        const over = !settingsPanelOpen && mx >= r.x && mx <= r.x + r.w && my >= r.y && my <= r.y + r.h;
         it.hover = over ? Math.min(1, it.hover + dt / 150) : Math.max(0, it.hover - dt / 150);
         if (it.tick) it.tick(dt, over);
 
@@ -1110,6 +1142,7 @@ function updateHUD(dt) {
 
 function drawHUDItems() {
     for (const it of hudItems) {
+        if (!hudShown(it)) { it._rect = null; continue; }
         const r = it.getRect();
         it._rect = r;
         let color = theme.fg;
@@ -1124,7 +1157,7 @@ function drawHUDItems() {
 // Row segments so the HUD types in as the final row of a screen transition.
 // Both items share a Y, so they group into one row typed left-to-right.
 function getHudRows() {
-    return hudItems.map(it => {
+    return hudItems.filter(hudShown).map(it => {
         const r = it.getRect();
         return {
             y: r.y + r.h / 2,
@@ -1140,6 +1173,7 @@ function hudOnMouseDown(mx, my) {
     hudMouseDown = true;
     hudPressedItem = null;
     for (const it of hudItems) {
+        if (!hudShown(it)) continue;
         const r = it._rect || it.getRect();
         if (mx >= r.x && mx <= r.x + r.w && my >= r.y && my <= r.y + r.h) {
             hudPressedItem = it;
@@ -1164,14 +1198,11 @@ function hudOnMouseUp(mx, my) {
 
 function hudHit(mx, my) {
     for (const it of hudItems) {
+        if (!hudShown(it)) continue;
         const r = it._rect || it.getRect();
         if (mx >= r.x && mx <= r.x + r.w && my >= r.y && my <= r.y + r.h) return it;
     }
     return null;
-}
-
-function getSettingsPanelRect() {
-    return { x: canvas.width - 216, y: canvas.height - bandTop(canvas) - 148, w: 208, h: 76 };
 }
 
 function getModalOkRect() {
@@ -1212,18 +1243,49 @@ function drawHUDIntro() {
     drawHUDTyped(revealed);
 }
 
+// Open/close the settings overlay. Blocking uiManager stops ALL background UI behind the modal —
+// no hover animations, no clicks (uiManager's own mouse handlers early-return when blocked, and the
+// game.js input handlers gate on settingsPanelOpen). HUD hover is suppressed in updateHUD.
+function setSettingsOverlay(open) {
+    settingsPanelOpen = open;
+    if (open) {
+        settingsOverlay.reset();     // clean button state so a reopen never shows a stale mid-press/glow
+        settingsOverlay.refresh();   // re-read prefs (theme/volume) so it reflects the settings screen
+        uiManager.blocked = true;
+    } else if (!modalMessage) {
+        uiManager.blocked = false;
+        uiManager.lastTime = performance.now();
+    }
+}
+
+// The overlay's MAIN MENU button: close the overlay, then go home. Already on the main menu →
+// closing is enough. In a live room (lobby/game) → leave via the server; room.onLeave runs the
+// usual transition (types the main menu in while the current screen scrolls up). Otherwise (e.g.
+// the play screen, no room) → transition synchronously, repainting the current screen first so the
+// scroll snapshots it WITHOUT the just-closed overlay.
+function leaveToMainMenu() {
+    setSettingsOverlay(false);
+    if (currentScreen === 'main') return;
+
+    if (room) {
+        leaveDestination = 'main';
+        room.send('leaveToMenu');   // async → room.onLeave transitions; overlay already closed → clean snapshot
+    } else {
+        const from = currentScreen;
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        ctx.fillStyle = theme.bg;
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        drawScreenInto(from);
+        drawPersistentHUD();        // include the HUD so the outgoing snapshot matches the live screen
+        hideGameOverOverlay();
+        showScreen('main');
+    }
+}
+
 function drawPersistentHUD() {
     drawHUDItems();
 
-    if (settingsPanelOpen) {
-        const p = getSettingsPanelRect();
-        ctx.strokeStyle = theme.fg;
-        ctx.lineWidth = 2;
-        ctx.strokeRect(p.x, p.y, p.w, p.h);
-        ctx.fillStyle = theme.fg;
-        ctx.font = '20px "IBMVGA"';
-        ctx.fillText('MAIN MENU', p.x + p.w / 2, p.y + p.h / 2);
-    }
+    if (settingsPanelOpen) settingsOverlay.draw(uiManager.elapsed);
 
     drawModal();
 }
@@ -1268,6 +1330,8 @@ function draw() {
     uiManager.update(now);
     updateHUD(dt);
     updateModal(dt);
+    // The settings overlay drives its own buttons (uiManager is blocked behind it).
+    if (settingsPanelOpen) settingsOverlay.update(dt, uiManager.mouseX, uiManager.mouseY, uiManager.elapsed);
 
     if (transition.isActive()) {
         // Re-sample in case a transition just began this frame — it's at elapsed 0
@@ -1307,6 +1371,7 @@ document.addEventListener('visibilitychange', () => {
 canvas.addEventListener('mousedown', (e) => {
     if (gateActive) return;   // portrait rotate gate — ignore input
     if (transition.isActive() || modalMessage || hudIntroPending) return;
+    if (settingsPanelOpen) { const p = hudEventPos(e); settingsOverlay.onMouseDown(p.x, p.y); return; }
     const { x, y } = hudEventPos(e);
     hudOnMouseDown(x, y);
     // Game: a press on the target registers the tap NOW (so a hold still counts as the target
@@ -1329,6 +1394,7 @@ canvas.addEventListener('mousedown', (e) => {
 canvas.addEventListener('mouseup', (e) => {
     if (gateActive) return;   // portrait rotate gate — ignore input
     const { x, y } = hudEventPos(e);
+    if (settingsPanelOpen) { settingsOverlay.onMouseUp(x, y); return; }
     hudOnMouseUp(x, y);
     gameScreen.releaseTarget();   // end the target press → glow (no-op if not held)
 });
@@ -1357,24 +1423,10 @@ canvas.addEventListener('click', (e) => {
     }
 
     if (settingsPanelOpen) {
-        if (hits(getSettingsPanelRect())) {
-            settingsPanelOpen = false;
-            // Do NOT reset currentMode OR clear the game-over overlay here: both must stay live in
-            // the frame the scroll transition snapshots, or the timer/field would show its reset
-            // state (and the game-over screen would flash bright) while scrolling away. room.onLeave
-            // repaints + tears both down AFTER the snapshot. In a room, leaving navigates to main via
-            // room.onLeave — don't ALSO navigate directly, or the two transitions fight (a partial
-            // title typed then restarted, visible once there's network latency).
-            if (room) {
-                leaveDestination = 'main';
-                room.send('leaveToMenu');
-            } else {
-                hideGameOverOverlay();   // no room (no onLeave to clean up) → clear any overlay here
-                showScreen('main');
-            }
-        } else {
-            settingsPanelOpen = false;
-        }
+        // The overlay's buttons run their own press→glow→onClick lifecycle (mousedown/up + update),
+        // so the button fires itself. Here we only handle dismissal: a click outside the box closes
+        // it (the gear, being outside, also closes it → toggle). Theme options / sliders: later pass.
+        if (!hits(settingsOverlay.boxRect)) setSettingsOverlay(false);
         return;
     }
 

@@ -259,6 +259,7 @@ export class MainMenu {
     }
 
     _onCanvasClick(e) {
+        if (this.ui.blocked) return;   // input blocked (e.g. settings overlay up) — no special-char press
         const { mx, my } = this._getEventPos(e);
         this._mouseDown = true;
         this._mouseX = mx;
@@ -302,7 +303,7 @@ export class MainMenu {
         this.specialChars.forEach(sc => {
             if (!sc.introComplete) return;
 
-            const isOver = sc.rect &&
+            const isOver = !this.ui.blocked && sc.rect &&
                 this._mouseX >= sc.rect.x && this._mouseX <= sc.rect.x + sc.rect.w &&
                 this._mouseY >= sc.rect.y && this._mouseY <= sc.rect.y + sc.rect.h;
             const isActivelyPressed = this._mouseDown && sc === this._pressedSpecialChar && isOver;
@@ -426,7 +427,10 @@ export class MainMenu {
             this.introStart = elapsed;
         }
 
-        if (this.ui.blocked && this.introStart !== null) {
+        // One-shot: unblock input once the hide intro finishes. Gated on !introDone so it stops
+        // firing after the intro — otherwise it would re-clear uiManager.blocked EVERY frame,
+        // stomping any external block (e.g. the settings overlay opened from the HUD gear).
+        if (this.ui.blocked && this.introStart !== null && !this.introDone) {
             if (elapsed - this.introStart >= HIDE_INTRO_DURATION) {
                 this.ui.blocked = false;
                 this.ui.lastTime = performance.now();
