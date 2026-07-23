@@ -65,6 +65,7 @@ export class GameScreen {
         this.roomCode = '';           // shown top-left at the frame font; COPY CODE sits under it
         this._inkCache = new Map();   // measured ink bounds per string at the FRAME font
         this.modeId = 'redacted';     // 'redacted' hides the Round; other modes show it
+        this.solo = false;            // single-player campaign: centered box, no player column / room code
         this.glitchUntil = 0;         // scramble the play field until this timestamp (miss feedback)
         this._glitchGlyphs = [];      // per-char random glyph while glitching
         this._glitchSwapAt = 0;       // last time the glitch glyphs were re-rolled
@@ -252,13 +253,13 @@ export class GameScreen {
     get boxW() { return BOX_COLS * this._frameCW(); }
     get boxH() { return BOX_ROWS * this.FRAME_SIZE; }
 
-    // Box center X — left-aligned (not canvas-centered), leaving room on the right for
-    // the player list. Used for drawing the box/chars/HUD AND for click hit-testing.
-    get boxCenterX() { return BOX_LEFT_MARGIN + this.boxW / 2; }
+    // Box center X — left-aligned (not canvas-centered) in multiplayer, leaving room on the right for
+    // the player list. Solo has no player column, so the box is centered. Used for drawing AND clicks.
+    get boxCenterX() { return this.solo ? this.canvas.width / 2 : BOX_LEFT_MARGIN + this.boxW / 2; }
 
-    // Total frame width in cells (game box + player column), spanning from the box's
-    // left margin to a symmetric right margin.
+    // Total frame width in cells. Multiplayer: game box + player column. Solo: just the game box.
     get _totalCols() {
+        if (this.solo) return BOX_COLS;
         const avail = this.canvas.width - 2 * BOX_LEFT_MARGIN;
         return Math.max(BOX_COLS + 2, Math.floor(avail / this._frameCW()));
     }
@@ -411,18 +412,17 @@ export class GameScreen {
         // draw the shared frame (game box + player column, continuous top/bottom edges)
         this._drawFrame(ctx, cx, cy);
 
-        // room code — top-left, big (frame font), all caps. The COPY CODE button is a
-        // uiManager bracket button parked under it by game.js (copyBtnX/Y).
-        ctx.fillStyle = theme.fg;
-        ctx.font = `${this.FRAME_SIZE}px "IBMVGA"`;
-        ctx.textAlign = 'left';
-        ctx.textBaseline = 'top';
-        ctx.fillText(this.roomCode, BOX_LEFT_MARGIN, bandTop(this.canvas) + ROOMCODE_TOP);
+        // Multiplayer chrome — room code (top-left) + the player/score list. Solo has neither.
+        if (!this.solo) {
+            ctx.fillStyle = theme.fg;
+            ctx.font = `${this.FRAME_SIZE}px "IBMVGA"`;
+            ctx.textAlign = 'left';
+            ctx.textBaseline = 'top';
+            ctx.fillText(this.roomCode, BOX_LEFT_MARGIN, bandTop(this.canvas) + ROOMCODE_TOP);
 
-        // player list persists across the countdown (drawn here, not inside _drawGame). Frequency
-        // shows running SCORES; the lives/match-wins list is Redacted's.
-        if (this.modeId === 'frequency') this._drawScoreList(ctx, playerList, cx, cy, winnerId);
-        else this._drawPlayerList(ctx, playerList, totalMatches, cx, cy, winnerId, heldWinName);
+            if (this.modeId === 'frequency') this._drawScoreList(ctx, playerList, cx, cy, winnerId);
+            else this._drawPlayerList(ctx, playerList, totalMatches, cx, cy, winnerId, heldWinName);
+        }
 
         // Timer is part of the box background — drawn in BOTH the countdown and the live round
         // (during the countdown timeLeft is the full round time, sent in roundCountdown).
@@ -449,6 +449,13 @@ export class GameScreen {
     // The frame's three row strings + the player column's bracket columns. Shared by the
     // drawn frame and the transition feed that types it in, so the two can't drift.
     _frameStrings() {
+        if (this.solo) {
+            // Just the game box — closed on both sides, no player column / brackets.
+            const edgeRow = '='.repeat(BOX_COLS);
+            const mid = new Array(BOX_COLS).fill(' ');
+            mid[0] = ']'; mid[BOX_COLS - 1] = '[';
+            return { edgeRow, topRow: edgeRow, midRow: mid.join(''), bracketL: -1, bracketR: -1 };
+        }
         const total = this._totalCols;
         const edgeRow = '='.repeat(total);
 
@@ -540,6 +547,7 @@ export class GameScreen {
             const row = i === 0 ? topRow : (i === BOX_ROWS - 1 ? edgeRow : midRow);
             ctx.fillText(row, left, top + i * lh);
         }
+        if (this.solo) return;   // no player column → no PLAYERS/SPECTATORS labels
 
         // PLAYERS (top edge) and SPECTATORS (the 5th bracket row down) centered in REAL
         // PIXELS on the column's midpoint, so each has equal margins. The 5th row splits

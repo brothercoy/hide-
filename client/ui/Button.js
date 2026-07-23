@@ -272,15 +272,15 @@ export function drawButton(ctx, btn, elapsed, FONT_SIZE) {
     const sl = btn.x - borderWidth / 2;
     const st = btn.y - totalHeight / 2;
     const dashCount = Math.floor(innerWidth / cw);
-    const plusCount = Math.floor((dashCount / 2) * (btn.active ? 1 : btn.hoverProgress));
+    // Hover border fill: '+' grows inward from BOTH corners. ceil() so an odd dashCount's middle char
+    // is its OWN final step (fill the two beside it, then the middle) instead of all three at once.
+    const plusCount = Math.floor(Math.ceil(dashCount / 2) * (btn.active ? 1 : btn.hoverProgress));
 
     const plus = btn.corner || '+';
     let borderLine = '';
     for (let i = 0; i < dashCount; i++) {
         const fl = i, fr = dashCount - 1 - i;
-        borderLine += (fl < plusCount || fr < plusCount ||
-            (dashCount % 2 === 1 && i === Math.floor(dashCount / 2) && plusCount >= Math.floor(dashCount / 2)))
-            ? plus : '-';
+        borderLine += (fl < plusCount || fr < plusCount) ? plus : '-';
     }
 
     const topB = plus + borderLine + plus;
@@ -368,13 +368,11 @@ export function drawButtonRow(ctx, btn, rowIndex, n, FONT_SIZE) {
         if (drawn < n) { drawChar(ctx, rs, sl + borderWidth - cw, st + lh, z, color, FONT_SIZE); drawn++; }
     } else {
         const plus = btn.corner || '+';
-        const plusCount = Math.floor((dashCount / 2) * (btn.active ? 1 : btn.hoverProgress));
+        const plusCount = Math.floor(Math.ceil(dashCount / 2) * (btn.active ? 1 : btn.hoverProgress));
         let borderLine = '';
         for (let i = 0; i < dashCount; i++) {
             const fl = i, fr = dashCount - 1 - i;
-            borderLine += (fl < plusCount || fr < plusCount ||
-                (dashCount % 2 === 1 && i === Math.floor(dashCount / 2) && plusCount >= Math.floor(dashCount / 2)))
-                ? plus : '-';
+            borderLine += (fl < plusCount || fr < plusCount) ? plus : '-';
         }
         const border = plus + borderLine + plus;
         const y = rowIndex === 0 ? st : st + lh * 2;
@@ -433,13 +431,11 @@ export function drawButtonPartial(ctx, btn, n, elapsed, FONT_SIZE) {
     btn.rect = btn.fullRect = { x: sl, y: st, w: borderWidth, h: totalHeight };
 
     const plus = btn.corner || '+';
-    const plusCount = Math.floor((dashCount / 2) * (btn.active ? 1 : btn.hoverProgress));
+    const plusCount = Math.floor(Math.ceil(dashCount / 2) * (btn.active ? 1 : btn.hoverProgress));
     let borderLine = '';
     for (let i = 0; i < dashCount; i++) {
         const fl = i, fr = dashCount - 1 - i;
-        borderLine += (fl < plusCount || fr < plusCount ||
-            (dashCount % 2 === 1 && i === Math.floor(dashCount / 2) && plusCount >= Math.floor(dashCount / 2)))
-            ? plus : '-';
+        borderLine += (fl < plusCount || fr < plusCount) ? plus : '-';
     }
     const topB = plus + borderLine + plus;
     const botB = plus + borderLine + plus;

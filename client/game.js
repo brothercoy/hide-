@@ -5,6 +5,10 @@ import { MainMenu } from './screens/MainMenu.js';
 import { PlayScreen } from './screens/PlayScreen.js';
 import { SettingsScreen } from './screens/SettingsScreen.js';
 import { SettingsOverlay } from './screens/SettingsOverlay.js';
+import { QuickJoinOverlay } from './screens/QuickJoinOverlay.js';
+import { SoloGame } from './solo/SoloGame.js';
+import { SoloScreen } from './screens/SoloScreen.js';
+import { ChapterScreen } from './screens/ChapterScreen.js';
 import { LobbyScreen } from './screens/LobbyScreen.js';
 import { GameScreen } from './screens/GameScreen.js';
 import { makeButton, drawButton, drawButtonPartial, buttonCharCount, zToAlpha } from './ui/Button.js';
@@ -44,6 +48,7 @@ let selectedMode = null;
 let selectedSettings = {};
 let room;
 let currentMode = null;
+let soloGame = null;      // the offline single-player controller when a solo level is active (else null)
 let playerName = '';
 let isHost = false;
 let playerList = [];
@@ -239,12 +244,13 @@ const transition = new Transition(canvas, ctx);
 const screens = {};
 
 const mainMenu = new MainMenu(canvas, ctx, uiManager,
-    () => showScreen('play'),
+    () => showScreen('solo'),   // SOLO — type in the campaign home screen
+    () => showScreen('play'),   // MULTIPLAYER — unchanged behavior
     () => showScreen('settings')
 );
 
 const playScreen = new PlayScreen(canvas, ctx, uiManager,
-    (name) => handleCreateRoom(name),
+    (name) => handleQuickJoin(name),
     (name) => handleCreateRoom(name),
     (name, code) => handleJoinRoom(name, code),
     () => showScreen('main')
@@ -252,6 +258,17 @@ const playScreen = new PlayScreen(canvas, ctx, uiManager,
 
 const settingsScreen = new SettingsScreen(canvas, ctx, uiManager,
     () => showScreen('main')
+);
+
+// Chapter level page (defined before soloScreen so the flag click can target it). onSelectLevel
+// launches that solo level; BACK returns to the flag grid.
+const chapterScreen = new ChapterScreen(canvas, ctx, uiManager,
+    (chapterIdx, levelIdx) => startSolo(soloLevelConfig(chapterIdx, levelIdx)),
+    () => showScreen('solo')
+);
+
+const soloScreen = new SoloScreen(canvas, ctx, uiManager,
+    (flag, idx) => { chapterScreen.setChapter(flag, idx); showScreen('chapter'); }   // flag → its level page
 );
 
 const lobbyScreen = new LobbyScreen(canvas, ctx, uiManager,
@@ -266,7 +283,8 @@ const lobbyScreen = new LobbyScreen(canvas, ctx, uiManager,
         room.send('startGame', { mode: selectedMode, settings: selectedSettings });
     },
     () => { leaveDestination = 'play'; if (room) room.send('leaveToMenu'); },
-    (message) => showModal(message)
+    (message) => showModal(message),
+    (isPrivate) => { if (room) room.send('setPrivacy', { private: isPrivate }); }   // host toggles Public/Private
 );
 
 const gameScreen = new GameScreen(canvas, ctx, isMobile);
@@ -276,10 +294,20 @@ const gameScreen = new GameScreen(canvas, ctx, isMobile);
 // overlay drives its own buttons' input (onMouseDown/Up/update) and hit-tests them in the handlers.
 const settingsOverlay = new SettingsOverlay(canvas, ctx, { onMainMenu: leaveToMainMenu });
 
+// Quick-join searching overlay (LOADING… + CANCEL) shown while we wait for a public lobby to open.
+const quickJoinOverlay = new QuickJoinOverlay(canvas, ctx, { onCancel: cancelQuickJoin });
+let quickJoinSearching = false;
+let quickJoinRetry = null;
+let quickJoinStart = 0;             // when the current search began (to suppress the flash on instant joins)
+const QUICK_JOIN_RETRY_MS = 2500;  // how often to re-check for an available public lobby
+const QUICK_JOIN_GRACE_MS = 250;   // don't paint the LOADING overlay until the search lasts this long
+
 screens.main = mainMenu;
 screens.play = playScreen;
 screens.settings = settingsScreen;
 screens.lobby = lobbyScreen;
+screens.solo = soloScreen;
+screens.chapter = chapterScreen;
 
 const crt = new CRTEffect(canvas);
 canvas.style.opacity = '0';
@@ -408,6 +436,41 @@ function handleCreateRoom(name) {
     // Keep the Play screen intact during the async join — on success showScreen
     // ('lobby') scrolls it off; on failure the modal sits over the live screen.
     joinGame('create');
+}
+
+// QUICK JOIN: matchmake into any available PUBLIC lobby (never create one). If none are available
+// yet, keep the searching overlay up and retry until one opens — or the player cancels. A public
+// lobby mid-game is still joinable (you land as a spectator).
+function handleQuickJoin(name) {
+    if (!name) { showModal('?INVALID NAME'); return; }
+    playerName = name;
+    sessionStorage.setItem('playerName', name);
+    quickJoinSearching = true;
+    quickJoinStart = performance.now();
+    quickJoinOverlay.reset();
+    uiManager.blocked = true;   // block the Play screen behind the searching overlay
+    quickJoinAttempt();
+}
+
+function quickJoinAttempt() {
+    if (!quickJoinSearching) return;
+    // client.join (NOT joinOrCreate) only joins an existing public room; it rejects when none exist.
+    colyseusClient.join('game_room', { playerName }).then((r) => {
+        if (!quickJoinSearching) { r.leave(); return; }   // canceled while the join was in flight
+        quickJoinSearching = false;
+        onRoomJoined(r);
+    }).catch(() => {
+        if (!quickJoinSearching) return;
+        quickJoinRetry = setTimeout(quickJoinAttempt, QUICK_JOIN_RETRY_MS);   // no lobby yet — wait, retry
+    });
+}
+
+function cancelQuickJoin() {
+    quickJoinSearching = false;
+    if (quickJoinRetry) { clearTimeout(quickJoinRetry); quickJoinRetry = null; }
+    uiManager.blocked = false;
+    uiManager.lastTime = performance.now();
+    // stay on the Play screen
 }
 
 function handleJoinRoom(name, code) {
@@ -717,6 +780,10 @@ function setupRoomMessages(isReconnecting = false) {
         lobbyScreen.applyRemoteSettings(data.mode, data.settings, data.customOpen);
     });
 
+    // Public/Private lobby visibility — applied for everyone (idempotent for the host who set it);
+    // also carries the current value to a fresh joiner via sendPlayerState.
+    room.onMessage('privacyUpdated', (data) => lobbyScreen.applyRemotePrivacy(data.private));
+
     room.onMessage('gameStarted', (data) => {
         pendingLobbyEntry = false; // going to the game, not the lobby
         if (transition.isActive()) transition.cancelToEnd();
@@ -808,7 +875,48 @@ function setupRoomMessages(isReconnecting = false) {
     });
 }
 
+// --- Solo (offline single-player) ---
+// STEP 2: launch one hardcoded level to prove offline play. No server, no networking — the whole
+// round runs from the shared gameSim in the browser. Chapters, level-select, progress save, and the
+// completion cue are step 3.
+// Difficulty for chapter `c` (0-based), level `n` (0-based). Placeholder ramp — more characters and
+// speed, less time, as the level climbs (and slightly harder per chapter). Tune later.
+function soloLevelConfig(c, n) {
+    return { mode: 'redacted', settings: {
+        charCount: 30 + n * 8 + c * 10,
+        speedScale: 0.15 + n * 0.02,
+        roundTime: Math.max(8, 22 - n),
+    } };
+}
+
+function startSolo(level = { mode: 'redacted', settings: { charCount: 45, speedScale: 0.2, roundTime: 20 } }) {
+    if (transition.isActive()) transition.cancelToEnd();
+    hideGameOverOverlay();
+    if (currentMode) { currentMode.reset?.(); }
+    currentMode = null;
+    gameCopyBtn = null;             // solo has no room code → no COPY CODE button
+    uiManager.clear();
+    gameScreen.solo = true;
+    gameScreen.setMode(level.mode);
+    gameScreen.setRoomCode('');
+    gameScreen.prewarmGlyphs();
+    soloGame = new SoloGame(canvas, ctx, level, gameScreen.charRadii(), { onEnd: endSolo });
+    currentMode = soloGame;         // drawScreenInto('game') → soloGame.draw(gameScreen)
+    currentScreen = 'game';
+    uiManager.blocked = false;
+    uiManager.lastTime = performance.now();
+    resizeCanvas();
+}
+
+function endSolo() {
+    soloGame = null;
+    currentMode = null;
+    gameScreen.solo = false;
+    showScreen('chapter');   // back to the chapter's level page (later: mark the level done)
+}
+
 function createMode(modeId, data) {
+    gameScreen.solo = false;   // a multiplayer game is starting — restore the multiplayer layout
     const callbacks = {
         onGameOver: (winner) => showGameOverOverlay(winner)
     };
@@ -1116,9 +1224,10 @@ function updateHUD(dt) {
         if (!hudShown(it)) { it.hover = 0; it.releasePhase = null; it._rect = null; continue; }
         const r = it.getRect();
         it._rect = r;
-        // While the settings overlay is up, the HUD is behind it — no hover/press animations
-        // (the overlay is closed via the click handler, not via HUD hover).
-        const over = !settingsPanelOpen && mx >= r.x && mx <= r.x + r.w && my >= r.y && my <= r.y + r.h;
+        // While an overlay is up (settings, or quick-join searching), the HUD is behind it — no
+        // hover/press animations.
+        const over = !settingsPanelOpen && !quickJoinSearching &&
+            mx >= r.x && mx <= r.x + r.w && my >= r.y && my <= r.y + r.h;
         it.hover = over ? Math.min(1, it.hover + dt / 150) : Math.max(0, it.hover - dt / 150);
         if (it.tick) it.tick(dt, over);
 
@@ -1267,6 +1376,14 @@ function leaveToMainMenu() {
     setSettingsOverlay(false);
     if (currentScreen === 'main') return;
 
+    if (soloGame) {   // offline solo — no room to leave; tear it down and go home
+        soloGame = null;
+        gameScreen.solo = false;
+        currentMode = null;
+        showScreen('main');
+        return;
+    }
+
     if (room) {
         leaveDestination = 'main';
         room.send('leaveToMenu');   // async → room.onLeave transitions; overlay already closed → clean snapshot
@@ -1286,6 +1403,12 @@ function drawPersistentHUD() {
     drawHUDItems();
 
     if (settingsPanelOpen) settingsOverlay.draw(uiManager.elapsed);
+    // Grace window: an instant join resolves before this elapses, so the overlay never flashes up.
+    // Pass search-relative elapsed so the LOADING dots always start from 0 when it appears.
+    const qjElapsed = performance.now() - quickJoinStart;
+    if (quickJoinSearching && qjElapsed > QUICK_JOIN_GRACE_MS) {
+        quickJoinOverlay.draw(qjElapsed / 1000);
+    }
 
     drawModal();
 }
@@ -1297,6 +1420,8 @@ function drawScreenInto(name) {
     if (name === 'main') mainMenu.draw();
     else if (name === 'play') playScreen.draw();
     else if (name === 'settings') settingsScreen.draw();
+    else if (name === 'solo') soloScreen.draw();
+    else if (name === 'chapter') chapterScreen.draw();
     else if (name === 'lobby') lobbyScreen.draw();
     else if (name === 'game') {
         if (currentMode) currentMode.draw(gameScreen);
@@ -1330,8 +1455,10 @@ function draw() {
     uiManager.update(now);
     updateHUD(dt);
     updateModal(dt);
+    if (soloGame) soloGame.update(dt);   // offline solo runs its own tick (no server)
     // The settings overlay drives its own buttons (uiManager is blocked behind it).
     if (settingsPanelOpen) settingsOverlay.update(dt, uiManager.mouseX, uiManager.mouseY, uiManager.elapsed);
+    if (quickJoinSearching) quickJoinOverlay.update(dt, uiManager.mouseX, uiManager.mouseY);
 
     if (transition.isActive()) {
         // Re-sample in case a transition just began this frame — it's at elapsed 0
@@ -1371,6 +1498,7 @@ document.addEventListener('visibilitychange', () => {
 canvas.addEventListener('mousedown', (e) => {
     if (gateActive) return;   // portrait rotate gate — ignore input
     if (transition.isActive() || modalMessage || hudIntroPending) return;
+    if (quickJoinSearching) { const p = hudEventPos(e); quickJoinOverlay.onMouseDown(p.x, p.y); return; }
     if (settingsPanelOpen) { const p = hudEventPos(e); settingsOverlay.onMouseDown(p.x, p.y); return; }
     const { x, y } = hudEventPos(e);
     hudOnMouseDown(x, y);
@@ -1383,10 +1511,11 @@ canvas.addEventListener('mousedown', (e) => {
         const cx = x - gameScreen.boxCenterX, cy = y - canvas.height / 2;
         const hit = currentMode.hitTest(gameScreen, cx, cy);
         if (hit) {
-            room.send('tap', { nx: hit.nx, ny: hit.ny, time: Date.now() });
             gameScreen.pressTarget();            // hold-to-press the target
+            if (soloGame) soloGame.win();        // solo: the client decides the hit (offline)
+            else room.send('tap', { nx: hit.nx, ny: hit.ny, time: Date.now() });   // MP: server validates
         } else if (gameScreen.isInPlayField(cx, cy)) {
-            gameScreen.triggerGlitch();          // missed inside the field — scramble
+            gameScreen.triggerGlitch();          // missed inside the field — scramble (no penalty)
         }
     }
 });
@@ -1394,6 +1523,7 @@ canvas.addEventListener('mousedown', (e) => {
 canvas.addEventListener('mouseup', (e) => {
     if (gateActive) return;   // portrait rotate gate — ignore input
     const { x, y } = hudEventPos(e);
+    if (quickJoinSearching) { quickJoinOverlay.onMouseUp(x, y); return; }
     if (settingsPanelOpen) { settingsOverlay.onMouseUp(x, y); return; }
     hudOnMouseUp(x, y);
     gameScreen.releaseTarget();   // end the target press → glow (no-op if not held)
@@ -1421,6 +1551,8 @@ canvas.addEventListener('click', (e) => {
         }
         return;
     }
+
+    if (quickJoinSearching) return;   // searching overlay: only CANCEL (handled on mousedown/up) is live
 
     if (settingsPanelOpen) {
         // The overlay's buttons run their own press→glow→onClick lifecycle (mousedown/up + update),

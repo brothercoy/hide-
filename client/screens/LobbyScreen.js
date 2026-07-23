@@ -52,7 +52,7 @@ const DESC_OVERHANG = 20;
 
 
 export class LobbyScreen {
-    constructor(canvas, ctx, uiManager, onUpdateSettings, onMakeHost, onStart, onMainMenu, onModal) {
+    constructor(canvas, ctx, uiManager, onUpdateSettings, onMakeHost, onStart, onMainMenu, onModal, onSetPrivacy) {
         this.canvas = canvas;
         this.ctx = ctx;
         this.ui = uiManager;
@@ -61,6 +61,7 @@ export class LobbyScreen {
         this.onStart = onStart;
         this.onMainMenu = onMainMenu;
         this.onModal = onModal;
+        this.onSetPrivacy = onSetPrivacy;
 
         this.roomCode = '';
         this.players = [];
@@ -103,6 +104,7 @@ export class LobbyScreen {
     resetToDefault() {
         this.modeId = null;
         this.settings = {};
+        this.privacy = 'public';   // fresh room is Public (matches the server's default)
         this.customOpen = false;
         this.customToggledAt = null;
         this.rowReveal.reset();   // fresh room → next roster is the initial batch (no per-row typing)
@@ -167,12 +169,21 @@ export class LobbyScreen {
         this.onUpdateSettings(this.modeId, { ...this.settings }, this.customOpen);
     }
 
-    // Public/Private lobby visibility. Local selection for now; the actual room-privacy sync
-    // (matchmaking visibility, quick-join eligibility) is wired in a later pass.
+    // Public/Private lobby visibility. Host-only (the buttons are disabled for non-hosts); tells the
+    // server to setPrivate, which controls whether QUICK JOIN can matchmake into this lobby.
     _selectPrivacy(id) {
+        if (!this.isHost) return;
         if (this.privacy === id) return;   // already selected — one is always active, no toggle-off
         this.privacy = id;
         this.dirty = true;                 // rebuild to flip which option is `active`
+        if (this.onSetPrivacy) this.onSetPrivacy(id === 'private');
+    }
+
+    // Server-driven privacy (broadcast on change, and sent to fresh joiners). Non-hosts mirror it;
+    // for the host who set it, it's a no-op.
+    applyRemotePrivacy(isPrivate) {
+        const p = isPrivate ? 'private' : 'public';
+        if (this.privacy !== p) { this.privacy = p; this.dirty = true; }
     }
 
     _copyCode() {

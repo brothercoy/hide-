@@ -1,50 +1,13 @@
 import { Room } from '@colyseus/core';
 import { GAME_MODES } from '../gameModes.js';
 import { COUNTDOWN_MS, GAME_INTRO_MS, LIFE_LOSS_INTRO_MS, LIFE_LOSS_ENTRY_MS, LIFE_LOSS_WORD_MS, LIFE_LOSS_ELIM_MS, MATCH_OVER_MS, roundResultMs } from '../timings.js';
-import { confusionDecoys, pickConfusionTarget, TEST_PAIRS_IN_ORDER, nextTestPair } from '../confusables.js';
+// Core simulation (field generation, physics, tap validation, difficulty ramp) lives in the shared,
+// networking-free ../gameSim.js so the CLIENT can run the SAME code for offline solo. This room owns
+// the state + tick loop + broadcasts and delegates the pure math to `sim`.
+import * as sim from '../gameSim.js';
 
-// The full visible printable-ASCII set (33 '!' … 126 '~') — every glyph a target/field char can
-// be. Shared by ALL game modes (generateChars draws from here). Which confusable glyphs may not
-// co-exist in one game (rotation look-alikes) is layered on top separately.
-const LETTERS = Array.from({ length: 126 - 33 + 1 }, (_, i) => String.fromCharCode(33 + i)).join('');
-
-// Glyphs that look like each other when a character rotates/flips. Enforced TARGET-FIRST and
-// PER-ROUND: the target can be any glyph, but if it belongs to a group, that group's OTHER members
-// are kept out of THAT round's field (so a look-alike can't be mistaken for the target). It's never
-// the reverse — every glyph is still free to be the target on any round, so nothing is banished for
-// the whole game (e.g. 6 as target one round doesn't stop 9 from being the target later).
-// Populate from the confusable-glyph list; list a 3+-way look-alike as one group. (Empty = no rule.)
-const CONFLICT_GROUPS = [
-    ["'", ','],   // apostrophe / comma
-    ['n', 'u'],
-    ['[', ']'],
-    ['<', '>'],
-    ['(', ')'],
-    ['{', '}'],
-    ['-', '_'],
-];
-// glyph -> glyphs it must not share a round with (derived once from the groups above)
-const CONFLICTS = {};
-for (const group of CONFLICT_GROUPS) for (const c of group) CONFLICTS[c] = group.filter(x => x !== c);
 const TICK_RATE = 50;
 const LOBBY_TIMEOUT = 1000 * 60 * 10;
-
-// ACK (Frequency) difficulty ramp. Round 1 uses the player's SETTING as-is; the ramp climbs linearly
-// to a harder END reached at the MAX round count (the rounds slider max, 20). For charCount/speed the
-// END adds the FULL slider RANGE to the setting — so the easy-end DEFAULT (setting = slider min)
-// reaches the slider MAX at round 20, and a higher starting setting scales PAST the max, clamped to a
-// reasonable ceiling. roundTime shrinks toward a fraction of the setting, floored. So the scaling is
-// dynamic and setting-driven, never a fixed target. Defaults (chars 30, speed 0.1/Slow, time 30s) give
-// 30→150 chars, slow→fast, 30s→10s over 20 rounds — so a default 10-round game lands on the midpoint.
-const ACK_RAMP = {
-    charCount:  { kind: 'plusRange', cap: 200 },              // → slider max (150) at 20 rounds; up to 200
-    speedScale: { kind: 'plusRange', cap: 0.6 },              // → slider max (0.4/Fast) at 20 rounds; up to 0.6
-    roundTime:  { kind: 'shrink', mult: 1 / 3, floor: 5 },    // 30s → 10s at 20 rounds; floor 5s
-};
-// Spawn confusion: fraction of the field filled with the target's look-alikes (vs random noise). Ramps
-// 0 (round 1) → this at the final round. 1.0 means the final round is PURE camouflage — the field is
-// nothing but the target's nearest twins (the "two options"), no random noise.
-const CONFUSION_MAX = 1.0;
 
 const DEFAULT_MODE = GAME_MODES.redacted;
 
@@ -56,17 +19,12 @@ const ROUND_OVER_HOLD_MS = 1300; // cursor blinks on the last player for this lo
 // always lasts exactly as long as the animation — no separate display time to keep in sync.
 const MATCH_OVER_DISPLAY_MS = MATCH_OVER_MS;
 
-// Server-side tap validation (anti-cheat): the server — not the client — decides whether a tap
-// actually hit the target. Because the client renders the field slightly in the past (the
-// interpolation delay + its ping), we keep a short history of the TARGET's position and accept
-// a tap if it lands within the target's radius anywhere in that window. This stops the trivial
-// exploit of sending `tap` with no/false coordinates to auto-win.
-const TARGET_HISTORY = 8;    // ticks kept (~400ms at 50ms) — covers the render delay + ping
-const TAP_TOLERANCE = 0.1;   // normalized padding added to the glyph's own radius (forgiving)
-
 class GameRoom extends Room {
     onCreate() {
         this.autoDispose = false;
+        this.maxClients = 10;      // cap total connections (players + mid-game spectators) per lobby
+        this.isPrivate = false;    // Public by default: discoverable by QUICK JOIN matchmaking. Private
+                                   // rooms call setPrivate(true) → hidden from matchmaking, code-join only.
         this.roomCode = this.generateRoomCode();
         this.gameMode = DEFAULT_MODE;
         this.settings = { ...DEFAULT_MODE.defaultSettings };
@@ -84,7 +42,7 @@ class GameRoom extends Room {
         this.charRadii = {}; // char -> { rx, ry } normalized collision radii (sent by clients)
         this.targetObj = null;   // reference to the current target char, for tap validation
         this.targetHistIdx = 0;
-        this.targetHistory = Array.from({ length: TARGET_HISTORY }, () => ({ x: 0, y: 0, t: -1 }));
+        this.targetHistory = Array.from({ length: sim.TARGET_HISTORY }, () => ({ x: 0, y: 0, t: -1 }));
         this.chars = this.generateChars();
         this.lastTick = Date.now();
         this.timeUpHandled = false;
@@ -155,6 +113,15 @@ class GameRoom extends Room {
             this.selectedSettingsData = data.settings;
             this.customOpen = !!data.customOpen; // host's CUSTOM view, mirrored to non-hosts
             this.broadcast('settingsUpdated', data);
+        });
+
+        this.onMessage('setPrivacy', (client, data) => {
+            if (client.sessionId !== Object.keys(this.players)[0]) return;   // host only
+            const priv = data.private === true;
+            this.isPrivate = priv;
+            this.setPrivate(priv);   // Colyseus: private rooms drop out of matchmaking (QUICK JOIN),
+                                     // but stay joinable by code. Public rooms are matchmakeable.
+            this.broadcast('privacyUpdated', { private: priv });
         });
 
         this.onMessage('makeHost', (client, data) => {
@@ -295,7 +262,7 @@ class GameRoom extends Room {
             if (this.targetObj) {
                 const h = this.targetHistory[this.targetHistIdx];
                 h.x = this.targetObj.x; h.y = this.targetObj.y; h.t = now;
-                this.targetHistIdx = (this.targetHistIdx + 1) % TARGET_HISTORY;
+                this.targetHistIdx = (this.targetHistIdx + 1) % sim.TARGET_HISTORY;
             }
             this.timeLeft -= delta;
 
@@ -357,6 +324,7 @@ class GameRoom extends Room {
     // screen types in (fresh) or just loads mid-round (resumed).
     sendPlayerState(client, resumed = false) {
         client.send('roomCode', { code: this.roomCode });
+        client.send('privacyUpdated', { private: this.isPrivate });   // reflect current lobby visibility
         if (this.selectedMode) {
             client.send('settingsUpdated', {
                 mode: this.selectedMode,
@@ -547,178 +515,28 @@ class GameRoom extends Room {
         this.checkReturnToLobbyVotes();
     }
 
-    // The effective value of a ramped setting for `round` (1-based) in Frequency. The ramp climbs
-    // linearly from the SETTING (round 1) to the slider max, reached at the MAX round count (the rounds
-    // slider max, 20). So FEWER rounds end the climb early — a genuinely easier game; e.g. a default
-    // 10-round game stops at the midpoint — and only a full 20-round game reaches the top. A given
-    // round is the same difficulty regardless of the chosen round count. charCount/roundTime rounded.
-    _ackRoundValue(param, round) {
-        const start = this.settings[param];
-        const cfg = ACK_RAMP[param];
-        const ref = this.gameMode.settingsOptions.rounds.max;   // full ramp spans the MAX round count (20)
-        const p = ref > 1 ? (round - 1) / (ref - 1) : 0;
-        let v;
-        if (cfg.kind === 'plusRange') {
-            const opt = this.gameMode.settingsOptions[param];
-            const range = opt.options ? (opt.options[opt.options.length - 1] - opt.options[0]) : (opt.max - opt.min);
-            v = Math.min(cfg.cap, start + range * p);      // hits the slider max at round `ref`, then climbs to the cap
-        } else {   // 'shrink' — toward a fraction of the setting, floored
-            v = Math.max(cfg.floor, start + (start * cfg.mult - start) * p);
-        }
-        return param === 'speedScale' ? v : Math.round(v);
-    }
-    // Per-round effective values — ramped in Frequency, the flat setting in every other mode.
-    _effCharCount() {
-        return this.gameMode.id === 'frequency' ? this._ackRoundValue('charCount', this.currentRound) : this.settings.charCount;
-    }
-    _effSpeed() {
-        return this.gameMode.id === 'frequency' ? this._ackRoundValue('speedScale', this.currentRound) : this.settings.speedScale;
-    }
-    _effRoundTime() {
-        return this.gameMode.id === 'frequency' ? this._ackRoundValue('roundTime', this.currentRound) : this.settings.roundTime;
-    }
-    // Fraction of the field to fill with the target's look-alikes this round (0 outside Frequency and on
-    // round 1, ramping to CONFUSION_MAX at the FINAL round). UNLIKE the other axes, confusion scales to
-    // the CHOSEN round count — so every game, long or short, ends on a pure two-option field.
-    _effConfusion() {
-        if (this.gameMode.id !== 'frequency') return 0;
-        const ref = this.settings.rounds;
-        // A 1-round game IS its own final round — treat it as p=1 (full confusion), not p=0, so the
-        // single round still delivers the two-option climax instead of the easy round-1 noise field.
-        const p = ref > 1 ? Math.min(1, (this.currentRound - 1) / (ref - 1)) : 1;
-        return p * CONFUSION_MAX;
-    }
+    // Per-round effective values — ramped in Frequency, the flat setting elsewhere. Delegated to the
+    // shared sim (see gameSim.js) so multiplayer and solo compute difficulty identically.
+    _effRoundTime() { return sim.effRoundTime(this.gameMode, this.settings, this.currentRound); }
     // --------------------------------------------------------------------------------------------
 
+    // --- Simulation (delegated to the shared, networking-free gameSim.js) --------------------------
+    // Build this round's field, then own the results: stash the target refs and clear last round's
+    // position history (both live on this room, not the pure sim).
     generateChars() {
-        const chars = [];
-        // TEST: on a Frequency FINAL round with TEST_PAIRS_IN_ORDER on, walk the tier-2 pairs in order
-        // instead of picking randomly (target = pair[0], field = copies of pair[1]) so every pair can be
-        // reviewed once, in order, by playing 1-round games back to back. See confusables.js.
-        const testWalk = (TEST_PAIRS_IN_ORDER && this.gameMode.id === 'frequency'
-            && this.currentRound >= this.settings.rounds) ? nextTestPair() : null;
-        // Frequency's target: early rounds from ALL glyphs, but a rising chance (→100% by the final
-        // round) to instead draw a glyph grouped at the current confusion tier — so the last round always
-        // lands on one with a pair twin. Other modes use the full set uniformly.
-        this.targetChar = testWalk
-            ? testWalk.pair[0]
-            : (this.gameMode.id === 'frequency'
-                ? pickConfusionTarget(this.currentRound, this.settings.rounds, LETTERS)
-                : LETTERS[Math.floor(Math.random() * LETTERS.length)]);
-        const charCount = this._effCharCount();   // ramps up per round in Frequency; flat setting otherwise
-
-        // This round's field pool: every glyph EXCEPT the target and its rotation look-alikes.
-        // Pre-filtered once (no per-character re-roll loop).
-        const forbidden = new Set(CONFLICTS[this.targetChar] || []);
-        forbidden.add(this.targetChar);
-        const pool = [...LETTERS].filter(c => !forbidden.has(c));
-        // The target's visual near-twins for THIS round: the confusion tier narrows with difficulty
-        // (broad family → subgroup → nearest pair), minus the rotation-conflicts already barred above.
-        // `confusion` of the field is filled with them to camouflage the target; the rest is random
-        // noise. Both scale to the CHOSEN round count, so the final round is always the nearest pair at
-        // 100% (0 on round 1 / in Redacted — confusionDecoys narrows against the same round count).
-        const totalRounds = this.gameMode.id === 'frequency' ? this.settings.rounds : 0;
-        // TEST walk: force this pair's partner as the sole decoy at full confusion, bypassing the
-        // conflict filter so even normally-barred pairs (6/9, M/W…) render as a clean two-option field.
-        const twins = testWalk
-            ? [testWalk.pair[1]]
-            : confusionDecoys(this.targetChar, this.currentRound, totalRounds).filter(c => !forbidden.has(c));
-        const confusion = testWalk ? 1 : (twins.length ? this._effConfusion() : 0);
-        if (testWalk) {
-            const barred = (CONFLICTS[testWalk.pair[0]] || []).includes(testWalk.pair[1]);
-            console.log(`[ACK TEST] pair ${testWalk.idx + 1}/${testWalk.total}${testWalk.reversed ? ' (reverse)' : ' (forward)'}: '${testWalk.pair[0]}' hidden among '${testWalk.pair[1]}'${barred ? '  (conflict-filtered in real play)' : ''}`);
-        }
-
-        for (let i = 0; i < charCount - 1; i++) {
-            const char = (confusion && Math.random() < confusion)
-                ? twins[Math.floor(Math.random() * twins.length)]         // a near-twin (camouflage)
-                : pool[Math.floor(Math.random() * pool.length)];          // random noise
-            chars.push(this.createChar(char, false));
-        }
-
-        const targetIndex = Math.floor(Math.random() * charCount);
-        const target = this.createChar(this.targetChar, true);
-        chars.splice(targetIndex, 0, target);
-
-        this.targetObj = target;                       // reference for server-side tap validation
-        for (const h of this.targetHistory) h.t = -1;  // clear last round's positions
-
+        const { chars, targetChar, targetObj } = sim.generateField({
+            gameMode: this.gameMode, settings: this.settings,
+            currentRound: this.currentRound, charRadii: this.charRadii,
+        });
+        this.targetChar = targetChar;
+        this.targetObj = targetObj;
+        for (const h of this.targetHistory) h.t = -1;   // clear last round's positions
         return chars;
     }
-
-    // True if the tap (normalized coords from the client) lands on the target at any point in
-    // its recent history — server-authoritative, so a client can't just claim a hit. The
-    // history window absorbs the client's render delay + ping without needing to know either.
-    _tapHitsTarget(data) {
-        const tgt = this.targetObj;
-        if (!tgt || !data || typeof data.nx !== 'number' || typeof data.ny !== 'number') return false;
-        const rad = Math.max(tgt.rx, tgt.ry) + TAP_TOLERANCE;
-        const r2 = rad * rad;
-        let dx = data.nx - tgt.x, dy = data.ny - tgt.y;   // newest (live) position
-        if (dx * dx + dy * dy <= r2) return true;
-        for (const h of this.targetHistory) {             // ...and the recorded past window
-            if (h.t < 0) continue;
-            dx = data.nx - h.x; dy = data.ny - h.y;
-            if (dx * dx + dy * dy <= r2) return true;
-        }
-        return false;
-    }
-
-    createChar(char, isTarget) {
-        // Per-char collision radius (normalized), stored on the char so the bounce
-        // reads it directly — no recompute. Falls back to a small default until a
-        // client's radii table arrives. Spawn anywhere the whole glyph fits inside
-        // the field (so it never starts overlapping the frame).
-        const rr = this.charRadii[char] || { rx: 0.03, ry: 0.05 };
-        const speed = this._effSpeed();   // ramps up per round in Frequency; flat setting otherwise
-        return {
-            char: char,
-            isTarget: isTarget,
-            rx: rr.rx,
-            ry: rr.ry,
-            x: (Math.random() * 2 - 1) * (1 - rr.rx),
-            y: (Math.random() * 2 - 1) * (1 - rr.ry),
-            speedX: (Math.random() - 0.5) * speed,
-            speedY: (Math.random() - 0.5) * speed,
-            rotation: Math.random() * Math.PI * 2,
-            rotationSpeed: Math.random() < 0.05 ? 0 : (Math.random() - 0.5) * 2
-        };
-    }
-
-    // Only char + isTarget are static per round; positions move every tick. Round-start
-    // messages carry these (with the initial positions) via charInit(); the per-tick
-    // charUpdate carries only the moving numbers via charPositions().
-    charInit() {
-        return this.chars.map(c => ({ char: c.char, isTarget: c.isTarget, x: c.x, y: c.y, rotation: c.rotation }));
-    }
-    // Flat [x, y, rotation, ...] — ~70% smaller than the full objects, and ONE array to
-    // (de)serialize each tick instead of ~150 objects (much less GC on both ends).
-    charPositions() {
-        const n = this.chars.length;
-        const p = new Array(n * 3);
-        for (let i = 0; i < n; i++) {
-            const c = this.chars[i];
-            p[i * 3] = c.x; p[i * 3 + 1] = c.y; p[i * 3 + 2] = c.rotation;
-        }
-        return p;
-    }
-
-    updateChars(delta) {
-        this.chars.forEach(c => {
-            c.x += c.speedX * delta;
-            c.y += c.speedY * delta;
-            c.rotation += c.rotationSpeed * delta;
-
-            // Bounce the char's EDGE off the field walls (±1 maps to the frame's inner
-            // edge on the client), using its own stored radius so each glyph hits the
-            // brackets/equals exactly.
-            const rx = c.rx, ry = c.ry;
-            if (c.x < -1 + rx) { c.speedX = Math.abs(c.speedX);  c.x = -1 + rx; }
-            if (c.x >  1 - rx) { c.speedX = -Math.abs(c.speedX); c.x =  1 - rx; }
-            if (c.y < -1 + ry) { c.speedY = Math.abs(c.speedY);  c.y = -1 + ry; }
-            if (c.y >  1 - ry) { c.speedY = -Math.abs(c.speedY); c.y =  1 - ry; }
-        });
-    }
+    _tapHitsTarget(data) { return sim.tapHitsTarget(this.targetObj, this.targetHistory, data); }
+    charInit() { return sim.charInit(this.chars); }
+    charPositions() { return sim.charPositions(this.chars); }
+    updateChars(delta) { sim.updateChars(this.chars, delta); }
 
     startRoundCountdown() {
         if (this.gameOver) return;
@@ -1060,6 +878,12 @@ class GameRoom extends Room {
             this.checkPlayAgainVotes();
             this.checkReturnToLobbyVotes();
         }
+
+        // Dispose the room once truly empty. autoDispose is off (so the room survives brief drops /
+        // the reconnection window — disconnected players stay in `players` until their window expires),
+        // so we clean up manually here. Without this, empty public rooms would linger forever and
+        // QUICK JOIN could matchmake someone into a dead, playerless lobby.
+        if (Object.keys(this.players).length === 0) this.disconnect();
     }
 }
 

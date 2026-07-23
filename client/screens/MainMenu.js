@@ -3,18 +3,20 @@ import { charWidth } from '../ui/Font.js';
 import { theme, glow } from '../ui/colors.js';
 import { vScale, bandTop } from '../ui/viewport.js';
 
-const FONT_SIZE = 54;
+const FONT_SIZE = 50;         // button label font (SOLO / MULTIPLAYER / SETTINGS)
+const BTN_GAP = 8;           // vertical gap BETWEEN buttons (on top of each button's height)
+const BTN_CENTER_OFFSET = 175; // the MIDDLE button's distance below screen center (raise → lower the group)
 
 // hide row
-const HIDE_SIZE = 250;
+const HIDE_SIZE = 330;
 const HIDE_SPACING = 150;
-const HIDE_Y = 130;
+const HIDE_Y = 100;
 const HIDE_Z = 1.0;
 
 // @$©!! row
-const SPECIAL_SIZE = 46;
-const SPECIAL_SPACING = 230;
-const SPECIAL_Y = 250;
+const SPECIAL_SIZE = 50;
+const SPECIAL_SPACING = 280;
+const SPECIAL_Y = 260;
 const SPECIAL_Z = 1.3;          // resting depth
 const SPECIAL_Z_PRESSED = 2.5;  // depth when held
 const SPECIAL_Z_GLOW    = 1.0;  // overshoot target on release — glow fires here, then returns to SPECIAL_Z
@@ -62,11 +64,12 @@ function getBtnChars(btn) {
 }
 
 export class MainMenu {
-    constructor(canvas, ctx, uiManager, onPlay, onSettings) {
+    constructor(canvas, ctx, uiManager, onSolo, onPlay, onSettings) {
         this.canvas = canvas;
         this.ctx = ctx;
         this.ui = uiManager;
-        this.onPlay = onPlay;
+        this.onSolo = onSolo;
+        this.onPlay = onPlay;         // MULTIPLAYER (same behavior as the old PLAY)
         this.onSettings = onSettings;
         this.introStart = null;
         this.introDone = false;
@@ -88,7 +91,11 @@ export class MainMenu {
     _btnLayout() {
         const cy = this.canvas.height / 2;
         const vs = vScale(this.canvas);
-        return { startY: cy + 60 * vs, btnSpacing: (FONT_SIZE * 2.5 + 20) * vs };
+        const btnSpacing = (FONT_SIZE * 2.5 + BTN_GAP) * vs;   // center-to-center = button height + gap
+        // Three buttons (SOLO / MULTIPLAYER / SETTINGS). The MIDDLE one sits at BTN_CENTER_OFFSET below
+        // screen center, so the top (SOLO) is one spacing above that.
+        const startY = cy + BTN_CENTER_OFFSET * vs - btnSpacing;
+        return { startY, btnSpacing };
     }
 
     // Re-place the buttons for a new canvas height WITHOUT re-entering (which would
@@ -101,10 +108,12 @@ export class MainMenu {
         // left-shifted after rotating to landscape.
         const cx = this.canvas.width / 2;
         const { startY, btnSpacing } = this._btnLayout();
-        const play = this.ui.buttons.find(b => b.label === 'PLAY');
+        const solo = this.ui.buttons.find(b => b.label === 'SOLO');
+        const multi = this.ui.buttons.find(b => b.label === 'MULTIPLAYER');
         const settings = this.ui.buttons.find(b => b.label === 'SETTINGS');
-        if (play) { play.x = cx; play.y = startY; }
-        if (settings) { settings.x = cx; settings.y = startY + btnSpacing; }
+        if (solo) { solo.x = cx; solo.y = startY; }
+        if (multi) { multi.x = cx; multi.y = startY + btnSpacing; }
+        if (settings) { settings.x = cx; settings.y = startY + 2 * btnSpacing; }
     }
 
     // opts.typed === true when entered via the typed-scroll transition (returning
@@ -142,8 +151,9 @@ export class MainMenu {
         const cx = this.canvas.width / 2;
         const { startY, btnSpacing } = this._btnLayout();
 
-        this.ui.buttons.push(makeButton('PLAY', cx, startY, () => this.onPlay(), { blocksInput: true }));
-        this.ui.buttons.push(makeButton('SETTINGS', cx, startY + btnSpacing, () => this.onSettings(), { blocksInput: true }));
+        this.ui.buttons.push(makeButton('SOLO', cx, startY, () => this.onSolo(), { blocksInput: true }));
+        this.ui.buttons.push(makeButton('MULTIPLAYER', cx, startY + btnSpacing, () => this.onPlay(), { blocksInput: true }));
+        this.ui.buttons.push(makeButton('SETTINGS', cx, startY + 2 * btnSpacing, () => this.onSettings(), { blocksInput: true }));
 
         if (this.typed) {
             // Steady state from the first frame; the feed already typed it in.
