@@ -19,7 +19,9 @@
 //     attack:  0.001,          // s — 0 → gain
 //     decay:   0.1,            // s — gain → silence (ignored while sustaining)
 //     gain:    0.3,            // 0..1
-//     filter:  null,           // { type: 'lowpass'|'highpass'|'bandpass', cutoff: Hz, q: number }
+//     filter:  null,           // { type: 'lowpass'|'highpass'|'bandpass', cutoff: Hz, q: number,
+//                              //   cutoffEnd: Hz|null }  — cutoffEnd sweeps the filter over the
+//                              //   voice's lifetime (rising whooshes, spreading shimmers)
 //     lfo:     null,           // { rate: Hz, depth: 0..1 } — amplitude flutter (hum "aliveness")
 //   }
 
@@ -109,8 +111,13 @@ function buildVoice(voice, t0, hold, mods = { freqMul: 1, gainMul: 1 }) {
         const filt = ctx.createBiquadFilter();
         filt.type = voice.filter.type;
         // For noise voices the filter IS the pitch — move the cutoff with the vary roll
-        filt.frequency.value = (voice.filter.cutoff || 2000) *
-            (voice.wave === 'noise' ? mods.freqMul : 1);
+        const cutMul = voice.wave === 'noise' ? mods.freqMul : 1;
+        filt.frequency.setValueAtTime((voice.filter.cutoff || 2000) * cutMul, start);
+        // Optional cutoff sweep — rising noise whooshes, spreading shimmers
+        if (voice.filter.cutoffEnd) {
+            filt.frequency.exponentialRampToValueAtTime(
+                Math.max(1, voice.filter.cutoffEnd * cutMul), start + attack + decay);
+        }
         filt.Q.value = voice.filter.q || 1;
         src.connect(filt);
         filt.connect(env);

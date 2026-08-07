@@ -91,6 +91,10 @@ function paramRows(v) {
         rows.push(
             { kind: 'slider', label: 'CUTOFF', min: 100, max: 12000, log: true, fmt: fmtHz,
               get: () => v.filter.cutoff, set: x => { v.filter.cutoff = Math.round(x); } },
+            { kind: 'slider', label: 'CUT-END', min: 100, max: 12000, log: true, nullable: true,
+              fmt: x => x ? fmtHz(x) : 'OFF',
+              get: () => v.filter.cutoffEnd ?? null,
+              set: x => { v.filter.cutoffEnd = x === null ? null : Math.round(x); } },
             { kind: 'slider', label: 'Q', min: 0.3, max: 20, log: true, fmt: x => x.toFixed(1),
               get: () => v.filter.q, set: x => { v.filter.q = round3(x); } },
         );
@@ -248,16 +252,16 @@ function drawEditor() {
     let vx = x;
     text('VOICE:', vx, y, MID); vx += cw * 7;
     patch.voices.forEach((_, i) => {
-        const lbl = i === voiceIdx ? `[${i + 1}]` : ` ${i + 1} `;
+        const lbl = i === voiceIdx ? `[${i + 1}]` : `${i + 1}`;
         text(lbl, vx, y, i === voiceIdx ? BRIGHT : MID);
         const xx = vx;
-        addHit(xx, y, cw * 3, LH, () => { setVoiceIdx(i); });
-        vx += cw * 3.5;
+        addHit(xx, y, cw * lbl.length, LH, () => { setVoiceIdx(i); });
+        vx += cw * (lbl.length + 0.7);
     });
     vx += cw;
     text('+ADD', vx, y, MID);
     addHit(vx, y, cw * 4, LH, () => {
-        if (patch.voices.length >= 9) return;
+        if (patch.voices.length >= 24) return;
         patch.voices.push(structuredClone(patch.voices[voiceIdx]));
         setVoiceIdx(patch.voices.length - 1);
     });
