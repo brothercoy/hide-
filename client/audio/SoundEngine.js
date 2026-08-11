@@ -54,6 +54,7 @@ export function initAudio() {
 }
 
 export function audioReady() { return ctx !== null && ctx.state === 'running'; }
+export function now() { return ctx ? ctx.currentTime : 0; }
 export function setMasterVolume(v) { if (master) master.gain.value = v; }
 export function getMasterVolume() { return master ? master.gain.value : 0.8; }
 export function getAnalyser() { return analyser; }
@@ -142,14 +143,16 @@ function buildVoice(voice, t0, hold, mods = { freqMul: 1, gainMul: 1 }) {
 // ── Public playback API ──────────────────────────────────────────────────────
 
 // One-shot. Returns the patch's total length in seconds.
-export function playPatch(patch, when = 0) {
+// opts.freqMul / opts.gainMul transpose/scale the whole patch (used by the tracker
+// to pitch instrument patches per note); they compose with the vary roll.
+export function playPatch(patch, when = 0, opts = {}) {
     if (!ctx) return 0;
     const t0 = ctx.currentTime + when;
     // Humanization: one roll per trigger so the whole hit shifts together
     const vary = patch.vary || {};
     const mods = {
-        freqMul: 1 + (Math.random() * 2 - 1) * (vary.freq || 0),
-        gainMul: 1 + (Math.random() * 2 - 1) * (vary.gain || 0),
+        freqMul: (1 + (Math.random() * 2 - 1) * (vary.freq || 0)) * (opts.freqMul || 1),
+        gainMul: (1 + (Math.random() * 2 - 1) * (vary.gain || 0)) * (opts.gainMul || 1),
     };
     let total = 0;
     for (const v of patch.voices) {

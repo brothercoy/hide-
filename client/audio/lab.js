@@ -7,6 +7,7 @@
 
 import { initAudio, audioReady, playPatch, startSustain, setMasterVolume, getMasterVolume, getAnalyser } from './SoundEngine.js';
 import { PATCHES } from './patches.js';
+import { createPlayer, instrumentFreqMul } from './MusicPlayer.js';
 
 const canvas = document.getElementById('c');
 const ctx = canvas.getContext('2d', { alpha: false });
@@ -23,11 +24,39 @@ const DIM    = '#003d0f';
 // ── Editable bank (deep clone — presets in patches.js stay pristine) ─────────
 // Three tiers: DEFAULTS = patches.js on disk · SAVE (S) = localStorage, survives
 // refresh · EXPORT (E) = clipboard JSON, paste back into patches.js to commit.
-const SAVE_KEY = 'soundlab_bank_v1';
+//
+// The save is VERSION-AWARE: it records what each default looked like at save time.
+// On load, if a patch's committed default has changed since the save (new sounds
+// were committed), the new default wins and the stale saved copy is dropped.
+// If the default is unchanged, the saved tweak wins. No more stale shadowing.
+const SAVE_KEY = 'soundlab_bank_v2';
 const bank = structuredClone(PATCHES);
+let staleDropped = [];
 try {
-    const saved = JSON.parse(localStorage.getItem(SAVE_KEY) || 'null');
-    if (saved) for (const k of Object.keys(saved)) if (bank[k]) bank[k] = saved[k];
+    const v2 = JSON.parse(localStorage.getItem(SAVE_KEY) || 'null');
+    if (v2?.patches) {
+        for (const k of Object.keys(v2.patches)) {
+            if (!bank[k]) continue;
+            const defNow = JSON.stringify(PATCHES[k]);
+            if (v2.defaults?.[k] !== undefined && v2.defaults[k] !== defNow) {
+                staleDropped.push(k);          // default updated since this save → default wins
+            } else {
+                bank[k] = v2.patches[k];       // default unchanged → user tweak wins
+            }
+        }
+    } else {
+        // One-time migration from the old un-versioned save: keep entries as tweaks,
+        // EXCEPT the two known-stale pre-promotion button patches.
+        const v1 = JSON.parse(localStorage.getItem('soundlab_bank_v1') || 'null');
+        if (v1) {
+            for (const k of Object.keys(v1)) {
+                if (!bank[k]) continue;
+                if (k === 'BTN_PRESS' || k === 'BTN_CONFIRM') { staleDropped.push(k); continue; }
+                bank[k] = v1[k];
+            }
+        }
+    }
+    localStorage.removeItem('soundlab_bank_v1');
 } catch { /* corrupt save — fall back to defaults */ }
 const keys = Object.keys(bank);
 let currentKey = 'KICK';
@@ -40,7 +69,10 @@ function isModified(key) {
     return JSON.stringify(bank[key]) !== JSON.stringify(PATCHES[key]);
 }
 function saveBank() {
-    localStorage.setItem(SAVE_KEY, JSON.stringify(bank));
+    localStorage.setItem(SAVE_KEY, JSON.stringify({
+        patches: bank,
+        defaults: Object.fromEntries(keys.map(k => [k, JSON.stringify(PATCHES[k])])),
+    }));
     flash('SAVED — SURVIVES REFRESH');
 }
 function resetPatch() {
@@ -57,6 +89,51 @@ function resetAll() {
 
 let flashMsg = '', flashUntil = 0;
 function flash(msg, ms = 2000) { flashMsg = msg; flashUntil = performance.now() + ms; }
+
+// ── Tracker state ────────────────────────────────────────────────────────────
+// Songs autosave to localStorage on every edit (unlike SFX patches, which use S).
+const SONGS_KEY = 'soundlab_songs_v1';
+let tab = 'sfx';                     // 'sfx' | 'tracker'
+const DRUM_SHORT = { KICK: 'KCK', CLACK: 'CLK', HAT: 'HAT', HAT_OPEN: 'OPN' };
+const NN = ['C-', 'C#', 'D-', 'D#', 'E-', 'F-', 'F#', 'G-', 'G#', 'A-', 'A#', 'B-'];
+const noteName = m => NN[m % 12] + (Math.floor(m / 12) - 1);
+// Two-row piano: Z..M = lower octave, Q..I = upper (FastTracker convention)
+const NOTE_KEYS = {
+    z: 0, s: 1, x: 2, d: 3, c: 4, v: 5, g: 6, b: 7, h: 8, n: 9, j: 10, m: 11, ',': 12,
+    q: 12, 2: 13, w: 14, 3: 15, e: 16, r: 17, 5: 18, t: 19, 6: 20, y: 21, 7: 22, u: 23, i: 24,
+};
+const DRUM_ENTRY = { z: 'KICK', x: 'CLACK', c: 'HAT', v: 'HAT_OPEN', 1: 'KICK', 2: 'CLACK', 3: 'HAT', 4: 'HAT_OPEN' };
+
+function newPattern(len) {
+    return { len, ch: [Array(len).fill(null), Array(len).fill(null), Array(len).fill(null)] };
+}
+function defaultSong(name) {
+    return { name, bpm: 110, instruments: ['LEAD', 'BASS'], patterns: [newPattern(16)], order: [0] };
+}
+
+let songs = null, songIdx = 0;
+try {
+    const s = JSON.parse(localStorage.getItem(SONGS_KEY) || 'null');
+    if (s?.songs?.length) { songs = s.songs; songIdx = Math.min(s.songIdx || 0, s.songs.length - 1); }
+} catch { /* corrupt save — start fresh */ }
+if (!songs) songs = [defaultSong('THEME')];
+
+let editPat = 0, orderSel = 0, octave = 4;
+let cur = { row: 0, ch: 0 };
+const player = createPlayer(k => bank[k]);   // plays the EDITED bank — lab tweaks are heard live
+function touchSongs() { localStorage.setItem(SONGS_KEY, JSON.stringify({ songs, songIdx })); }
+
+function exportSongs() {
+    const json = JSON.stringify({ songs }, null, 2);
+    console.log(json);
+    if (navigator.clipboard?.writeText) {
+        navigator.clipboard.writeText(json)
+            .then(() => flash('SONGS COPIED TO CLIPBOARD'))
+            .catch(() => flash('CLIPBOARD BLOCKED — JSON IN CONSOLE'));
+    } else {
+        flash('NO CLIPBOARD — JSON IN CONSOLE');
+    }
+}
 
 // ── Param rows ───────────────────────────────────────────────────────────────
 const WAVES = ['sine', 'square', 'triangle', 'sawtooth', 'noise'];
@@ -171,19 +248,29 @@ function charW(fs = FS) {
 function drawHeader() {
     const cw = charW();
     text('SOUND LAB', 40, 24, BRIGHT);
-    text('[ SFX EDITOR ]', 40 + cw * 12, 24, BRIGHT);
-    text('TRACKER', 40 + cw * 28, 24, DIM);
-    text('BOARD', 40 + cw * 37, 24, DIM);
+    let tx = 40 + cw * 12;
+    for (const [lbl, id] of [['SFX EDITOR', 'sfx'], ['TRACKER', 'tracker']]) {
+        const sel = tab === id;
+        const disp = sel ? `[ ${lbl} ]` : `  ${lbl}  `;
+        text(disp, tx, 24, sel ? BRIGHT : MID);
+        addHit(tx, 24, cw * disp.length, LH, () => { tab = id; });
+        tx += cw * (disp.length + 1);
+    }
+    text('BOARD', tx + cw, 24, DIM);
 
-    // SAVE / EXPORT buttons (right side)
+    // SAVE / EXPORT buttons (right side). EXPORT is contextual: bank on SFX, songs on TRACKER.
     const exStr = '[ EXPORT ]';
     const exX = canvas.width - 40 - cw * (exStr.length + 22);
     text(exStr, exX, 24, BRIGHT);
-    addHit(exX, 24, cw * exStr.length, LH, exportBank);
+    addHit(exX, 24, cw * exStr.length, LH, () => tab === 'sfx' ? exportBank() : exportSongs());
     const svStr = '[ SAVE ]';
     const svX = exX - cw * (svStr.length + 2);
-    text(svStr, svX, 24, BRIGHT);
-    addHit(svX, 24, cw * svStr.length, LH, saveBank);
+    if (tab === 'sfx') {
+        text(svStr, svX, 24, BRIGHT);
+        addHit(svX, 24, cw * svStr.length, LH, saveBank);
+    } else {
+        text('AUTOSAVED', svX - cw, 24, DIM);
+    }
 
     // Master volume mini-slider (far right)
     const mvRow = { min: 0, max: 1 };
@@ -331,6 +418,185 @@ function drawEditor() {
     text(`LENGTH ${fmtT(total)}   ${patch.sustain ? 'SUSTAIN (CLICK NAME TO TOGGLE)' : 'ONE-SHOT'}`, x, y, DIM);
 }
 
+// ── Tracker tab ──────────────────────────────────────────────────────────────
+function switchSong(d) {
+    player.stop();
+    songIdx = (songIdx + d + songs.length) % songs.length;
+    editPat = 0; orderSel = 0; cur = { row: 0, ch: 0 };
+    touchSongs();
+}
+function newSong() {
+    songs.push(defaultSong('SONG' + (songs.length + 1)));
+    songIdx = songs.length - 1;
+    editPat = 0; orderSel = 0; cur = { row: 0, ch: 0 };
+    touchSongs();
+}
+function renameSong() {
+    const n = prompt('SONG NAME:', songs[songIdx].name);
+    if (n) { songs[songIdx].name = n.toUpperCase().slice(0, 12); touchSongs(); }
+}
+function deleteSong() {
+    if (songs.length <= 1) { flash('CANNOT DELETE THE LAST SONG'); return; }
+    if (!confirm(`DELETE ${songs[songIdx].name}?`)) return;
+    player.stop();
+    songs.splice(songIdx, 1);
+    songIdx = Math.max(0, songIdx - 1);
+    editPat = 0; orderSel = 0; cur = { row: 0, ch: 0 };
+    touchSongs();
+}
+function togglePatLen(pat) {
+    if (pat.len === 16) {
+        pat.len = 32;
+        for (const c of pat.ch) while (c.length < 32) c.push(null);
+    } else {
+        pat.len = 16;
+        for (let i = 0; i < 3; i++) pat.ch[i] = pat.ch[i].slice(0, 16);
+    }
+    touchSongs();
+}
+
+function drawTracker() {
+    const cw = charW();
+    const song = songs[songIdx];
+    if (editPat >= song.patterns.length) editPat = 0;
+    if (orderSel >= song.order.length) orderSel = 0;
+    const x0 = 40;
+    let y = 64;
+
+    // Follow the playhead across pattern changes (standard tracker behavior)
+    const pos = player.position();
+    if (pos && pos.orderIdx >= 0) editPat = pos.pat;
+
+    // ── Row 1: song / bpm / transport ──
+    text('SONG', x0, y, MID);
+    let x = x0 + cw * 5;
+    text('<', x, y, MID); addHit(x, y, cw, LH, () => switchSong(-1)); x += cw * 2;
+    text(song.name, x, y, BRIGHT); x += cw * (song.name.length + 1);
+    text('>', x, y, MID); addHit(x, y, cw, LH, () => switchSong(1)); x += cw * 2;
+    for (const [lbl, fn] of [['[NEW]', newSong], ['[REN]', renameSong], ['[DEL]', deleteSong]]) {
+        text(lbl, x, y, MID); addHit(x, y, cw * lbl.length, LH, fn); x += cw * (lbl.length + 1);
+    }
+    x += cw;
+    const N = 14;
+    text(`BPM ${String(song.bpm).padStart(3)}`, x, y, MID);
+    const tX = x + cw * 8;
+    const bidx = Math.round((song.bpm - 60) / 140 * (N - 1));
+    let track = '';
+    for (let i = 0; i < N; i++) track += i === bidx ? '#' : (i < bidx ? '=' : '-');
+    text('|' + track + '|', tX, y, MID);
+    addHit(tX + cw, y, cw * N, LH, null, mx => {
+        song.bpm = Math.round(60 + Math.max(0, Math.min(1, (mx - tX - cw) / (cw * N))) * 140);
+        touchSongs();
+    });
+    x = tX + cw * (N + 3);
+    text(player.playing() ? '[STOP]' : '[PLAY]', x, y, BRIGHT);
+    addHit(x, y, cw * 6, LH, () => {
+        if (player.playing()) player.stop();
+        else player.play(song, { loop: true, startOrder: orderSel });
+    });
+    x += cw * 7;
+    text('[PAT]', x, y, MID);
+    addHit(x, y, cw * 5, LH, () => {
+        if (player.playing()) player.stop();
+        else player.play(song, { patternOnly: editPat });
+    });
+    y += LH + 2;
+
+    // ── Row 2: order chain ──
+    text('ORDER', x0, y, MID);
+    x = x0 + cw * 6;
+    song.order.forEach((p, i) => {
+        const sel = i === orderSel;
+        const lbl = sel ? `[${p}]` : `${p}`;
+        const col = (pos && pos.orderIdx === i) ? BRIGHT : (sel ? BRIGHT : MID);
+        text(lbl, x, y, col);
+        addHit(x, y, cw * lbl.length, LH, () => { orderSel = i; editPat = song.order[i]; });
+        x += cw * (lbl.length + 0.7);
+    });
+    x += cw;
+    for (const [lbl, fn] of [
+        ['+', () => { song.order.splice(orderSel + 1, 0, song.order[orderSel]); orderSel++; touchSongs(); }],
+        ['-', () => { if (song.order.length > 1) { song.order.splice(orderSel, 1); orderSel = Math.max(0, orderSel - 1); touchSongs(); } }],
+        ['<', () => { song.order[orderSel] = (song.order[orderSel] + song.patterns.length - 1) % song.patterns.length; editPat = song.order[orderSel]; touchSongs(); }],
+        ['>', () => { song.order[orderSel] = (song.order[orderSel] + 1) % song.patterns.length; editPat = song.order[orderSel]; touchSongs(); }],
+    ]) { text(lbl, x, y, MID); addHit(x, y, cw, LH, fn); x += cw * 2; }
+    y += LH + 2;
+
+    // ── Row 3: patterns / length / octave ──
+    text('PAT', x0, y, MID);
+    x = x0 + cw * 6;
+    song.patterns.forEach((_, i) => {
+        const lbl = i === editPat ? `[${i}]` : `${i}`;
+        text(lbl, x, y, i === editPat ? BRIGHT : MID);
+        addHit(x, y, cw * lbl.length, LH, () => { editPat = i; });
+        x += cw * (lbl.length + 0.7);
+    });
+    x += cw;
+    text('[+NEW]', x, y, MID);
+    addHit(x, y, cw * 6, LH, () => { song.patterns.push(newPattern(16)); editPat = song.patterns.length - 1; touchSongs(); });
+    x += cw * 7;
+    text('[DUP]', x, y, MID);
+    addHit(x, y, cw * 5, LH, () => { song.patterns.push(structuredClone(song.patterns[editPat])); editPat = song.patterns.length - 1; touchSongs(); });
+    x += cw * 6;
+    const pat = song.patterns[editPat];
+    text(`LEN:${pat.len}`, x, y, MID);
+    addHit(x, y, cw * 6, LH, () => togglePatLen(pat));
+    x += cw * 8;
+    text(`OCT:${octave}`, x, y, MID);
+    y += LH + 8;
+
+    if (cur.row >= pat.len) cur.row = 0;
+
+    // ── Grid ──
+    const gridBottom = canvas.height - 185;
+    const rowH = Math.max(13, Math.min(26, Math.floor((gridBottom - y - 26) / pat.len)));
+    const gfs = Math.min(20, rowH - 1);
+    const gcw = charW(gfs);
+    const colX = [x0 + gcw * 4, x0 + gcw * 10, x0 + gcw * 16];
+    ['LEAD', 'BASS', 'DRUM'].forEach((n, c) => text(n, colX[c], y, MID, gfs));
+    const gy0 = y + rowH + 4;
+    for (let r = 0; r < pat.len; r++) {
+        const ry = gy0 + r * rowH;
+        if (pos && pos.pat === editPat && pos.row === r) {
+            ctx.fillStyle = '#0a2912';
+            ctx.fillRect(x0 - 6, ry - 2, gcw * 22, rowH);
+        }
+        text(String(r).padStart(2, '0'), x0, ry, r % 4 === 0 ? MID : DIM, gfs);
+        for (let c = 0; c < 3; c++) {
+            const cell = pat.ch[c][r];
+            const disp = c === 2 ? (cell ? DRUM_SHORT[cell] : '...') : (cell != null ? noteName(cell) : '...');
+            if (cur.row === r && cur.ch === c) {
+                ctx.fillStyle = BRIGHT;
+                ctx.fillRect(colX[c] - 2, ry - 1, gcw * 4, rowH - 1);
+                text(disp, colX[c], ry, '#000000', gfs);
+            } else {
+                text(disp, colX[c], ry, cell != null ? BRIGHT : DIM, gfs);
+            }
+            const rr = r, cc = c;
+            addHit(colX[c] - 2, ry - 1, gcw * 5, rowH, () => { cur = { row: rr, ch: cc }; });
+        }
+    }
+
+    // ── Key help ──
+    const hx = x0 + gcw * 26;
+    let hy = gy0;
+    for (const line of [
+        'Z-M / Q-I ..... NOTES (2 OCTAVES)',
+        '[ ] ........... OCTAVE DOWN/UP',
+        'Z X C V ....... KCK CLK HAT OPN (DRUM COL)',
+        'DEL / . ....... CLEAR CELL',
+        'ARROWS ........ MOVE CURSOR',
+        'SPACE ......... PLAY/STOP SONG',
+        'SHIFT+SPACE ... LOOP THIS PATTERN',
+        '',
+        'ORDER = the chain the song plays through.',
+        'PAT = which pattern you are editing.',
+        'LEAD/BASS instruments are tunable',
+        'in the SFX EDITOR tab.',
+        'EDITS AUTOSAVE. EXPORT = COPY SONGS JSON.',
+    ]) { text(line, hx, hy, DIM, 16); hy += 24; }
+}
+
 function drawScope() {
     const an = getAnalyser();
     const x0 = 40, x1 = canvas.width - 40;
@@ -360,12 +626,19 @@ function loop() {
     ctx.fillStyle = 'black';
     ctx.fillRect(0, 0, canvas.width, canvas.height);
     drawHeader();
-    drawPresetList();
-    drawEditor();
+    if (tab === 'sfx') {
+        drawPresetList();
+        drawEditor();
+    } else {
+        drawTracker();
+    }
     drawScope();
     requestAnimationFrame(loop);
 }
-document.fonts.ready.then(loop);
+document.fonts.ready.then(() => {
+    if (staleDropped.length) flash('NEWER COMMITTED SOUNDS RESTORED: ' + staleDropped.join(', '), 6000);
+    loop();
+});
 
 // ── Input ────────────────────────────────────────────────────────────────────
 let dragging = null;      // hit region being dragged
@@ -396,7 +669,7 @@ canvas.addEventListener('mousemove', e => {
 window.addEventListener('mouseup', () => {
     if (dragging && draggedSinceDown) {
         // param sliders live inside the editor — replay so the tweak is heard
-        if (dragging.onDrag && dragging.x > 300) auditionChange();
+        if (dragging.onDrag && dragging.x > 300 && tab === 'sfx') auditionChange();
     }
     dragging = null;
 });
@@ -411,8 +684,47 @@ function typeTest() {
     }
 }
 
+function trackerKey(e) {
+    const song = songs[songIdx];
+    if (editPat >= song.patterns.length) editPat = 0;
+    const pat = song.patterns[editPat];
+    const advanceCur = () => { cur.row = (cur.row + 1) % pat.len; };
+
+    if (e.code === 'Space') {
+        e.preventDefault();
+        if (player.playing()) player.stop();
+        else if (e.shiftKey) player.play(song, { patternOnly: editPat });
+        else player.play(song, { loop: true, startOrder: orderSel });
+        return;
+    }
+    if (e.ctrlKey || e.metaKey || e.altKey) return;
+    const k = e.key.toLowerCase();
+
+    if (e.key === 'ArrowUp') { e.preventDefault(); cur.row = (cur.row - 1 + pat.len) % pat.len; }
+    else if (e.key === 'ArrowDown') { e.preventDefault(); advanceCur(); }
+    else if (e.key === 'ArrowLeft') { e.preventDefault(); cur.ch = (cur.ch + 2) % 3; }
+    else if (e.key === 'ArrowRight') { e.preventDefault(); cur.ch = (cur.ch + 1) % 3; }
+    else if (e.key === 'Delete' || e.key === 'Backspace' || e.key === '.') {
+        pat.ch[cur.ch][cur.row] = null; advanceCur(); touchSongs();
+    }
+    else if (k === '[') octave = Math.max(1, octave - 1);
+    else if (k === ']') octave = Math.min(7, octave + 1);
+    else if (cur.ch === 2) {
+        const d = DRUM_ENTRY[k];
+        if (d) { pat.ch[2][cur.row] = d; playPatch(bank[d]); advanceCur(); touchSongs(); }
+    }
+    else if (NOTE_KEYS[k] !== undefined) {
+        const midi = (octave + 1) * 12 + NOTE_KEYS[k];
+        pat.ch[cur.ch][cur.row] = midi;
+        const inst = bank[song.instruments[cur.ch]];
+        playPatch(inst, 0, { freqMul: instrumentFreqMul(inst, midi) });
+        advanceCur(); touchSongs();
+    }
+}
+
 window.addEventListener('keydown', e => {
     initAudio();
+    if (tab === 'tracker') { trackerKey(e); return; }
     if (e.code === 'Space') { e.preventDefault(); playCurrent(); }
     else if (e.key === 'e' || e.key === 'E') exportBank();
     else if (e.key === 't' || e.key === 'T') typeTest();

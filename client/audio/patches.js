@@ -33,12 +33,11 @@ export const PATCHES = {
         ],
     },
     BTN_PRESS: {
-        name: 'BTN_PRESS', desc: 'Firm press-down — snap + deep sinking thunk (120→36 Hz) + chassis touch',
+        name: 'BTN_PRESS', desc: 'Firm press-down — snap + deep sinking thunk (120→36 Hz)',
         vary: { freq: 0, gain: 0.1 },
         voices: [
             { wave: 'noise', freq: 440, freqEnd: null, delay: 0, attack: 0.001, decay: 0.022, gain: 0.4, filter: { type: 'bandpass', cutoff: 2200, q: 1.2 } },
             { wave: 'sine', freq: 120, freqEnd: 36, delay: 0, attack: 0.002, decay: 0.09, gain: 0.55, filter: null },
-            { wave: 'triangle', freq: 391, freqEnd: null, delay: 0, attack: 0.001, decay: 0.09, gain: 0.05, filter: null },
         ],
     },
     BTN_CONFIRM: {
@@ -116,6 +115,20 @@ export const PATCHES = {
         name: 'HAT_OPEN', desc: 'Open hat — E3 with the ~510 Hz chassis ring let breathe',
         voices: [
             { wave: 'noise', freq: 440, freqEnd: null, delay: 0, attack: 0.001, decay: 0.18, gain: 0.25, filter: { type: 'highpass', cutoff: 6500, q: 0.7 } },
+        ],
+    },
+
+    // ── Tracker instruments (authored at A4 = 440 Hz; the tracker pitches them per note) ──
+    LEAD: {
+        name: 'LEAD', desc: 'Tracker lead — square wave. Tune it here, the tracker transposes it',
+        voices: [
+            { wave: 'square', freq: 440, freqEnd: null, delay: 0, attack: 0.003, decay: 0.18, gain: 0.16, filter: { type: 'lowpass', cutoff: 5000, q: 1 } },
+        ],
+    },
+    BASS: {
+        name: 'BASS', desc: 'Tracker bass — tuned by ear; tracker pitches notes relative to voice 1',
+        voices: [
+            { wave: 'triangle', freq: 31, freqEnd: null, delay: 0, attack: 0.004, decay: 2.036, gain: 0.3, filter: { type: 'lowpass', cutoff: 2500, q: 0.7 } },
         ],
     },
 
