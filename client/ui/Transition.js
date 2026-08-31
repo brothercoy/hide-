@@ -82,9 +82,9 @@ export class Transition {
         this.tailPhases = [];
         this.typeCharMs = TYPE_CHAR_MS; // effective per-char speed for this run
         this.onComplete = null;
-        // Audio hooks (assigned by game.js): onType fires when new characters reveal,
-        // onDone only when a transition runs to its natural end — a transition cut
-        // short by cancelToEnd() (navigating away mid-feed) never fires onDone.
+        // Audio hooks (assigned by game.js): onType(newChars) fires with the number of
+        // characters revealed since last frame; onDone only when a transition runs to
+        // its natural end — one cut short by cancelToEnd() never fires onDone.
         this.onType = null;
         this.onDone = null;
         this._lastReveal = 0;
@@ -223,7 +223,7 @@ export class Transition {
         if (!this.active) return;
         this.elapsedMs += dtMs;
         const reveal = this._revealTotal();
-        if (reveal > this._lastReveal && this.onType) this.onType();
+        if (reveal > this._lastReveal && this.onType) this.onType(reveal - this._lastReveal);
         this._lastReveal = reveal;
         if (this.elapsedMs >= this.totalDur) this._finish(false);
     }

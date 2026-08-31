@@ -60,8 +60,8 @@ export function sfx(name, opts = {}) {
     return p ? playPatch(p, opts.when || 0, opts) : 0;
 }
 
-// Teletype tick, rate-limited: a fast feed (transition typing whole rows) becomes a
-// steady purr instead of a per-character machine gun.
+// Teletype tick, rate-limited: back-to-back single-char events (countdown edits,
+// life-loss caret steps) blur into a purr instead of stacking.
 const TICK_MIN_MS = 35;
 let _lastTick = 0;
 export function typeTick() {
@@ -69,4 +69,15 @@ export function typeTick() {
     if (t - _lastTick < TICK_MIN_MS) return;
     _lastTick = t;
     sfx('TELETYPE_TICK');
+}
+
+// Batched tick for high-volume feeds (screen transitions reveal MANY characters
+// per frame): one tick per `per` characters, so it reads as typing cadence
+// rather than a machine gun.
+let _feedAcc = 0;
+export function feedTick(chars, per = 10) {
+    _feedAcc += chars;
+    if (_feedAcc < per) return;
+    _feedAcc = 0;
+    typeTick();
 }

@@ -23,7 +23,7 @@ import { FrequencyMode } from './modes/FrequencyMode.js';
 import { drawRotateGate } from './ui/RotateGate.js';
 import { GAME_INTRO_MS } from '../timings.js';   // shared: the server holds the first countdown this long
 import { getPref, setPref } from './prefs.js';
-import { unlockAudio, sfx, typeTick } from './audio/sfx.js';
+import { unlockAudio, sfx, feedTick } from './audio/sfx.js';
 
 // Apply the saved theme before anything paints (default green). `theme` is read live everywhere —
 // UI shades, the click glow, and the CRT phosphor tint — so this one call colours the whole game.
@@ -240,9 +240,10 @@ function refreshLayout() {
 
 const uiManager = new UIManager(canvas, ctx, isMobile);
 const transition = new Transition(canvas, ctx);
-// Transition audio: teletype purr while rows type; BEL only when a feed runs to its
-// natural end (a transition cut short by navigating away stays silent).
-transition.onType = typeTick;
+// Transition audio: one tick per ~10 revealed characters (typing cadence, not a
+// machine gun); BEL only when a feed runs to its natural end (a transition cut
+// short by navigating away stays silent).
+transition.onType = (n) => feedTick(n, 10);
 transition.onDone = () => sfx('BEL');
 // Web Audio can only start from a user gesture — the first press/tap/key powers it on.
 ['mousedown', 'touchstart', 'keydown'].forEach(ev =>
@@ -1407,7 +1408,7 @@ function drawHUDIntro() {
         mainMenu.releaseSpecials();  // now the special chars pop in
         return;
     }
-    if (revealed > (hudIntroTicked || 0)) typeTick();   // HUD types like any other feed
+    if (revealed > (hudIntroTicked || 0)) feedTick(revealed - hudIntroTicked, 5);   // HUD is a small feed
     hudIntroTicked = revealed;
     drawHUDTyped(revealed);
 }
