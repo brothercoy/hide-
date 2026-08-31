@@ -89,9 +89,9 @@ export const PATCHES = {
         name: 'KICK', desc: 'Deep mechanical thud — E2: sine drop to ~41 Hz + spring rattle',
         vary: { freq: 0.03, gain: 0.08 },
         voices: [
-            { wave: 'sine', freq: 110, freqEnd: 41, delay: 0, attack: 0.002, decay: 0.28, gain: 0.621, filter: null },
+            { wave: 'sine', freq: 110, freqEnd: 41, delay: 0, attack: 0.002, decay: 0.28, gain: 0.326, filter: null },
             { wave: 'noise', freq: 440, freqEnd: null, delay: 0, attack: 0.001, decay: 0.013, gain: 0.5, filter: { type: 'lowpass', cutoff: 1019, q: 0.7 } },
-            { wave: 'noise', freq: 440, freqEnd: null, delay: 0, attack: 0.005, decay: 0.039, gain: 0.04, filter: { type: 'bandpass', cutoff: 8000, q: 1 } },
+            { wave: 'noise', freq: 440, freqEnd: null, delay: 0, attack: 0.005, decay: 0.039, gain: 0.598, filter: { type: 'bandpass', cutoff: 8000, q: 1 } },
         ],
     },
     CLACK: {
@@ -122,13 +122,14 @@ export const PATCHES = {
     LEAD: {
         name: 'LEAD', desc: 'Tracker lead — square wave. Tune it here, the tracker transposes it',
         voices: [
-            { wave: 'square', freq: 440, freqEnd: null, delay: 0, attack: 0.003, decay: 0.18, gain: 0.16, filter: { type: 'lowpass', cutoff: 5000, q: 1 } },
+            { wave: 'square', freq: 440, freqEnd: null, delay: 0, attack: 0.003, decay: 0.18, gain: 0.095, filter: { type: 'lowpass', cutoff: 5000, q: 1 } },
+            { wave: 'noise', freq: 3301, freqEnd: null, delay: 0, attack: 0.016, decay: 0.021, gain: 0.16, filter: { type: 'lowpass', cutoff: 5000, q: 1 } },
         ],
     },
     BASS: {
         name: 'BASS', desc: 'Tracker bass — tuned by ear; tracker pitches notes relative to voice 1',
         voices: [
-            { wave: 'triangle', freq: 31, freqEnd: null, delay: 0, attack: 0.004, decay: 2.036, gain: 0.3, filter: { type: 'lowpass', cutoff: 2500, q: 0.7 } },
+            { wave: 'triangle', freq: 31, freqEnd: null, delay: 0, attack: 0.004, decay: 2.036, gain: 0.045, filter: { type: 'lowpass', cutoff: 2500, q: 0.7 } },
         ],
     },
 
@@ -145,9 +146,9 @@ export const PATCHES = {
         name: 'HUM', desc: 'Idle transformer hum bed — 120 Hz + harmonics, continuous',
         sustain: true,
         voices: [
-            { wave: 'sine', freq: 120, freqEnd: null, delay: 0, attack: 0.5, decay: 1, gain: 0.045, filter: null, lfo: { rate: 0.5, depth: 0.25 } },
-            { wave: 'sine', freq: 240, freqEnd: null, delay: 0, attack: 0.5, decay: 1, gain: 0.016, filter: null },
-            { wave: 'square', freq: 120, freqEnd: null, delay: 0, attack: 0.5, decay: 1, gain: 0.008, filter: { type: 'lowpass', cutoff: 2000, q: 0.7 }, lfo: { rate: 1.3, depth: 0.3 } },
+            { wave: 'sine', freq: 120, freqEnd: null, delay: 0, attack: 0.5, decay: 1, gain: 0, filter: null, lfo: { rate: 0.5, depth: 0.25 } },
+            { wave: 'noise', freq: 240, freqEnd: null, delay: 0, attack: 0.5, decay: 3, gain: 0.008, filter: { type: 'lowpass', cutoff: 965, q: 0.3 } },
+            { wave: 'square', freq: 67, freqEnd: null, delay: 0, attack: 0.5, decay: 3, gain: 0.015, filter: { type: 'lowpass', cutoff: 100, q: 0.3 }, lfo: { rate: 1.3, depth: 0.3 } },
         ],
     },
     POWER_OFF: {

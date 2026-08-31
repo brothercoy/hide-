@@ -10,7 +10,7 @@ import { makeBracketButton, drawBracketButton } from '../ui/BracketButton.js';
 import { makeSlider, drawSlider } from '../ui/Slider.js';
 import { theme, bgAlpha, applyTheme } from '../ui/colors.js';
 import { getPref, setPref } from '../prefs.js';
-import { sfx, applyVolumePrefs } from '../audio/sfx.js';
+import { sfx, applyVolumePrefs, humEnabled, setHumEnabled } from '../audio/sfx.js';
 
 const PREF_THEME = 'theme';
 
@@ -19,10 +19,10 @@ const BORDER_FONT = 36;      // box border glyphs (= and ] [)
 const BACKDROP_ALPHA = 0.9;  // how much the background is dimmed (higher = darker)
 
 // Box size (fixed; centered on screen). Sized to hold the content stack below with small margins.
-// BOX_H is a whole number of border rows (17 × 36) so the bottom '=' lands cleanly clear of the
+// BOX_H is a whole number of border rows (19 × 36) so the bottom '=' lands cleanly clear of the
 // MAIN MENU button (which is ~2.5×font tall).
 const BOX_W = 680;
-const BOX_H = 612;
+const BOX_H = 684;
 const PAD_TOP = 40;          // content inset from the box's top edge
 
 // Vertical stack offsets from the content top ('Theme' header top = 0).
@@ -69,6 +69,8 @@ export class SettingsOverlay {
         this.sliders = VOLUME_PREFS.map(v =>
             makeSlider(v.label, 0, 0, 0, 100, getPref(v.key, v.default),
                 (val) => { setPref(v.key, val); applyVolumePrefs(); }, false, '%'));
+        this.humBtn = makeBracketButton('MONITOR HUM', 0, 0,
+            () => this._toggleHum(), { active: humEnabled(), toggle: true });
         this.mainMenuBtn = makeButton('MAIN MENU', 0, 0, callbacks.onMainMenu || (() => {}), { blocksInput: true });
     }
 
@@ -87,6 +89,14 @@ export class SettingsOverlay {
         this.selectedTheme = getPref(PREF_THEME, 'green');
         this.themeButtons.forEach(b => { b.active = (b.themeId === this.selectedTheme); });
         this.sliders.forEach((s, i) => { s.value = getPref(VOLUME_PREFS[i].key, VOLUME_PREFS[i].default); });
+        this.humBtn.active = humEnabled();
+    }
+
+    _toggleHum() {
+        const on = !humEnabled();
+        setHumEnabled(on);
+        this.humBtn.active = on;
+        this.humBtn.toggledAt = this._elapsed ?? null;
     }
 
     _hit(r, x, y) { return !!r && x >= r.x && x <= r.x + r.w && y >= r.y && y <= r.y + r.h; }
@@ -101,6 +111,7 @@ export class SettingsOverlay {
         b.releasePhase = null; b.glowT = 0; b.hoverProgress = 0;
         b.charZ = null; b.charRot = null;
         this.themeButtons.forEach(t => { t._over = false; t._flashStart = null; });
+        this.humBtn._over = false; this.humBtn._flashStart = null;
     }
 
     // Set a slider's value from the mouse x (clamped to the track), persisting via onChange.
@@ -119,8 +130,9 @@ export class SettingsOverlay {
         for (const s of this.sliders) {
             if (this._hit(s.rect, mx, my)) { this._draggingSlider = s; this._dragSlider(s, mx); return; }
         }
-        // Then buttons: MAIN MENU (normal, press→glow) and the theme options (plain, fire-on-release).
-        for (const btn of [this.mainMenuBtn, ...this.themeButtons]) {
+        // Then buttons: MAIN MENU (normal, press→glow), the theme options and the hum
+        // toggle (plain brackets, fire-on-release).
+        for (const btn of [this.mainMenuBtn, ...this.themeButtons, this.humBtn]) {
             if (!btn.disabled && this._hit(btn.rect, mx, my)) {
                 this._pressed = btn;
                 this._mouseDown = true;
@@ -154,8 +166,9 @@ export class SettingsOverlay {
         // Slider drag (polled from the live mouse position, like uiManager's mousemove handler).
         if (this._draggingSlider) this._dragSlider(this._draggingSlider, mx);
 
-        // Theme options: hover drives the bracket flash (drawBracketButton reads _over).
-        for (const b of this.themeButtons) b._over = this._hit(b.rect, mx, my);
+        this._elapsed = elapsed;   // for the hum toggle's post-flip hover pause
+        // Bracket controls: hover drives the flash (drawBracketButton reads _over).
+        for (const b of [...this.themeButtons, this.humBtn]) b._over = this._hit(b.rect, mx, my);
 
         // MAIN MENU: hover fill/lift + press/glow lifecycle.
         const btn = this.mainMenuBtn;
@@ -184,12 +197,14 @@ export class SettingsOverlay {
         const underlineY = themeHeaderY + UNDERLINE_GAP;
         const themeBtnY = underlineY + OPT_GAP;
         const slider1Y = themeBtnY + THEME_TO_SLIDER;
-        const mainMenuY = slider1Y + 2 * SLIDER_SPACING + SLIDER_TO_BTN;
+        const humY = slider1Y + 3 * SLIDER_SPACING;
+        const mainMenuY = humY + SLIDER_TO_BTN;
 
         const n = this.themeButtons.length;
         const startX = cx - THEME_BTN_SPACING * (n - 1) / 2;
         this.themeButtons.forEach((b, i) => { b.x = startX + i * THEME_BTN_SPACING; b.y = themeBtnY; });
         this.sliders.forEach((s, i) => { s.x = cx; s.y = slider1Y + i * SLIDER_SPACING; });
+        this.humBtn.x = cx; this.humBtn.y = humY;
         this.mainMenuBtn.x = cx; this.mainMenuBtn.y = mainMenuY;
 
         return { cx, boxTop, boxLeft, themeHeaderY, underlineY };
@@ -239,6 +254,7 @@ export class SettingsOverlay {
         // Components (static styling this pass).
         this.themeButtons.forEach(b => drawBracketButton(ctx, b, elapsed, FONT_SIZE));
         this.sliders.forEach(s => drawSlider(ctx, s, elapsed, FONT_SIZE));
+        drawBracketButton(ctx, this.humBtn, elapsed, FONT_SIZE);
         drawButton(ctx, this.mainMenuBtn, elapsed, FONT_SIZE);
     }
 }

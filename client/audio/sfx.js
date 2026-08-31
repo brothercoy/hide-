@@ -16,7 +16,7 @@
 
 import { initAudio, audioReady, playPatch, startSustain, setMasterVolume, setSfxVolume, setMusicVolume } from './SoundEngine.js';
 import { PATCHES } from './patches.js';
-import { getPref } from '../prefs.js';
+import { getPref, setPref } from '../prefs.js';
 
 // Web Audio can only start from a user gesture. Idempotent — call from any input event.
 // Volumes are (re)applied only on an actual unlock, not on every input event.
@@ -28,14 +28,21 @@ export function unlockAudio() {
 }
 
 // The CRT's transformer-hum bed — continuous, quiet, on the music bus so the
-// MUSIC slider governs the "background" layer as a whole.
+// MUSIC slider governs the "background" layer as a whole. Toggleable in settings
+// via the ambience.hum pref.
 let ambience = null;
 export function startAmbience() {
     if (ambience || !audioReady()) return;
+    if (!getPref('ambience.hum', true)) return;
     ambience = startSustain(PATCHES.HUM, 0.5, 'music');
 }
 export function stopAmbience() {
     if (ambience) { ambience.stop(); ambience = null; }
+}
+export function humEnabled() { return !!getPref('ambience.hum', true); }
+export function setHumEnabled(on) {
+    setPref('ambience.hum', !!on);
+    if (on) startAmbience(); else stopAmbience();
 }
 
 // Volume prefs (0-100) → engine gains. The settings sliders already persist these keys;

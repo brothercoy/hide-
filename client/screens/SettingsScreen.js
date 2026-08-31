@@ -5,7 +5,7 @@ import { textRow } from '../ui/Transition.js';
 import { theme, applyTheme } from '../ui/colors.js';
 import { vScale, bandTop } from '../ui/viewport.js';
 import { getPref, setPref } from '../prefs.js';
-import { applyVolumePrefs } from '../audio/sfx.js';
+import { applyVolumePrefs, humEnabled, setHumEnabled } from '../audio/sfx.js';
 
 // Preference keys + their defaults (persisted per-browser via prefs.js/localStorage).
 const PREF_THEME = 'theme';
@@ -83,10 +83,11 @@ export class SettingsScreen {
         const titleInkBottom = bandTop(this.canvas) + TITLE_Y + TITLE_CAP_FRAC * TITLE_SIZE;
         const backInkTop = backY - BTN_HALF_H * FONT_SIZE;
 
-        // Fixed distance from the header TOP down to the last slider's track center.
-        const toLastSlider = uGap + oGap + secGap - FONT_SIZE / 2 + 2 * sp;
-        // Balance: (headerTop − titleInkBottom) === (backInkTop − lastTrackInkBottom ≈ slider3.y + FONT_SIZE).
-        const themeLabelY = (backInkTop + titleInkBottom - toLastSlider - FONT_SIZE) / 2;
+        // Fixed distance from the header TOP down to the last row (the MONITOR HUM
+        // toggle, one slider-spacing below the third slider).
+        const toLastRow = uGap + oGap + secGap - FONT_SIZE / 2 + 3 * sp;
+        // Balance: (headerTop − titleInkBottom) === (backInkTop − lastRowInkBottom).
+        const themeLabelY = (backInkTop + titleInkBottom - toLastRow - FONT_SIZE) / 2;
         const themeUnderlineY = themeLabelY + uGap;
         const themeButtonY = themeUnderlineY + oGap;
         const slider1Y = themeButtonY + secGap - FONT_SIZE / 2;
@@ -95,6 +96,7 @@ export class SettingsScreen {
             themeUnderlineY,
             themeButtonY,
             sliderYs: [slider1Y, slider1Y + sp, slider1Y + 2 * sp],
+            humY: slider1Y + 3 * sp,
             backY,
         };
     }
@@ -130,7 +132,21 @@ export class SettingsScreen {
                 getPref(v.key, v.default), (val) => { setPref(v.key, val); applyVolumePrefs(); }, false, '%'));
         });
 
+        // MONITOR HUM — an on/off bracket toggle (held inner when on, like the lobby's CUSTOM).
+        const humBtn = makeBracketButton('MONITOR HUM', cx, L.humY,
+            () => this._toggleHum(), { active: humEnabled(), toggle: true });
+        humBtn.humToggle = true;
+        this.ui.buttons.push(humBtn);
+
         this.ui.buttons.push(makeButton('BACK', cx, L.backY, () => this.onBack(), { blocksInput: true }));
+    }
+
+    _toggleHum() {
+        const on = !humEnabled();
+        setHumEnabled(on);
+        for (const b of this.ui.buttons) {
+            if (b.humToggle) { b.active = on; b.toggledAt = this.ui.elapsed; }
+        }
     }
 
     // Pick a theme option — mirrors the lobby's _optionChange: no-op if already selected, else
@@ -158,6 +174,8 @@ export class SettingsScreen {
         let ti = 0;
         this.ui.buttons.forEach(b => { if (b.themeId) { b.x = startX + ti * THEME_BTN_SPACING; b.y = btnY; ti++; } });
         this.ui.sliders.forEach((s, i) => { if (L.sliderYs[i] != null) { s.x = cx; s.y = L.sliderYs[i]; } });
+        const hum = this.ui.buttons.find(b => b.humToggle);
+        if (hum) { hum.x = cx; hum.y = L.humY; }
         const back = this.ui.buttons.find(b => b.label === 'BACK');
         if (back) { back.x = cx; back.y = L.backY; }
     }
