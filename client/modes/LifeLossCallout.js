@@ -11,6 +11,7 @@
 // each entry (onEntryDone) — for a morphing entry, only once its final word ("Life" /
 // "DELETED") is fully typed, so the side panel flips in step with the callout.
 import { theme } from '../ui/colors.js';
+import { typeTick } from '../audio/sfx.js';
 // Shared with the server (timings.js) so the animation length and the server's wait before
 // advancing can't drift apart.
 import {
@@ -55,6 +56,7 @@ export class LifeLossCallout {
         this.startTime = now;
         this.active = this.entries.length > 0;
         this._done = 0;
+        this._lastSig = undefined;   // audio: last active-entry display state
     }
 
     clear() { this.entries = []; this.active = false; this._done = 0; }
@@ -223,6 +225,11 @@ export class LifeLossCallout {
                 const st = this._entryState(i, local);
                 value = st.value; caretIndex = st.caretIndex; invert = st.invert;
                 showCursor = Math.floor(st.since / BLINK_MS) % 2 === 0;
+                // Teletype tick on every edit AND caret move — typing, backspacing,
+                // the caret walking across " Lives", the elimination consume.
+                const sig = i + ':' + st.value + ':' + st.caretIndex;
+                if (this._lastSig !== undefined && this._lastSig !== sig) typeTick();
+                this._lastSig = sig;
             }
             const prefix = `${e.name}: `;
             // Anchor on the old-number line so the prefix stays put while the value is edited.

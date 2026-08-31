@@ -27,6 +27,8 @@
 
 let ctx = null;
 let master = null;
+let sfxBus = null;      // one-shot game sounds — volume.sfx
+let musicBus = null;    // tracker songs / ambience — volume.music
 let analyser = null;
 let noiseBuf = null;
 
@@ -42,6 +44,10 @@ export function initAudio() {
         analyser.fftSize = 2048;
         master.connect(analyser);
         analyser.connect(ctx.destination);
+        sfxBus = ctx.createGain();
+        sfxBus.connect(master);
+        musicBus = ctx.createGain();
+        musicBus.connect(master);
 
         // 2s of white noise, looped by noise voices
         const len = ctx.sampleRate * 2;
@@ -57,6 +63,8 @@ export function audioReady() { return ctx !== null && ctx.state === 'running'; }
 export function now() { return ctx ? ctx.currentTime : 0; }
 export function setMasterVolume(v) { if (master) master.gain.value = v; }
 export function getMasterVolume() { return master ? master.gain.value : 0.8; }
+export function setSfxVolume(v) { if (sfxBus) sfxBus.gain.value = v; }
+export function setMusicVolume(v) { if (musicBus) musicBus.gain.value = v; }
 export function getAnalyser() { return analyser; }
 
 // ── Voice scheduling ─────────────────────────────────────────────────────────
@@ -132,7 +140,7 @@ function buildVoice(voice, t0, hold, mods = { freqMul: 1, gainMul: 1 }) {
     } else {
         src.connect(env);
     }
-    out.connect(master);
+    out.connect(mods.bus === 'music' ? musicBus : sfxBus);
 
     if (voice.wave === 'noise') {
         // Random read offset — no two noise hits share the same grains
@@ -164,6 +172,7 @@ export function playPatch(patch, when = 0, opts = {}) {
         freqMul: (1 + (Math.random() * 2 - 1) * (vary.freq || 0)) * (opts.freqMul || 1),
         gainMul: (1 + (Math.random() * 2 - 1) * (vary.gain || 0)) * (opts.gainMul || 1),
         sustainFor: sus,
+        bus: opts.bus,   // 'music' routes to the music bus; default is sfx
     };
     let total = 0;
     for (const v of patch.voices) {

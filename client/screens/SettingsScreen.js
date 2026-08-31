@@ -5,6 +5,7 @@ import { textRow } from '../ui/Transition.js';
 import { theme, applyTheme } from '../ui/colors.js';
 import { vScale, bandTop } from '../ui/viewport.js';
 import { getPref, setPref } from '../prefs.js';
+import { applyVolumePrefs } from '../audio/sfx.js';
 
 // Preference keys + their defaults (persisted per-browser via prefs.js/localStorage).
 const PREF_THEME = 'theme';
@@ -126,7 +127,7 @@ export class SettingsScreen {
         // drag step, so a level set today is still there tomorrow.
         VOLUME_PREFS.forEach((v, i) => {
             this.ui.sliders.push(makeSlider(v.label, cx, L.sliderYs[i], 0, 100,
-                getPref(v.key, v.default), (val) => setPref(v.key, val), false, '%'));
+                getPref(v.key, v.default), (val) => { setPref(v.key, val); applyVolumePrefs(); }, false, '%'));
         });
 
         this.ui.buttons.push(makeButton('BACK', cx, L.backY, () => this.onBack(), { blocksInput: true }));

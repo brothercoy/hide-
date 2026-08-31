@@ -1,5 +1,6 @@
 import { updateButtonZ, CHAR_ROT_SPEED, CHAR_ROT_MAX } from './Button.js';
 import { charWidth } from './Font.js';
+import { sfx } from '../audio/sfx.js';
 
 // The input overlays are opacity:1 (so the native selection/context menu shows) but render nothing —
 // this hides the native ::selection highlight too, since we draw our own on the canvas. Injected once.
@@ -214,6 +215,7 @@ export class UIManager {
         el.addEventListener('input', () => {
             const v = el.value.toUpperCase().slice(0, inp.maxLength);
             el.value = v;                              // reflect casing/clamp back into the overlay
+            if (v !== inp.value) sfx('KEY_CLICK');     // value actually changed (typed/deleted/pasted)
             inp.value = v;
             this._mirrorOverlaySelection();
         });
@@ -231,7 +233,7 @@ export class UIManager {
         el.addEventListener('keydown', e => {
             if (e.key === 'Enter') {
                 const btn = this.buttons.find(b => b.isDefault);
-                if (btn) btn.onClick();
+                if (btn) { sfx('BTN_CONFIRM'); btn.onClick(); }
             }
         });
         el.addEventListener('blur', () => {
@@ -336,6 +338,7 @@ export class UIManager {
                 btn._isPressed = true;
             }
         });
+        if (this.pressedButton) sfx('BTN_PRESS');
 
         // The transparent DOM overlays own input focus/caret/selection natively (a tap/click lands on
         // them, not the canvas), so the canvas never hit-tests inputs. This block is the fallback for
@@ -389,6 +392,9 @@ export class UIManager {
                 if (btn.plain) {
                     btn.onClick();
                 } else {
+                    // Confirm rings only for buttons that glow — plain/noGlow toggles
+                    // (speed options, vote buttons) keep just their press sound.
+                    if (!btn.noGlow) sfx('BTN_CONFIRM');
                     btn.releasePhase = 'releasing';
                     btn.glowT = 0;
                     // Normal buttons fire onClick at the end of the glow cycle.
@@ -491,21 +497,25 @@ export class UIManager {
         if (e.key === 'Backspace') {
             if (hasSelection) {
                 this._deleteSelection(inp);
+                sfx('KEY_CLICK');
             } else if (inp.cursorPos > 0) {
                 inp.value = inp.value.slice(0, inp.cursorPos - 1) + inp.value.slice(inp.cursorPos);
                 inp.cursorPos--;
                 inp.selStart = inp.cursorPos;
                 inp.selEnd = inp.cursorPos;
+                sfx('KEY_CLICK');
             }
             inp.cursorVisible = true;
             inp.lastBlink = performance.now();
         } else if (e.key === 'Delete') {
             if (hasSelection) {
                 this._deleteSelection(inp);
+                sfx('KEY_CLICK');
             } else if (inp.cursorPos < inp.value.length) {
                 inp.value = inp.value.slice(0, inp.cursorPos) + inp.value.slice(inp.cursorPos + 1);
                 inp.selStart = inp.cursorPos;
                 inp.selEnd = inp.cursorPos;
+                sfx('KEY_CLICK');
             }
             inp.cursorVisible = true;
             inp.lastBlink = performance.now();
@@ -531,7 +541,7 @@ export class UIManager {
             this._focusNextInput(-1);
         } else if (e.key === 'Enter') {
             const btn = this.buttons.find(b => b.isDefault);
-            if (btn) btn.onClick();
+            if (btn) { sfx('BTN_CONFIRM'); btn.onClick(); }
         } else if (e.key.length === 1 && !e.ctrlKey && !e.metaKey) {
             if (hasSelection) this._deleteSelection(inp);
             if (inp.value.length < inp.maxLength) {
@@ -539,6 +549,7 @@ export class UIManager {
                 inp.cursorPos++;
                 inp.selStart = inp.cursorPos;
                 inp.selEnd = inp.cursorPos;
+                sfx('KEY_CLICK');
             }
             inp.cursorVisible = true;
             inp.lastBlink = performance.now();
@@ -563,6 +574,7 @@ export class UIManager {
         if (space <= 0) return;
         const toInsert = clean.slice(0, space);
         inp.value = inp.value.slice(0, inp.cursorPos) + toInsert + inp.value.slice(inp.cursorPos);
+        sfx('KEY_CLICK');
         inp.cursorPos += toInsert.length;
         inp.selStart = inp.cursorPos;
         inp.selEnd = inp.cursorPos;

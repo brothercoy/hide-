@@ -2,6 +2,7 @@ import { makeButton, drawButton, drawButtonPartial, buttonRows, drawChar, GLOW_S
 import { charWidth } from '../ui/Font.js';
 import { theme, glow } from '../ui/colors.js';
 import { vScale, bandTop } from '../ui/viewport.js';
+import { sfx } from '../audio/sfx.js';
 
 const FONT_SIZE = 50;         // button label font (SOLO / MULTIPLAYER / SETTINGS)
 const BTN_GAP = 8;           // vertical gap BETWEEN buttons (on top of each button's height)
@@ -281,6 +282,7 @@ export class MainMenu {
             if (mx >= sc.rect.x && mx <= sc.rect.x + sc.rect.w &&
                 my >= sc.rect.y && my <= sc.rect.y + sc.rect.h) {
                 this._pressedSpecialChar = sc;
+                sfx('BTN_PRESS');
                 // Graduate from the intro to interactive — the press lifecycle
                 // takes over from the char's current z (no snap), like a button.
                 if (!sc.introComplete) sc.introComplete = true;
@@ -305,6 +307,7 @@ export class MainMenu {
             mx >= sc.rect.x && mx <= sc.rect.x + sc.rect.w &&
             my >= sc.rect.y && my <= sc.rect.y + sc.rect.h) {
             sc.releasePhase = 'releasing';
+            sfx('BTN_CONFIRM');   // the char glows — press/confirm ring as one gesture
         }
         // released off-char: z drifts back to SPECIAL_Z naturally in _updateSpecialChars
     }

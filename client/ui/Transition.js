@@ -82,6 +82,12 @@ export class Transition {
         this.tailPhases = [];
         this.typeCharMs = TYPE_CHAR_MS; // effective per-char speed for this run
         this.onComplete = null;
+        // Audio hooks (assigned by game.js): onType fires when new characters reveal,
+        // onDone only when a transition runs to its natural end — a transition cut
+        // short by cancelToEnd() (navigating away mid-feed) never fires onDone.
+        this.onType = null;
+        this.onDone = null;
+        this._lastReveal = 0;
     }
 
     isActive() { return this.active; }
@@ -166,6 +172,7 @@ export class Transition {
             for (const p of this.phases) { p.start *= s; p.dur *= s; }
             this.totalDur = totalMs;
         }
+        this._lastReveal = 0;
         this.active = true;
     }
 
@@ -192,17 +199,38 @@ export class Transition {
             cursor += dur;
         }
         this.totalDur = cursor;
+        this._lastReveal = 0;
         this.active = true;
+    }
+
+    // Characters revealed across the whole feed right now — drives the typing tick.
+    _revealTotal() {
+        if (this.scrollOnly) {
+            let n = 0;
+            for (let k = 0; k < this.tailRows.length; k++) {
+                const p = this.tailPhases[k];
+                n += this.elapsedMs >= p.start + p.dur ? this.tailRows[k].cost
+                    : this.elapsedMs >= p.start ? Math.floor((this.elapsedMs - p.start) / this.typeCharMs) : 0;
+            }
+            return n;
+        }
+        let n = 0;
+        for (let k = 0; k < this.rows.length; k++) n += this._rowReveal(k);
+        return n;
     }
 
     update(dtMs) {
         if (!this.active) return;
         this.elapsedMs += dtMs;
-        if (this.elapsedMs >= this.totalDur) this._finish();
+        const reveal = this._revealTotal();
+        if (reveal > this._lastReveal && this.onType) this.onType();
+        this._lastReveal = reveal;
+        if (this.elapsedMs >= this.totalDur) this._finish(false);
     }
 
-    _finish() {
+    _finish(cancelled) {
         this.active = false;
+        if (!cancelled && this.onDone) this.onDone();
         const cb = this.onComplete;
         this.onComplete = null;
         if (cb) cb();
@@ -211,7 +239,7 @@ export class Transition {
     cancelToEnd() {
         if (!this.active) return;
         this.elapsedMs = this.totalDur;
-        this._finish();
+        this._finish(true);
     }
 
     // Current vertical offset the incoming elements are drawn at — used to make

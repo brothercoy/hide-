@@ -105,7 +105,7 @@ export function createPlayer(resolve) {
             if (cell == null || cell === HOLD) continue;   // HOLD rows retrigger nothing
             if (c === 2) {
                 const d = resolve(cell);
-                if (d) playPatch(d, t - now());
+                if (d) playPatch(d, t - now(), { bus: 'music' });
             } else {
                 const inst = resolve(song.instruments[c]);
                 if (!inst) continue;
@@ -114,6 +114,7 @@ export function createPlayer(resolve) {
                 playPatch(inst, t - now(), {
                     freqMul: instrumentFreqMul(inst, cell),
                     sustainFor: extra,
+                    bus: 'music',
                 });
             }
         }

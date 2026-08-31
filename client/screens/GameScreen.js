@@ -5,6 +5,7 @@ import { bandTop } from '../ui/viewport.js';
 import { textRow } from '../ui/Transition.js';
 import { GLOW_SPEED } from '../ui/Button.js';   // share the buttons'/specials' glow length
 import { MO_HOLD_MS, MO_TYPE_MS, MO_CURSOR_MS, RR_TITLE_MS, RR_TITLE_HOLD_MS, RR_COMPLETE_TYPE_MS, RR_COMPLETE_TEXT, RR_GAP_MS, rrRowMs, rrPlus, RR_ROW_MOVE_MS, RR_TYPE_MS, RR_PAUSE_MS } from '../../timings.js';   // shared so the server's holds derive from these
+import { sfx, typeTick } from '../audio/sfx.js';
 
 const TICK_RATE = 50;
 
@@ -673,6 +674,14 @@ export class GameScreen {
         if (countdownStartTime == null) return;
         const elapsed = (Date.now() - countdownStartTime) / 1000;
 
+        // Sound state — reset per countdown (a new round has a new start time).
+        if (this._cdStart !== countdownStartTime) {
+            this._cdStart = countdownStartTime;
+            this._cdLine1 = null;
+            this._cdLine2 = null;
+            this._cdDropped = false;
+        }
+
         // Typewriter countdown at the frame font. ADAPTIVE: the intro is fixed and the
         // three 3/2/1 digits fill whatever time is left, so it always lands exactly when the
         // server ends the countdown. Tune the total in ONE place: COUNTDOWN_MS (timings.js).
@@ -724,12 +733,15 @@ export class GameScreen {
         // Line 1 — "Find: " then the target char once typed (left-aligned, centered as a block).
         ctx.textAlign = 'left';
         const line1 = 'Find: ' + (elapsed >= T_CHAR ? targetChar : '');
+        if (this._cdLine1 !== null && line1 !== this._cdLine1) typeTick();   // target char typed
+        this._cdLine1 = line1;
         const x0 = cx - ctx.measureText('Find: X').width / 2;
         ctx.fillText(line1, x0, y1);
 
         if (elapsed < T_NL) {
             cursorBlock(x0 + ctx.measureText(line1).width, y1);   // cursor parked at end of line 1
         } else {
+            if (!this._cdDropped) { this._cdDropped = true; typeTick(); }   // cursor drops to line 2
             // Line 2 — type 3, backspace, type 2, backspace, type 1 (stays). The digit sits
             // in a FIXED centered slot; only the cursor moves — right once a digit is typed,
             // back to the slot when it's backspaced (one char typed/deleted in place, so the
@@ -741,6 +753,11 @@ export class GameScreen {
                 const within = (elapsed - T3) - di * slot;
                 line2 = (digit === 1 || within < SHOW_S) ? String(digit) : '';  // 3/2 backspace; 1 stays
             }
+            if (this._cdLine2 !== null && line2 !== this._cdLine2) {
+                if (line2) sfx('COUNTDOWN');   // a digit typed (3, 2, 1)
+                else typeTick();               // a digit backspaced
+            }
+            this._cdLine2 = line2;
             ctx.textAlign = 'left';
             const digitX = cx - cw / 2;                               // single digit centered; position fixed
             ctx.fillText(line2, digitX, y2);

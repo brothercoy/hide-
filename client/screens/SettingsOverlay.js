@@ -10,6 +10,7 @@ import { makeBracketButton, drawBracketButton } from '../ui/BracketButton.js';
 import { makeSlider, drawSlider } from '../ui/Slider.js';
 import { theme, bgAlpha, applyTheme } from '../ui/colors.js';
 import { getPref, setPref } from '../prefs.js';
+import { sfx, applyVolumePrefs } from '../audio/sfx.js';
 
 const PREF_THEME = 'theme';
 
@@ -66,7 +67,8 @@ export class SettingsOverlay {
             return b;
         });
         this.sliders = VOLUME_PREFS.map(v =>
-            makeSlider(v.label, 0, 0, 0, 100, getPref(v.key, v.default), (val) => setPref(v.key, val), false, '%'));
+            makeSlider(v.label, 0, 0, 0, 100, getPref(v.key, v.default),
+                (val) => { setPref(v.key, val); applyVolumePrefs(); }, false, '%'));
         this.mainMenuBtn = makeButton('MAIN MENU', 0, 0, callbacks.onMainMenu || (() => {}), { blocksInput: true });
     }
 
@@ -122,6 +124,7 @@ export class SettingsOverlay {
             if (!btn.disabled && this._hit(btn.rect, mx, my)) {
                 this._pressed = btn;
                 this._mouseDown = true;
+                sfx('BTN_PRESS');
                 if (!btn.plain) {
                     btn._isPressed = true;
                     if (btn.releasePhase === 'returning') { btn.releasePhase = null; btn.charZ = null; btn.charRot = null; }
@@ -142,7 +145,7 @@ export class SettingsOverlay {
             // Plain (theme options) fire immediately on release; normal (MAIN MENU) overshoot into the
             // glow and fire onClick at its end (updateButtonZ sets _fireClick) — same as uiManager.
             if (btn.plain) btn.onClick();
-            else { btn.releasePhase = 'releasing'; btn.glowT = 0; }
+            else { sfx('BTN_CONFIRM'); btn.releasePhase = 'releasing'; btn.glowT = 0; }
         }
     }
 

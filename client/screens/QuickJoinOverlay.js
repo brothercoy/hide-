@@ -4,6 +4,7 @@
 // overlay drives the CANCEL button's input itself (same pattern as SettingsOverlay).
 import { makeBracketButton, drawBracketButton } from '../ui/BracketButton.js';
 import { theme, bgAlpha } from '../ui/colors.js';
+import { sfx } from '../audio/sfx.js';
 
 const BACKDROP_ALPHA = 0.9;   // dim strength (matches the settings overlay)
 const LOADING_FONT = 64;
@@ -37,7 +38,10 @@ export class QuickJoinOverlay {
     }
 
     onMouseDown(mx, my) {
-        if (this._hit(this.cancelBtn.rect, mx, my)) this._pressed = this.cancelBtn;
+        if (this._hit(this.cancelBtn.rect, mx, my)) {
+            this._pressed = this.cancelBtn;
+            sfx('BTN_PRESS');
+        }
     }
 
     onMouseUp(mx, my) {

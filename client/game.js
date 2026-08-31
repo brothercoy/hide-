@@ -23,6 +23,7 @@ import { FrequencyMode } from './modes/FrequencyMode.js';
 import { drawRotateGate } from './ui/RotateGate.js';
 import { GAME_INTRO_MS } from '../timings.js';   // shared: the server holds the first countdown this long
 import { getPref } from './prefs.js';
+import { unlockAudio, sfx, typeTick } from './audio/sfx.js';
 
 // Apply the saved theme before anything paints (default green). `theme` is read live everywhere —
 // UI shades, the click glow, and the CRT phosphor tint — so this one call colours the whole game.
@@ -239,6 +240,13 @@ function refreshLayout() {
 
 const uiManager = new UIManager(canvas, ctx, isMobile);
 const transition = new Transition(canvas, ctx);
+// Transition audio: teletype purr while rows type; BEL only when a feed runs to its
+// natural end (a transition cut short by navigating away stays silent).
+transition.onType = typeTick;
+transition.onDone = () => sfx('BEL');
+// Web Audio can only start from a user gesture — the first press/tap/key powers it on.
+['mousedown', 'touchstart', 'keydown'].forEach(ev =>
+    window.addEventListener(ev, unlockAudio, { capture: true }));
 
 // Map screen names to their objects so the transition can drive them generically.
 const screens = {};
@@ -870,6 +878,8 @@ function setupRoomMessages(isReconnecting = false) {
                 // is landing on the screen for the first time, so it types in like any other.
                 if (!data.resumed) typeGameIn();
             }
+            // The characters appear the moment the round goes live.
+            if (type === 'roundStart') sfx('ROUND_START');
             if (currentMode) currentMode.onMessage(type, data);
         });
     });
@@ -956,6 +966,7 @@ const MODAL_OK_FLASH_OUT = 600;  // ms at rest between flashes
 const modalOk = { hover: 0, animT: 0, snap: 0, over: false, rect: null };
 
 function showModal(message) {
+    sfx('ERROR');
     modalMessage = message;
     uiManager.blocked = true;
     uiManager.buttons.forEach(btn => btn.hoverProgress = 0);
@@ -1512,6 +1523,10 @@ canvas.addEventListener('mousedown', (e) => {
         const hit = currentMode.hitTest(gameScreen, cx, cy);
         if (hit) {
             gameScreen.pressTarget();            // hold-to-press the target
+            // Found it: press + confirm back-to-back — the tap registers immediately,
+            // so the reward pair plays as one gesture regardless of hold length.
+            sfx('BTN_PRESS');
+            sfx('BTN_CONFIRM', { when: 0.12 });
             if (soloGame) soloGame.win();        // solo: the client decides the hit (offline)
             else room.send('tap', { nx: hit.nx, ny: hit.ny, time: Date.now() });   // MP: server validates
         } else if (gameScreen.isInPlayField(cx, cy)) {
@@ -1545,6 +1560,7 @@ canvas.addEventListener('click', (e) => {
 
     if (modalMessage) {
         if (hits(getModalOkRect())) {
+            sfx('BTN_PRESS');   // bracket-style OK — press-only, like the other toggles
             modalMessage = null;
             uiManager.blocked = false;
             uiManager.lastTime = performance.now();
@@ -1564,7 +1580,7 @@ canvas.addEventListener('click', (e) => {
 
     if (!hudIntroPending) {
         const hudItem = hudHit(mx, my);
-        if (hudItem) { hudItem.onClick(); return; }
+        if (hudItem) { sfx('BTN_PRESS'); hudItem.onClick(); return; }
     }
 
     // Game taps (target press/glow + miss glitch) are handled on mousedown/mouseup above so a
