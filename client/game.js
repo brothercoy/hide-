@@ -1647,14 +1647,16 @@ canvas.addEventListener('click', (e) => {
 requestAnimationFrame(loop);
 
 // Final-10-seconds suspense: while a LIVE round's timer is inside its last 10s
-// (the same window as the timer's brightness pulse), the battle music ramps up
-// ~18%; it eases back to normal between rounds and outside the game.
+// (the same window as the timer's brightness pulse), the battle music climbs
+// steadily toward +50%, hitting full franticness right as the timer dies; it
+// eases back to normal between rounds and outside the game.
 function updateMusicTension() {
     const tense = currentScreen === 'game' && currentMode
         && !currentMode.countdownActive && !currentMode.showRoundOver
         && !currentMode.showRoundResult && !currentMode.showMatchOver && !currentMode.winnerId
         && currentMode.timeLeft != null && currentMode.timeLeft <= 10;
-    setMusicTempo(tense ? 1.18 : 1, tense ? 1.5 : 1);
+    // Ramp spans the whole 10s window: entering at 10s left reaches 1.5x at ~0s.
+    setMusicTempo(tense ? 1.5 : 1, tense ? 10 : 1);
 }
 
 let _screenKey = window.screen.width + 'x' + window.screen.height;
