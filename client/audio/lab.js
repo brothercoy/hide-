@@ -7,7 +7,7 @@
 
 import { initAudio, audioReady, playPatch, startSustain, setMasterVolume, getMasterVolume, getAnalyser } from './SoundEngine.js';
 import { PATCHES } from './patches.js';
-import { createPlayer, instrumentFreqMul, normalizeSong, chainTotal, CHANNEL_NAMES } from './MusicPlayer.js';
+import { createPlayer, instrumentFreqMul, normalizeSong, chainTotal, noteSteps, CHANNEL_NAMES, HOLD } from './MusicPlayer.js';
 
 const canvas = document.getElementById('c');
 const ctx = canvas.getContext('2d', { alpha: false });
@@ -592,13 +592,15 @@ function drawTracker() {
                 ctx.fillRect(colX[c] - 4, ry - 2, gcw * 5, rowH);
             }
             const cell = pat.ch[c][r];
-            const disp = c === 2 ? (cell ? DRUM_SHORT[cell] : '...') : (cell != null ? noteName(cell) : '...');
+            const disp = cell === HOLD ? ' | '
+                : c === 2 ? (cell ? DRUM_SHORT[cell] : '...')
+                : (cell != null ? noteName(cell) : '...');
             if (cur.row === r && cur.ch === c) {
                 ctx.fillStyle = BRIGHT;
                 ctx.fillRect(colX[c] - 2, ry - 1, gcw * 4, rowH - 1);
                 text(disp, colX[c], ry, '#000000', gfs);
             } else {
-                text(disp, colX[c], ry, cell != null ? BRIGHT : DIM, gfs);
+                text(disp, colX[c], ry, cell === HOLD ? MID : (cell != null ? BRIGHT : DIM), gfs);
             }
             const rr = r, cc = c;
             addHit(colX[c] - 2, ry - 1, gcw * 5, rowH, () => { cur = { row: rr, ch: cc }; });
@@ -611,11 +613,16 @@ function drawTracker() {
     for (const line of [
         'Z-M / Q-I ..... NOTES (2 OCTAVES)',
         '[ ] ........... OCTAVE DOWN/UP',
+        '- ............. HOLD (LENGTHEN NOTE ABOVE)',
         'Z X C V ....... KCK CLK HAT OPN (DRUM COL)',
         'DEL / . ....... CLEAR CELL',
         'ARROWS ........ MOVE CURSOR',
         'SPACE ......... PLAY/STOP SONG',
         'SHIFT+SPACE ... LOOP THIS PATTERN',
+        '',
+        'HOLD = the DAW "drag note longer". A note',
+        'plus three | rings four steps, then decays.',
+        'No holds = the patch\'s natural length.',
         '',
         'EACH CHANNEL HAS ITS OWN CHAIN and loops',
         'it independently. Leave DRUM on one pattern',
@@ -745,6 +752,11 @@ function trackerKey(e) {
     }
     else if (k === '[') octave = Math.max(1, octave - 1);
     else if (k === ']') octave = Math.min(7, octave + 1);
+    // '-' extends the note above by one step (LEAD/BASS only — drums are one-shots)
+    else if (k === '-' && cur.ch !== 2) {
+        pat.ch[cur.ch][cur.row] = HOLD;
+        advanceCur(); touchSongs();
+    }
     else if (cur.ch === 2) {
         const d = DRUM_ENTRY[k];
         if (d) { pat.ch[2][cur.row] = d; playPatch(bank[d]); advanceCur(); touchSongs(); }
@@ -753,7 +765,9 @@ function trackerKey(e) {
         const midi = (octave + 1) * 12 + NOTE_KEYS[k];
         pat.ch[cur.ch][cur.row] = midi;
         const inst = bank[song.instruments[cur.ch]];
-        playPatch(inst, 0, { freqMul: instrumentFreqMul(inst, midi) });
+        // Preview at the length it will actually ring, holds included
+        const extra = (noteSteps(pat, cur.ch, cur.row) - 1) * (60 / song.bpm / 4);
+        playPatch(inst, 0, { freqMul: instrumentFreqMul(inst, midi), sustainFor: extra });
         advanceCur(); touchSongs();
     }
 }

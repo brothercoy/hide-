@@ -65,7 +65,11 @@ function buildVoice(voice, t0, hold, mods = { freqMul: 1, gainMul: 1 }) {
     const start = t0 + (voice.delay || 0);
     const attack = Math.max(0.001, voice.attack || 0.001);
     const decay = Math.max(0.005, voice.decay || 0.1);
-    const stopAt = start + attack + decay + 0.05;
+    // sustainFor holds the note at full level before the decay runs — the tracker's
+    // held notes. 0 = the patch's natural one-shot shape.
+    const sus = Math.max(0, mods.sustainFor || 0);
+    const endAt = start + attack + sus + decay;
+    const stopAt = endAt + 0.05;
 
     // Source
     let src;
@@ -82,7 +86,7 @@ function buildVoice(voice, t0, hold, mods = { freqMul: 1, gainMul: 1 }) {
         src.frequency.setValueAtTime(f0, start);
         if (voice.freqEnd) {
             src.frequency.exponentialRampToValueAtTime(
-                Math.max(1, voice.freqEnd * mods.freqMul), start + attack + decay);
+                Math.max(1, voice.freqEnd * mods.freqMul), endAt);
         }
     }
 
@@ -91,7 +95,10 @@ function buildVoice(voice, t0, hold, mods = { freqMul: 1, gainMul: 1 }) {
     const g = Math.max(EPS, Math.min(1, (voice.gain ?? 0.3) * mods.gainMul));
     env.gain.setValueAtTime(EPS, start);
     env.gain.linearRampToValueAtTime(g, start + attack);
-    if (!hold) env.gain.exponentialRampToValueAtTime(EPS, start + attack + decay);
+    if (!hold) {
+        if (sus > 0) env.gain.setValueAtTime(g, start + attack + sus);
+        env.gain.exponentialRampToValueAtTime(EPS, endAt);
+    }
 
     // Optional amplitude LFO (flutter)
     let lfo = null, lfoGain = null;
@@ -117,7 +124,7 @@ function buildVoice(voice, t0, hold, mods = { freqMul: 1, gainMul: 1 }) {
         // Optional cutoff sweep — rising noise whooshes, spreading shimmers
         if (voice.filter.cutoffEnd) {
             filt.frequency.exponentialRampToValueAtTime(
-                Math.max(1, voice.filter.cutoffEnd * cutMul), start + attack + decay);
+                Math.max(1, voice.filter.cutoffEnd * cutMul), endAt);
         }
         filt.Q.value = voice.filter.q || 1;
         src.connect(filt);
@@ -145,19 +152,23 @@ function buildVoice(voice, t0, hold, mods = { freqMul: 1, gainMul: 1 }) {
 // One-shot. Returns the patch's total length in seconds.
 // opts.freqMul / opts.gainMul transpose/scale the whole patch (used by the tracker
 // to pitch instrument patches per note); they compose with the vary roll.
+// opts.sustainFor holds the note at full level for that many seconds before the
+// patch's own decay runs — how the tracker lengthens a single note.
 export function playPatch(patch, when = 0, opts = {}) {
     if (!ctx) return 0;
     const t0 = ctx.currentTime + when;
     // Humanization: one roll per trigger so the whole hit shifts together
     const vary = patch.vary || {};
+    const sus = Math.max(0, opts.sustainFor || 0);
     const mods = {
         freqMul: (1 + (Math.random() * 2 - 1) * (vary.freq || 0)) * (opts.freqMul || 1),
         gainMul: (1 + (Math.random() * 2 - 1) * (vary.gain || 0)) * (opts.gainMul || 1),
+        sustainFor: sus,
     };
     let total = 0;
     for (const v of patch.voices) {
         buildVoice(v, t0, false, mods);
-        total = Math.max(total, (v.delay || 0) + (v.attack || 0) + (v.decay || 0.1));
+        total = Math.max(total, (v.delay || 0) + (v.attack || 0) + sus + (v.decay || 0.1));
     }
     return total;
 }

@@ -8,8 +8,14 @@
 //     patterns: [ { len: 16|32|64, ch: [ [cell...], [cell...], [cell...] ] } ],
 //     chains: [ [1,1,2], [1,1,2], [0] ],   // ONE PATTERN CHAIN PER CHANNEL
 //   }
-//   Channels 0/1 cells: MIDI note number (60 = C-4) or null.
+//   Channels 0/1 cells: MIDI note number (60 = C-4), HOLD, or null.
 //   Channel  2  cells: drum patch key ('KICK' | 'CLACK' | 'HAT' | 'HAT_OPEN') or null.
+//
+// HOLD ('~') extends the note above it by one step — the tracker equivalent of
+// dragging a note longer in a DAW. A note followed by three HOLDs rings for four
+// steps at full level, then decays with its patch's own decay. Without HOLDs a
+// note just plays its natural one-shot shape, so songs written before holds
+// existed sound exactly the same.
 //
 // Each channel walks its OWN chain independently and loops it. A one-pattern drum
 // chain therefore repeats forever underneath a lead chain that moves through
@@ -25,6 +31,15 @@ import { playPatch, now } from './SoundEngine.js';
 
 export const DRUM_KEYS = ['KICK', 'CLACK', 'HAT', 'HAT_OPEN'];
 export const CHANNEL_NAMES = ['LEAD', 'BASS', 'DRUM'];
+export const HOLD = '~';
+
+// How many steps a note at (pat, row) rings for: itself plus any HOLD rows under
+// it. Holds stop at the end of the pattern.
+export function noteSteps(pattern, c, row) {
+    let n = 1;
+    while (row + n < pattern.len && pattern.ch[c][row + n] === HOLD) n++;
+    return n;
+}
 
 export function midiFreqMul(midi) { return Math.pow(2, (midi - 69) / 12); }
 
@@ -79,20 +94,27 @@ export function createPlayer(resolve) {
     let step = 0, endStep = Infinity, nextTime = 0;
     let posQueue = [];       // [{ t, chans: [loc|null, loc|null, loc|null] }]
 
-    function scheduleStep(s, t) {
+    function scheduleStep(s, t, stepDur) {
         const chans = [];
         for (let c = 0; c < 3; c++) {
             const loc = locate(song, c, s, patternOnly);
             chans.push(loc);
             if (!loc) continue;
-            const cell = song.patterns[loc.pat]?.ch[c][loc.row];
-            if (cell == null) continue;
+            const pattern = song.patterns[loc.pat];
+            const cell = pattern?.ch[c][loc.row];
+            if (cell == null || cell === HOLD) continue;   // HOLD rows retrigger nothing
             if (c === 2) {
                 const d = resolve(cell);
                 if (d) playPatch(d, t - now());
             } else {
                 const inst = resolve(song.instruments[c]);
-                if (inst) playPatch(inst, t - now(), { freqMul: instrumentFreqMul(inst, cell) });
+                if (!inst) continue;
+                // Held notes ring for their extra steps before the patch decay runs
+                const extra = (noteSteps(pattern, c, loc.row) - 1) * stepDur;
+                playPatch(inst, t - now(), {
+                    freqMul: instrumentFreqMul(inst, cell),
+                    sustainFor: extra,
+                });
             }
         }
         posQueue.push({ t, chans });
@@ -101,7 +123,7 @@ export function createPlayer(resolve) {
     function tick() {
         const stepDur = 60 / song.bpm / 4;
         while (timer && step < endStep && nextTime < now() + AHEAD) {
-            scheduleStep(step, nextTime);
+            scheduleStep(step, nextTime, stepDur);
             step++;
             nextTime += stepDur;
         }
