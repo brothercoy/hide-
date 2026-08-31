@@ -22,7 +22,7 @@ import { DELMode } from './modes/DELmode.js';
 import { FrequencyMode } from './modes/FrequencyMode.js';
 import { drawRotateGate } from './ui/RotateGate.js';
 import { GAME_INTRO_MS } from '../timings.js';   // shared: the server holds the first countdown this long
-import { getPref } from './prefs.js';
+import { getPref, setPref } from './prefs.js';
 import { unlockAudio, sfx, typeTick } from './audio/sfx.js';
 
 // Apply the saved theme before anything paints (default green). `theme` is read live everywhere —
@@ -247,6 +247,49 @@ transition.onDone = () => sfx('BEL');
 // Web Audio can only start from a user gesture — the first press/tap/key powers it on.
 ['mousedown', 'touchstart', 'keydown'].forEach(ev =>
     window.addEventListener(ev, unlockAudio, { capture: true }));
+
+// --- Boot gate: "PRESS ANY KEY" before anything plays ---
+// The first-load intro types with sound only if audio is already unlocked, and
+// browsers only unlock on a user gesture — so the terminal waits for one. The
+// dismissing gesture is consumed (stopPropagation) so it can't press hidden UI.
+// Registered AFTER the unlock listeners above: the same gesture powers audio
+// on (hum included) and then lifts the gate.
+// Gate only a genuinely fresh arrival: the first visit ever, or a return after
+// being away 60+ seconds. A quick refresh / fast reconnect goes straight in
+// (audio then unlocks on their first natural click instead).
+const BOOT_GATE_AFTER_MS = 60_000;
+let bootGateActive = (Date.now() - getPref('boot.lastSeen', 0)) > BOOT_GATE_AFTER_MS;
+// Keep lastSeen fresh while the tab is open so a quick refresh skips the gate.
+setInterval(() => setPref('boot.lastSeen', Date.now()), 10_000);
+window.addEventListener('pagehide', () => setPref('boot.lastSeen', Date.now()));
+const BOOT_BLINK_MS = 530;
+function dismissBootGate(e) {
+    if (!bootGateActive) return;
+    bootGateActive = false;
+    e.stopPropagation();
+    // A mouse/touch dismissal also emits a `click` after this — swallow that one
+    // click so it can't press UI that was hidden behind the gate.
+    if (e.type !== 'keydown') {
+        window.addEventListener('click', ev => ev.stopPropagation(), { capture: true, once: true });
+    }
+    uiManager.lastTime = performance.now();   // don't fold the gate wait into the first dt
+}
+['mousedown', 'touchstart', 'keydown'].forEach(ev =>
+    window.addEventListener(ev, dismissBootGate, { capture: true }));
+
+function drawBootGate() {
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.fillStyle = theme.bg;
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    if (!fontReady) return;   // a beat of pure black until IBMVGA is in — very CRT
+    if (Math.floor(performance.now() / BOOT_BLINK_MS) % 2 === 0) {
+        ctx.font = '96px "IBMVGA"';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillStyle = theme.fg;
+        ctx.fillText('PRESS ANY KEY', canvas.width / 2, canvas.height / 2);
+    }
+}
 
 // Map screen names to their objects so the transition can drive them generically.
 const screens = {};
@@ -1606,7 +1649,8 @@ function loop() {
         drawRotateGate(ctx, canvas.width, canvas.height);
     } else {
         if (gateActive) exitGate();
-        draw();
+        if (bootGateActive) drawBootGate();
+        else draw();
     }
     crt.render(performance.now() / 1000);
     requestAnimationFrame(loop);

@@ -183,10 +183,11 @@ export function playPatch(patch, when = 0, opts = {}) {
 }
 
 // Continuous sound (hum, ambience). Returns a handle: call .stop() to fade out.
-export function startSustain(patch, fadeOut = 0.4) {
+// `bus` routes it like playPatch's opts.bus ('music' or default sfx).
+export function startSustain(patch, fadeOut = 0.4, bus = undefined) {
     if (!ctx) return null;
     const t0 = ctx.currentTime;
-    const handles = patch.voices.map(v => buildVoice(v, t0, true));
+    const handles = patch.voices.map(v => buildVoice(v, t0, true, { freqMul: 1, gainMul: 1, bus }));
     let stopped = false;
     return {
         stop() {

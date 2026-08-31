@@ -408,6 +408,9 @@ export class MainMenu {
                     sc.introComplete = true;
                     sc.z = SPECIAL_Z;
                     typeTick();   // each special popping in types like a character
+                    // The last special is the intro's final keystroke — ring the
+                    // end-of-feed BEL, same as a completed screen transition.
+                    if (i === this.specialChars.length - 1) sfx('BEL');
                 } else {
                     sc.rect = null; // not visible yet — not clickable
                     x += charW + SPECIAL_SPACING;

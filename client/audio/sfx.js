@@ -14,7 +14,7 @@
 //   COUNTDOWN    — each 3/2/1 digit typing in
 //   ROUND_START  — the characters appearing
 
-import { initAudio, audioReady, playPatch, setMasterVolume, setSfxVolume, setMusicVolume } from './SoundEngine.js';
+import { initAudio, audioReady, playPatch, startSustain, setMasterVolume, setSfxVolume, setMusicVolume } from './SoundEngine.js';
 import { PATCHES } from './patches.js';
 import { getPref } from '../prefs.js';
 
@@ -24,6 +24,18 @@ export function unlockAudio() {
     if (audioReady()) return;
     initAudio();
     applyVolumePrefs();
+    startAmbience();   // the monitor hum runs under everything from the moment audio lives
+}
+
+// The CRT's transformer-hum bed — continuous, quiet, on the music bus so the
+// MUSIC slider governs the "background" layer as a whole.
+let ambience = null;
+export function startAmbience() {
+    if (ambience || !audioReady()) return;
+    ambience = startSustain(PATCHES.HUM, 0.5, 'music');
+}
+export function stopAmbience() {
+    if (ambience) { ambience.stop(); ambience = null; }
 }
 
 // Volume prefs (0-100) → engine gains. The settings sliders already persist these keys;
