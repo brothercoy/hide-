@@ -23,7 +23,7 @@ import { FrequencyMode } from './modes/FrequencyMode.js';
 import { drawRotateGate } from './ui/RotateGate.js';
 import { GAME_INTRO_MS } from '../timings.js';   // shared: the server holds the first countdown this long
 import { getPref, setPref } from './prefs.js';
-import { unlockAudio, sfx, feedTick } from './audio/sfx.js';
+import { unlockAudio, sfx, feedTick, tickBurst } from './audio/sfx.js';
 import { setMusic, syncMusic, setMusicTempo } from './audio/music.js';
 
 // Apply the saved theme before anything paints (default green). `theme` is read live everywhere —
@@ -934,6 +934,8 @@ function setupRoomMessages(isReconnecting = false) {
             // The characters appear the moment the round goes live.
             if (type === 'roundStart') sfx('ROUND_START');
             if (currentMode) currentMode.onMessage(type, data);
+            // After the mode ingests the round, its char field is populated — type them in.
+            if (type === 'roundStart') tickBurst(currentMode?.chars?.length);
         });
     });
 }
@@ -1655,8 +1657,8 @@ function updateMusicTension() {
         && !currentMode.countdownActive && !currentMode.showRoundOver
         && !currentMode.showRoundResult && !currentMode.showMatchOver && !currentMode.winnerId
         && currentMode.timeLeft != null && currentMode.timeLeft <= 10;
-    // Ramp spans the whole 10s window: entering at 10s left reaches 1.5x at ~0s.
-    setMusicTempo(tense ? 1.5 : 1, tense ? 10 : 1);
+    // Ramp spans the whole 10s window: entering at 10s left reaches 2x at ~0s.
+    setMusicTempo(tense ? 2 : 1, tense ? 10 : 1);
 }
 
 let _screenKey = window.screen.width + 'x' + window.screen.height;

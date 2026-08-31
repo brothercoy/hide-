@@ -10,6 +10,7 @@ import * as sim from '../../gameSim.js';
 import { GAME_MODES } from '../../gameModes.js';
 import { COUNTDOWN_MS } from '../../timings.js';
 import { theme } from '../ui/colors.js';
+import { sfx, tickBurst } from '../audio/sfx.js';
 
 const RESULT_MS = 1600;      // hold the COMPLETE / TIME UP banner before returning to the menu
 const RESULT_FONT = 104;
@@ -63,6 +64,8 @@ export class SoloGame {
                 this.phase = 'round';
                 this.timeLeft = this.settings.roundTime;
                 this.lastUpdateTime = now;
+                sfx('ROUND_START');                 // same round-open as multiplayer
+                tickBurst(this.chars?.length);      // the field types in
             }
             return;
         }
