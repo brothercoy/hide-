@@ -13,7 +13,7 @@ import { LobbyScreen } from './screens/LobbyScreen.js';
 import { GameScreen } from './screens/GameScreen.js';
 import { makeButton, drawButton, drawButtonPartial, buttonCharCount, zToAlpha } from './ui/Button.js';
 import { makeBracketButton, drawBracketButton, bracketButtonRows } from './ui/BracketButton.js';
-import { theme, bgAlpha, glow, applyTheme, THEMES } from './ui/colors.js';
+import { theme, bgAlpha, glow, applyTheme, THEMES, dim } from './ui/colors.js';
 import { initFont } from './ui/Font.js';
 import { setBaseHeight, setBandHeight, bandTop } from './ui/viewport.js';
 import { CRTEffect } from './CRTShader.js';
@@ -254,12 +254,14 @@ transition.onDone = () => sfx('BEL');
 // dismissing gesture is consumed (stopPropagation) so it can't press hidden UI.
 // Registered AFTER the unlock listeners above: the same gesture powers audio
 // on (hum included) and then lifts the gate.
-// Gate only a genuinely fresh arrival: the first visit ever, or a return after
-// being away 60+ seconds. A quick refresh / fast reconnect goes straight in
-// (audio then unlocks on their first natural click instead).
+// The gate is skipped ONLY for a genuine quick rejoin: a reconnection token
+// exists (they were in a lobby/game) AND they were here under a minute ago —
+// don't slow someone hurrying back into a live session. Everything else gates,
+// including a refresh from the menu, so the intro always types with sound.
 const BOOT_GATE_AFTER_MS = 60_000;
-let bootGateActive = (Date.now() - getPref('boot.lastSeen', 0)) > BOOT_GATE_AFTER_MS;
-// Keep lastSeen fresh while the tab is open so a quick refresh skips the gate.
+let bootGateActive = !(localStorage.getItem('reconnectionToken')
+    && (Date.now() - getPref('boot.lastSeen', 0)) < BOOT_GATE_AFTER_MS);
+// Keep lastSeen fresh while the tab is open so a quick rejoin can skip the gate.
 setInterval(() => setPref('boot.lastSeen', Date.now()), 10_000);
 window.addEventListener('pagehide', () => setPref('boot.lastSeen', Date.now()));
 const BOOT_BLINK_MS = 530;
@@ -282,13 +284,14 @@ function drawBootGate() {
     ctx.fillStyle = theme.bg;
     ctx.fillRect(0, 0, canvas.width, canvas.height);
     if (!fontReady) return;   // a beat of pure black until IBMVGA is in — very CRT
-    if (Math.floor(performance.now() / BOOT_BLINK_MS) % 2 === 0) {
-        ctx.font = '96px "IBMVGA"';
-        ctx.textAlign = 'center';
-        ctx.textBaseline = 'middle';
-        ctx.fillStyle = theme.fg;
-        ctx.fillText('PRESS ANY KEY', canvas.width / 2, canvas.height / 2);
-    }
+    // Snap between dim and full brightness — same cadence style as the rotate gate
+    // (never fully off, just breathing between 18% and 100%).
+    const bright = Math.floor(performance.now() / BOOT_BLINK_MS) % 2 === 0;
+    ctx.font = '96px "IBMVGA"';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillStyle = bright ? theme.fg : dim(0.18);
+    ctx.fillText('PRESS ANY KEY', canvas.width / 2, canvas.height / 2);
 }
 
 // Map screen names to their objects so the transition can drive them generically.
