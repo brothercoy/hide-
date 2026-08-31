@@ -519,6 +519,9 @@ function drawTracker() {
     // Each chain loops on its own, so a 1-pattern DRUM chain repeats forever under
     // a LEAD chain that walks through sections. (n) is the chain's total step count.
     const nPat = song.patterns.length;
+    // A slot whose pattern holds nothing for THIS channel plays silence — the usual
+    // cause of "my drums cut out". Drawn dim so an accidental empty slot is obvious.
+    const slotHasNotes = (p, c) => !!song.patterns[p]?.ch[c].some(v => v != null);
     for (let c = 0; c < 3; c++) {
         const chain = song.chains[c];
         text(CHANNEL_NAMES[c], x0, y, cur.ch === c ? BRIGHT : MID);
@@ -527,7 +530,7 @@ function drawTracker() {
             const sel = i === chainSel[c];
             const lbl = sel ? `[${p}]` : `${p}`;
             const live = pos && pos.chans[c] && pos.chans[c].slot === i;
-            text(lbl, x, y, live ? '#aaffaa' : (sel ? BRIGHT : MID));
+            text(lbl, x, y, live ? '#aaffaa' : (sel ? BRIGHT : (slotHasNotes(p, c) ? MID : DIM)));
             addHit(x, y, cw * lbl.length, LH, () => { chainSel[c] = i; editPat = p; cur.ch = c; });
             x += cw * (lbl.length + 0.7);
         });
@@ -541,8 +544,20 @@ function drawTracker() {
         ]) { text(lbl, x, y, MID); addHit(x, y, cw, LH, fn); x += cw * 2; }
         text(`(${chainTotal(song, c)})`, x, y, DIM);
         x += cw * 6;
+        // Live position, so a channel visibly keeps running even while the grid is
+        // showing some other pattern. Format is PATTERN:ROW.
+        if (pos && pos.chans[c]) {
+            const l = pos.chans[c];
+            text(`>${l.pat}:${String(l.row).padStart(2, '0')}`, x, y,
+                l.pat === editPat ? '#aaffaa' : MID);
+        }
+        x += cw * 7;
         text('[=ALL]', x, y, DIM);
         addHit(x, y, cw * 6, LH, () => {
+            // Destructive and easy to hit by accident: it replaces the other two chains.
+            if (!confirm(`OVERWRITE THE OTHER CHANNELS' CHAINS WITH ${CHANNEL_NAMES[c]}'S?\n\n`
+                + `This replaces them entirely. A DRUM chain that should stay one\n`
+                + `looping slot would be overwritten too.`)) return;
             for (let o = 0; o < 3; o++) if (o !== c) song.chains[o] = chain.slice();
             chainSel = [chainSel[c], chainSel[c], chainSel[c]];
             flash(CHANNEL_NAMES[c] + ' CHAIN COPIED TO ALL CHANNELS');
@@ -596,7 +611,13 @@ function drawTracker() {
     const gfs = Math.min(20, rowH - 1);
     const gcw = charW(gfs);
     const colX = [x0 + gcw * 4, x0 + gcw * 10, x0 + gcw * 16];
-    CHANNEL_NAMES.forEach((n, c) => text(n, colX[c], y, cur.ch === c ? BRIGHT : MID, gfs));
+    // Header marks a channel that is currently playing a DIFFERENT pattern than the
+    // one on screen — that is why its playhead is missing from this grid.
+    CHANNEL_NAMES.forEach((n, c) => {
+        text(n, colX[c], y, cur.ch === c ? BRIGHT : MID, gfs);
+        const l = pos && pos.chans[c];
+        if (l && l.pat !== editPat) text(`>${l.pat}`, colX[c] + gcw * 4, y, DIM, gfs);
+    });
     const gy0 = y + rowH + 4;
     const visible = Math.max(4, Math.floor((gridBottom - gy0) / rowH));
     let top = 0;
@@ -657,6 +678,14 @@ function drawTracker() {
         'LEN is any number of steps (1-128), so a',
         'loop can end exactly where the idea ends —',
         'click it to type a length, or use - / +.',
+        '',
+        'THE GRID SHOWS ONE PATTERN, but channels',
+        'can be on different ones at once. A column',
+        'marked >2 is playing pattern 2 right now, so',
+        'its playhead is not in this grid. The >P:RR',
+        'on each chain row is its live position.',
+        'A DIM slot number = that pattern has nothing',
+        'for that channel (it will play silence).',
         '',
         'EACH CHANNEL HAS ITS OWN CHAIN and loops',
         'it independently. Leave DRUM on one pattern',
