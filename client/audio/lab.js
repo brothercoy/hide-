@@ -451,19 +451,22 @@ function deleteSong() {
     resetTrackerView();
     touchSongs();
 }
-// 16 → 32 → 64 → 16. Shrinking discards the rows past the new end, so ask first
-// if any of them actually hold notes.
-const LENGTHS = [16, 32, 64];
-function cyclePatLen(pat) {
-    const next = LENGTHS[(LENGTHS.indexOf(pat.len) + 1) % LENGTHS.length];
-    if (next < pat.len) {
-        const losing = pat.ch.some(c => c.slice(next, pat.len).some(v => v != null));
-        if (losing && !confirm(`SHRINK TO ${next}? ROWS ${next}-${pat.len - 1} HOLD NOTES AND WILL BE DELETED.`)) return;
-        for (let i = 0; i < 3; i++) pat.ch[i] = pat.ch[i].slice(0, next);
+// Patterns can be any length, so a loop ends exactly where the idea ends instead
+// of being padded out to the next power of two. Shrinking discards the rows past
+// the new end, so ask first if any of them actually hold notes.
+const MAX_LEN = 128;
+function setPatLen(pat, n) {
+    n = Math.max(1, Math.min(MAX_LEN, Math.round(n)));
+    if (!n || n === pat.len) return;
+    if (n < pat.len) {
+        const losing = pat.ch.some(c => c.slice(n, pat.len).some(v => v != null));
+        if (losing && !confirm(`SHRINK TO ${n}? ROWS ${n}-${pat.len - 1} HOLD NOTES AND WILL BE DELETED.`)) return;
+        for (let i = 0; i < 3; i++) pat.ch[i] = pat.ch[i].slice(0, n);
     } else {
-        for (const c of pat.ch) while (c.length < next) c.push(null);
+        for (const c of pat.ch) while (c.length < n) c.push(null);
     }
-    pat.len = next;
+    pat.len = n;
+    if (cur.row >= n) cur.row = n - 1;
     touchSongs();
 }
 
@@ -566,24 +569,51 @@ function drawTracker() {
     addHit(x, y, cw * 5, LH, () => { song.patterns.push(structuredClone(song.patterns[editPat])); editPat = song.patterns.length - 1; touchSongs(); });
     x += cw * 6;
     const pat = song.patterns[editPat];
-    text(`LEN:${pat.len}`, x, y, MID);
-    addHit(x, y, cw * 7, LH, () => cyclePatLen(pat));
-    x += cw * 9;
+    text(`LEN:${String(pat.len).padStart(3)}`, x, y, MID);
+    addHit(x, y, cw * 7, LH, () => {
+        const v = prompt(`PATTERN LENGTH IN STEPS (1-${MAX_LEN}):`, pat.len);
+        if (v !== null && v.trim() !== '' && !isNaN(+v)) setPatLen(pat, +v);
+    });
+    x += cw * 8;
+    for (const [lbl, d] of [['-', -1], ['+', 1]]) {
+        text(lbl, x, y, MID);
+        addHit(x, y, cw, LH, () => setPatLen(pat, pat.len + d));
+        x += cw * 2;
+    }
+    const beats = pat.len / 4;
+    text(`(${Number.isInteger(beats) ? beats : beats.toFixed(2)} BEATS)`, x, y, DIM);
+    x += cw * 14;
     text(`OCT:${octave}`, x, y, MID);
     y += LH + 8;
 
     if (cur.row >= pat.len) cur.row = 0;
 
     // ── Grid ──
+    // Rows are sized for a comfortable ~32-row view; patterns longer than fits
+    // scroll to keep the playhead (or the cursor when stopped) centred.
     const gridBottom = canvas.height - 185;
-    const rowH = Math.max(13, Math.min(26, Math.floor((gridBottom - y - 26) / pat.len)));
+    const rowH = Math.max(13, Math.min(26, Math.floor((gridBottom - y - 26) / Math.min(pat.len, 32))));
     const gfs = Math.min(20, rowH - 1);
     const gcw = charW(gfs);
     const colX = [x0 + gcw * 4, x0 + gcw * 10, x0 + gcw * 16];
     CHANNEL_NAMES.forEach((n, c) => text(n, colX[c], y, cur.ch === c ? BRIGHT : MID, gfs));
     const gy0 = y + rowH + 4;
-    for (let r = 0; r < pat.len; r++) {
-        const ry = gy0 + r * rowH;
+    const visible = Math.max(4, Math.floor((gridBottom - gy0) / rowH));
+    let top = 0;
+    if (pat.len > visible) {
+        let focus = cur.row;
+        if (pos) {
+            for (let c = 0; c < 3; c++) {
+                if (pos.chans[c] && pos.chans[c].pat === editPat) { focus = pos.chans[c].row; break; }
+            }
+        }
+        top = Math.max(0, Math.min(pat.len - visible, focus - Math.floor(visible / 2)));
+        if (top > 0) text(`^ ${top} MORE`, x0, gy0 - rowH, DIM, 14);
+        const below = pat.len - (top + visible);
+        if (below > 0) text(`v ${below} MORE`, x0, gridBottom + 2, DIM, 14);
+    }
+    for (let r = top; r < Math.min(pat.len, top + visible); r++) {
+        const ry = gy0 + (r - top) * rowH;
         text(String(r).padStart(2, '0'), x0, ry, r % 4 === 0 ? MID : DIM, gfs);
         for (let c = 0; c < 3; c++) {
             // Channels run their own chains, so each one gets its own playhead mark
@@ -623,6 +653,10 @@ function drawTracker() {
         'HOLD = the DAW "drag note longer". A note',
         'plus three | rings four steps, then decays.',
         'No holds = the patch\'s natural length.',
+        '',
+        'LEN is any number of steps (1-128), so a',
+        'loop can end exactly where the idea ends —',
+        'click it to type a length, or use - / +.',
         '',
         'EACH CHANNEL HAS ITS OWN CHAIN and loops',
         'it independently. Leave DRUM on one pattern',
