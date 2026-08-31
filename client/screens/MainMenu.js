@@ -1,8 +1,8 @@
-import { makeButton, drawButton, drawButtonPartial, buttonRows, drawChar, GLOW_SPEED, Z_FLOAT_MIN } from '../ui/Button.js';
+import { makeButton, drawButton, drawButtonPartial, buttonRows, buttonCharCount, drawChar, GLOW_SPEED, Z_FLOAT_MIN } from '../ui/Button.js';
 import { charWidth } from '../ui/Font.js';
 import { theme, glow } from '../ui/colors.js';
 import { vScale, bandTop } from '../ui/viewport.js';
-import { sfx } from '../audio/sfx.js';
+import { sfx, typeTick } from '../audio/sfx.js';
 
 const FONT_SIZE = 50;         // button label font (SOLO / MULTIPLAYER / SETTINGS)
 const BTN_GAP = 8;           // vertical gap BETWEEN buttons (on top of each button's height)
@@ -141,6 +141,8 @@ export class MainMenu {
         this._mouseDown = false;
         this._pressedSpecialChar = null;
         this.specialsStart = null; // introStart-relative time the specials begin popping (set once the HUD types in)
+        this._hideTicked = 0;      // audio: hide letters / button chars already tick'd during the intro
+        this._btnTicked = 0;
 
         this.canvas.removeEventListener('mousedown', this._bindSpecialClick);
         this.canvas.removeEventListener('mouseup',   this._bindSpecialRelease);
@@ -370,6 +372,9 @@ export class MainMenu {
                 if (t >= this.hideTimestamps[i]) visibleCount = i + 1;
             }
         }
+        // Each hide letter appearing is a keystroke — same tick as the screen feeds.
+        if (!this.introDone && visibleCount > this._hideTicked) typeTick();
+        this._hideTicked = visibleCount;
         const hideY = bandTop(this.canvas) + HIDE_Y;
         const visible = chars.slice(0, visibleCount);
         const totalW = visible.length * charW + (visible.length - 1) * HIDE_SPACING;
@@ -402,6 +407,7 @@ export class MainMenu {
                     sc.appeared = true;
                     sc.introComplete = true;
                     sc.z = SPECIAL_Z;
+                    typeTick();   // each special popping in types like a character
                 } else {
                     sc.rect = null; // not visible yet — not clickable
                     x += charW + SPECIAL_SPACING;
@@ -458,6 +464,7 @@ export class MainMenu {
 
         const t = this.introStart === null ? 0 : elapsed - this.introStart;
 
+        let btnCharsShown = 0;   // audio: total button chars revealed this frame
         this.ui.buttons.forEach((btn, i) => {
             if (this.introDone || this.releasedDuringIntro.has(i)) {
                 drawButton(ctx, btn, elapsed, FONT_SIZE);
@@ -476,7 +483,11 @@ export class MainMenu {
             if (elapsed_since < 0) return;
 
             const visibleChars = Math.floor(elapsed_since / BTN_CHAR_DELAY);
+            btnCharsShown += Math.min(visibleChars, buttonCharCount(btn, FONT_SIZE));
             drawButtonPartial(ctx, btn, visibleChars, elapsed, FONT_SIZE);
         });
+        // Button typing purrs exactly like a screen-transition feed (typeTick rate-limits).
+        if (!this.introDone && btnCharsShown > this._btnTicked) typeTick();
+        if (!this.introDone) this._btnTicked = btnCharsShown;
     }
 }

@@ -1088,6 +1088,7 @@ let hudPressedItem = null;
 const HUD_TYPE_DELAY = 0.05; // seconds per character
 let hudIntroPending = false;
 let hudIntroStart = null;
+let hudIntroTicked = 0;   // audio: chars already tick'd during the first-load HUD type-in
 
 // Bottom-right HUD buttons sit this far above the bottom edge. The gap shrinks as the
 // window falls below fullscreen height (1080 = LOGICAL_H cap), so the buttons drop lower
@@ -1360,6 +1361,8 @@ function drawHUDIntro() {
         mainMenu.releaseSpecials();  // now the special chars pop in
         return;
     }
+    if (revealed > (hudIntroTicked || 0)) typeTick();   // HUD types like any other feed
+    hudIntroTicked = revealed;
     drawHUDTyped(revealed);
 }
 
