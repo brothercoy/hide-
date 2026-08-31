@@ -18,7 +18,7 @@ const HIDE_Z = 1.0;
 const SPECIAL_SIZE = 50;
 const SPECIAL_SPACING = 280;
 const SPECIAL_Y = 260;
-const SPECIAL_Z = 1.9;          // resting depth — deep = faded (~55% opacity), they're easter eggs not UI
+const SPECIAL_Z = 2.1;          // resting depth — deep = faded (~55% opacity), they're easter eggs not UI
 const SPECIAL_Z_PRESSED = 2.5;  // depth when held
 const SPECIAL_Z_GLOW    = 1.0;  // overshoot target on release — glow fires here, then returns to SPECIAL_Z
 const SPECIAL_PRESS_SPEED  = 0.005; // z units per ms while held
@@ -284,7 +284,7 @@ export class MainMenu {
             if (mx >= sc.rect.x && mx <= sc.rect.x + sc.rect.w &&
                 my >= sc.rect.y && my <= sc.rect.y + sc.rect.h) {
                 this._pressedSpecialChar = sc;
-                sfx('BTN_PRESS', { gainMul: 0.4 });   // quiet — a one-off toy, not a navigation
+                sfx('BTN_PRESS', { gainMul: 0.12 });   // very quiet — a one-off toy, not a navigation
                 // Graduate from the intro to interactive — the press lifecycle
                 // takes over from the char's current z (no snap), like a button.
                 if (!sc.introComplete) sc.introComplete = true;
@@ -309,7 +309,7 @@ export class MainMenu {
             mx >= sc.rect.x && mx <= sc.rect.x + sc.rect.w &&
             my >= sc.rect.y && my <= sc.rect.y + sc.rect.h) {
             sc.releasePhase = 'releasing';
-            sfx('BTN_CONFIRM', { gainMul: 0.4 });   // the char glows — same pair, at easter-egg volume
+            sfx('BTN_CONFIRM', { gainMul: 0.12 });   // the char glows — same pair, at easter-egg volume
         }
         // released off-char: z drifts back to SPECIAL_Z naturally in _updateSpecialChars
     }
@@ -489,8 +489,8 @@ export class MainMenu {
             btnCharsShown += Math.min(visibleChars, buttonCharCount(btn, FONT_SIZE));
             drawButtonPartial(ctx, btn, visibleChars, elapsed, FONT_SIZE);
         });
-        // Button typing ticks like a screen-transition feed: one tick per ~10 chars.
-        if (!this.introDone && btnCharsShown > this._btnTicked) feedTick(btnCharsShown - this._btnTicked, 10);
+        // Button typing ticks like a screen-transition feed: one tick per 2 chars.
+        if (!this.introDone && btnCharsShown > this._btnTicked) feedTick(btnCharsShown - this._btnTicked, 2);
         if (!this.introDone) this._btnTicked = btnCharsShown;
     }
 }

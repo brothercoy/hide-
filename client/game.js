@@ -240,10 +240,10 @@ function refreshLayout() {
 
 const uiManager = new UIManager(canvas, ctx, isMobile);
 const transition = new Transition(canvas, ctx);
-// Transition audio: one tick per ~10 revealed characters (typing cadence, not a
+// Transition audio: one tick per 2 revealed characters (typing cadence, not a
 // machine gun); BEL only when a feed runs to its natural end (a transition cut
 // short by navigating away stays silent).
-transition.onType = (n) => feedTick(n, 10);
+transition.onType = (n) => feedTick(n, 2);
 transition.onDone = () => sfx('BEL');
 // Web Audio can only start from a user gesture — the first press/tap/key powers it on.
 ['mousedown', 'touchstart', 'keydown'].forEach(ev =>
@@ -1408,7 +1408,7 @@ function drawHUDIntro() {
         mainMenu.releaseSpecials();  // now the special chars pop in
         return;
     }
-    if (revealed > (hudIntroTicked || 0)) feedTick(revealed - hudIntroTicked, 5);   // HUD is a small feed
+    if (revealed > (hudIntroTicked || 0)) feedTick(revealed - hudIntroTicked, 2);
     hudIntroTicked = revealed;
     drawHUDTyped(revealed);
 }
