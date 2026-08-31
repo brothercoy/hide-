@@ -7,7 +7,7 @@
 
 import { initAudio, audioReady, playPatch, startSustain, setMasterVolume, getMasterVolume, getAnalyser } from './SoundEngine.js';
 import { PATCHES } from './patches.js';
-import { createPlayer, instrumentFreqMul } from './MusicPlayer.js';
+import { createPlayer, instrumentFreqMul, normalizeSong, chainTotal, CHANNEL_NAMES } from './MusicPlayer.js';
 
 const canvas = document.getElementById('c');
 const ctx = canvas.getContext('2d', { alpha: false });
@@ -108,7 +108,11 @@ function newPattern(len) {
     return { len, ch: [Array(len).fill(null), Array(len).fill(null), Array(len).fill(null)] };
 }
 function defaultSong(name) {
-    return { name, bpm: 110, instruments: ['LEAD', 'BASS'], patterns: [newPattern(16)], order: [0] };
+    return {
+        name, bpm: 110, instruments: ['LEAD', 'BASS'],
+        patterns: [newPattern(16)],
+        chains: [[0], [0], [0]],   // one independent pattern chain per channel
+    };
 }
 
 let songs = null, songIdx = 0;
@@ -117,8 +121,10 @@ try {
     if (s?.songs?.length) { songs = s.songs; songIdx = Math.min(s.songIdx || 0, s.songs.length - 1); }
 } catch { /* corrupt save — start fresh */ }
 if (!songs) songs = [defaultSong('THEME')];
+songs.forEach(normalizeSong);   // upgrade songs written before per-channel chains
 
-let editPat = 0, orderSel = 0, octave = 4;
+let editPat = 0, octave = 4;
+let chainSel = [0, 0, 0];       // selected slot within each channel's chain
 let cur = { row: 0, ch: 0 };
 const player = createPlayer(k => bank[k]);   // plays the EDITED bank — lab tweaks are heard live
 function touchSongs() { localStorage.setItem(SONGS_KEY, JSON.stringify({ songs, songIdx })); }
@@ -419,16 +425,17 @@ function drawEditor() {
 }
 
 // ── Tracker tab ──────────────────────────────────────────────────────────────
+function resetTrackerView() { editPat = 0; chainSel = [0, 0, 0]; cur = { row: 0, ch: 0 }; }
 function switchSong(d) {
     player.stop();
     songIdx = (songIdx + d + songs.length) % songs.length;
-    editPat = 0; orderSel = 0; cur = { row: 0, ch: 0 };
+    resetTrackerView();
     touchSongs();
 }
 function newSong() {
     songs.push(defaultSong('SONG' + (songs.length + 1)));
     songIdx = songs.length - 1;
-    editPat = 0; orderSel = 0; cur = { row: 0, ch: 0 };
+    resetTrackerView();
     touchSongs();
 }
 function renameSong() {
@@ -441,17 +448,22 @@ function deleteSong() {
     player.stop();
     songs.splice(songIdx, 1);
     songIdx = Math.max(0, songIdx - 1);
-    editPat = 0; orderSel = 0; cur = { row: 0, ch: 0 };
+    resetTrackerView();
     touchSongs();
 }
-function togglePatLen(pat) {
-    if (pat.len === 16) {
-        pat.len = 32;
-        for (const c of pat.ch) while (c.length < 32) c.push(null);
+// 16 → 32 → 64 → 16. Shrinking discards the rows past the new end, so ask first
+// if any of them actually hold notes.
+const LENGTHS = [16, 32, 64];
+function cyclePatLen(pat) {
+    const next = LENGTHS[(LENGTHS.indexOf(pat.len) + 1) % LENGTHS.length];
+    if (next < pat.len) {
+        const losing = pat.ch.some(c => c.slice(next, pat.len).some(v => v != null));
+        if (losing && !confirm(`SHRINK TO ${next}? ROWS ${next}-${pat.len - 1} HOLD NOTES AND WILL BE DELETED.`)) return;
+        for (let i = 0; i < 3; i++) pat.ch[i] = pat.ch[i].slice(0, next);
     } else {
-        pat.len = 16;
-        for (let i = 0; i < 3; i++) pat.ch[i] = pat.ch[i].slice(0, 16);
+        for (const c of pat.ch) while (c.length < next) c.push(null);
     }
+    pat.len = next;
     touchSongs();
 }
 
@@ -459,13 +471,11 @@ function drawTracker() {
     const cw = charW();
     const song = songs[songIdx];
     if (editPat >= song.patterns.length) editPat = 0;
-    if (orderSel >= song.order.length) orderSel = 0;
+    for (let c = 0; c < 3; c++) if (chainSel[c] >= song.chains[c].length) chainSel[c] = 0;
     const x0 = 40;
     let y = 64;
 
-    // Follow the playhead across pattern changes (standard tracker behavior)
     const pos = player.position();
-    if (pos && pos.orderIdx >= 0) editPat = pos.pat;
 
     // ── Row 1: song / bpm / transport ──
     text('SONG', x0, y, MID);
@@ -492,7 +502,7 @@ function drawTracker() {
     text(player.playing() ? '[STOP]' : '[PLAY]', x, y, BRIGHT);
     addHit(x, y, cw * 6, LH, () => {
         if (player.playing()) player.stop();
-        else player.play(song, { loop: true, startOrder: orderSel });
+        else player.play(song, { loop: true });
     });
     x += cw * 7;
     text('[PAT]', x, y, MID);
@@ -502,25 +512,42 @@ function drawTracker() {
     });
     y += LH + 2;
 
-    // ── Row 2: order chain ──
-    text('ORDER', x0, y, MID);
-    x = x0 + cw * 6;
-    song.order.forEach((p, i) => {
-        const sel = i === orderSel;
-        const lbl = sel ? `[${p}]` : `${p}`;
-        const col = (pos && pos.orderIdx === i) ? BRIGHT : (sel ? BRIGHT : MID);
-        text(lbl, x, y, col);
-        addHit(x, y, cw * lbl.length, LH, () => { orderSel = i; editPat = song.order[i]; });
-        x += cw * (lbl.length + 0.7);
-    });
-    x += cw;
-    for (const [lbl, fn] of [
-        ['+', () => { song.order.splice(orderSel + 1, 0, song.order[orderSel]); orderSel++; touchSongs(); }],
-        ['-', () => { if (song.order.length > 1) { song.order.splice(orderSel, 1); orderSel = Math.max(0, orderSel - 1); touchSongs(); } }],
-        ['<', () => { song.order[orderSel] = (song.order[orderSel] + song.patterns.length - 1) % song.patterns.length; editPat = song.order[orderSel]; touchSongs(); }],
-        ['>', () => { song.order[orderSel] = (song.order[orderSel] + 1) % song.patterns.length; editPat = song.order[orderSel]; touchSongs(); }],
-    ]) { text(lbl, x, y, MID); addHit(x, y, cw, LH, fn); x += cw * 2; }
-    y += LH + 2;
+    // ── Rows 2-4: one independent pattern chain per channel ──
+    // Each chain loops on its own, so a 1-pattern DRUM chain repeats forever under
+    // a LEAD chain that walks through sections. (n) is the chain's total step count.
+    const nPat = song.patterns.length;
+    for (let c = 0; c < 3; c++) {
+        const chain = song.chains[c];
+        text(CHANNEL_NAMES[c], x0, y, cur.ch === c ? BRIGHT : MID);
+        x = x0 + cw * 5;
+        chain.forEach((p, i) => {
+            const sel = i === chainSel[c];
+            const lbl = sel ? `[${p}]` : `${p}`;
+            const live = pos && pos.chans[c] && pos.chans[c].slot === i;
+            text(lbl, x, y, live ? '#aaffaa' : (sel ? BRIGHT : MID));
+            addHit(x, y, cw * lbl.length, LH, () => { chainSel[c] = i; editPat = p; cur.ch = c; });
+            x += cw * (lbl.length + 0.7);
+        });
+        x += cw;
+        const sel = () => chainSel[c];
+        for (const [lbl, fn] of [
+            ['+', () => { chain.splice(sel() + 1, 0, chain[sel()]); chainSel[c]++; touchSongs(); }],
+            ['-', () => { if (chain.length > 1) { chain.splice(sel(), 1); chainSel[c] = Math.max(0, sel() - 1); touchSongs(); } }],
+            ['<', () => { chain[sel()] = (chain[sel()] + nPat - 1) % nPat; editPat = chain[sel()]; touchSongs(); }],
+            ['>', () => { chain[sel()] = (chain[sel()] + 1) % nPat; editPat = chain[sel()]; touchSongs(); }],
+        ]) { text(lbl, x, y, MID); addHit(x, y, cw, LH, fn); x += cw * 2; }
+        text(`(${chainTotal(song, c)})`, x, y, DIM);
+        x += cw * 6;
+        text('[=ALL]', x, y, DIM);
+        addHit(x, y, cw * 6, LH, () => {
+            for (let o = 0; o < 3; o++) if (o !== c) song.chains[o] = chain.slice();
+            chainSel = [chainSel[c], chainSel[c], chainSel[c]];
+            flash(CHANNEL_NAMES[c] + ' CHAIN COPIED TO ALL CHANNELS');
+            touchSongs();
+        });
+        y += LH;
+    }
+    y += 2;
 
     // ── Row 3: patterns / length / octave ──
     text('PAT', x0, y, MID);
@@ -540,8 +567,8 @@ function drawTracker() {
     x += cw * 6;
     const pat = song.patterns[editPat];
     text(`LEN:${pat.len}`, x, y, MID);
-    addHit(x, y, cw * 6, LH, () => togglePatLen(pat));
-    x += cw * 8;
+    addHit(x, y, cw * 7, LH, () => cyclePatLen(pat));
+    x += cw * 9;
     text(`OCT:${octave}`, x, y, MID);
     y += LH + 8;
 
@@ -553,16 +580,17 @@ function drawTracker() {
     const gfs = Math.min(20, rowH - 1);
     const gcw = charW(gfs);
     const colX = [x0 + gcw * 4, x0 + gcw * 10, x0 + gcw * 16];
-    ['LEAD', 'BASS', 'DRUM'].forEach((n, c) => text(n, colX[c], y, MID, gfs));
+    CHANNEL_NAMES.forEach((n, c) => text(n, colX[c], y, cur.ch === c ? BRIGHT : MID, gfs));
     const gy0 = y + rowH + 4;
     for (let r = 0; r < pat.len; r++) {
         const ry = gy0 + r * rowH;
-        if (pos && pos.pat === editPat && pos.row === r) {
-            ctx.fillStyle = '#0a2912';
-            ctx.fillRect(x0 - 6, ry - 2, gcw * 22, rowH);
-        }
         text(String(r).padStart(2, '0'), x0, ry, r % 4 === 0 ? MID : DIM, gfs);
         for (let c = 0; c < 3; c++) {
+            // Channels run their own chains, so each one gets its own playhead mark
+            if (pos && pos.chans[c] && pos.chans[c].pat === editPat && pos.chans[c].row === r) {
+                ctx.fillStyle = '#0a2912';
+                ctx.fillRect(colX[c] - 4, ry - 2, gcw * 5, rowH);
+            }
             const cell = pat.ch[c][r];
             const disp = c === 2 ? (cell ? DRUM_SHORT[cell] : '...') : (cell != null ? noteName(cell) : '...');
             if (cur.row === r && cur.ch === c) {
@@ -589,10 +617,18 @@ function drawTracker() {
         'SPACE ......... PLAY/STOP SONG',
         'SHIFT+SPACE ... LOOP THIS PATTERN',
         '',
-        'ORDER = the chain the song plays through.',
-        'PAT = which pattern you are editing.',
-        'LEAD/BASS instruments are tunable',
-        'in the SFX EDITOR tab.',
+        'EACH CHANNEL HAS ITS OWN CHAIN and loops',
+        'it independently. Leave DRUM on one pattern',
+        'so it repeats forever, and give LEAD a longer',
+        'chain that moves through sections over it.',
+        'Edit that one drum pattern and every bar',
+        'updates. (n) = the chain total in steps —',
+        'keep them multiples to stay in step.',
+        '',
+        '+ - add/remove a slot   < > repoint a slot',
+        '[=ALL] copies that chain to all channels.',
+        'PAT = which pattern the grid is editing.',
+        'LEAD/BASS instruments tune in SFX EDITOR.',
         'EDITS AUTOSAVE. EXPORT = COPY SONGS JSON.',
     ]) { text(line, hx, hy, DIM, 16); hy += 24; }
 }
@@ -694,7 +730,7 @@ function trackerKey(e) {
         e.preventDefault();
         if (player.playing()) player.stop();
         else if (e.shiftKey) player.play(song, { patternOnly: editPat });
-        else player.play(song, { loop: true, startOrder: orderSel });
+        else player.play(song, { loop: true });
         return;
     }
     if (e.ctrlKey || e.metaKey || e.altKey) return;
