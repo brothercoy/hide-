@@ -93,6 +93,14 @@ export function createPlayer(resolve) {
     let song = null, loop = true, patternOnly = null;
     let step = 0, endStep = Infinity, nextTime = 0;
     let posQueue = [];       // [{ t, chans: [loc|null, loc|null, loc|null] }]
+    let pending = null;      // song queued to take over at the next drum-loop boundary
+    let tempoScale = 1;      // 1 = song bpm; >1 = faster. Ramped toward tempoTarget.
+    let tempoTarget = 1, tempoRate = 0;
+
+    // The musical switching quantum: one full pass of the song's drum chain.
+    function quantum() {
+        return chainTotal(song, 2) || song.patterns[0]?.len || 16;
+    }
 
     function scheduleStep(s, t, stepDur) {
         const chans = [];
@@ -122,8 +130,23 @@ export function createPlayer(resolve) {
     }
 
     function tick() {
-        const stepDur = 60 / song.bpm / 4;
+        // Ease the tempo toward its target (rate set by setTempo's ramp length).
+        if (tempoScale !== tempoTarget && tempoRate > 0) {
+            const d = tempoRate * (TICK_MS / 1000);
+            tempoScale = tempoScale < tempoTarget
+                ? Math.min(tempoTarget, tempoScale + d)
+                : Math.max(tempoTarget, tempoScale - d);
+        }
         while (timer && step < endStep && nextTime < now() + AHEAD) {
+            // A queued song takes over exactly at a drum-loop boundary, inheriting
+            // the beat grid (nextTime carries straight on) — the "vertical" handoff.
+            if (pending && step > 0 && step % quantum() === 0) {
+                song = pending;
+                pending = null;
+                step = 0;
+                posQueue = [];
+            }
+            const stepDur = 60 / song.bpm / 4 / tempoScale;
             scheduleStep(step, nextTime, stepDur);
             step++;
             nextTime += stepDur;
@@ -132,11 +155,29 @@ export function createPlayer(resolve) {
         while (posQueue.length > 1 && posQueue[1].t <= now()) posQueue.shift();
     }
 
+    // Queue a song to take over at the end of the current song's drum-loop pass —
+    // the theme finishes its full measure, then the next song enters on the beat.
+    // Falls back to an immediate play when nothing is running.
+    function queue(s) {
+        if (!timer || !song) { play(s, { loop: true }); return; }
+        const next = normalizeSong(s);
+        if (next === song) { pending = null; return; }
+        pending = next;
+    }
+
+    // Scale playback speed without touching pitch. rampS eases there over that many
+    // seconds (0 = jump). 1 restores the song's own bpm.
+    function setTempo(target, rampS = 2) {
+        tempoTarget = Math.max(0.25, Math.min(4, target));
+        tempoRate = rampS > 0 ? Math.abs(tempoTarget - tempoScale) / rampS : Infinity;
+    }
+
     function play(s, opts = {}) {
         stop();
         song = normalizeSong(s);
         loop = opts.loop !== false;
         patternOnly = opts.patternOnly ?? null;
+        tempoScale = 1; tempoTarget = 1; tempoRate = 0;
         step = opts.startStep || 0;
         endStep = Infinity;
         if (!loop) {
@@ -153,6 +194,7 @@ export function createPlayer(resolve) {
     function stop() {
         if (timer) { clearInterval(timer); timer = null; }
         posQueue = [];
+        pending = null;
     }
 
     function playing() { return timer !== null; }
@@ -163,5 +205,5 @@ export function createPlayer(resolve) {
         return posQueue[0].t <= now() + 0.03 ? posQueue[0] : null;
     }
 
-    return { play, stop, playing, position };
+    return { play, queue, setTempo, stop, playing, position };
 }

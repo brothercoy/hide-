@@ -30,6 +30,19 @@ export function syncMusic() {
         return;
     }
     if (current === song.name && player.playing()) return;
-    player.play(song, { loop: true });
+    // Musical handoff: the running song finishes its current drum-loop pass, then
+    // the new one enters on the beat (immediate when nothing is playing). Asking
+    // for the running song again before the boundary cancels the switch.
+    player.queue(song);
     current = song.name;
+}
+
+// Speed the current song up/down without changing pitch (1 = normal). Eases over
+// rampS seconds. Safe to assert every frame — only a changed target reaches the
+// player, so the ramp isn't perpetually restarted.
+let tempoTarget = 1;
+export function setMusicTempo(mul, rampS = 2) {
+    if (mul === tempoTarget) return;
+    tempoTarget = mul;
+    player.setTempo(mul, rampS);
 }

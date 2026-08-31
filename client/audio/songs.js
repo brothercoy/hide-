@@ -210,6 +210,37 @@ export const SONGS = {
         },
         ],
     },
+    "BATTLE": {
+        name: 'BATTLE', bpm: 120,
+        instruments: ['LEAD', 'BASS'],
+        chains: [[0], [0], [0]],
+        patterns: [
+        // pattern 0 — 16 steps
+        {
+            len: 16,
+            ch: [
+                /* LEAD */ [
+                    n, n, 76, n,
+                    72, n, 69, n,
+                    65, n, 64, n,
+                    n, n, n, n,
+                ],
+                /* BASS */ [
+                    n, n, n, n,
+                    n, n, n, n,
+                    n, n, n, n,
+                    n, n, n, n,
+                ],
+                /* DRUM */ [
+                    'KICK', n, n, n,
+                    n, n, 'CLACK', n,
+                    'HAT', 'HAT_OPEN', 'HAT', n,
+                    n, n, n, n,
+                ],
+            ],
+        },
+        ],
+    },
 };
 
 export const THEME = SONGS['THEME'];

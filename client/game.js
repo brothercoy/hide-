@@ -24,7 +24,7 @@ import { drawRotateGate } from './ui/RotateGate.js';
 import { GAME_INTRO_MS } from '../timings.js';   // shared: the server holds the first countdown this long
 import { getPref, setPref } from './prefs.js';
 import { unlockAudio, sfx, feedTick } from './audio/sfx.js';
-import { setMusic, syncMusic } from './audio/music.js';
+import { setMusic, syncMusic, setMusicTempo } from './audio/music.js';
 
 // Apply the saved theme before anything paints (default green). `theme` is read live everywhere —
 // UI shades, the click glow, and the CRT phosphor tint — so this one call colours the whole game.
@@ -1646,6 +1646,17 @@ canvas.addEventListener('click', (e) => {
 
 requestAnimationFrame(loop);
 
+// Final-10-seconds suspense: while a LIVE round's timer is inside its last 10s
+// (the same window as the timer's brightness pulse), the battle music ramps up
+// ~18%; it eases back to normal between rounds and outside the game.
+function updateMusicTension() {
+    const tense = currentScreen === 'game' && currentMode
+        && !currentMode.countdownActive && !currentMode.showRoundOver
+        && !currentMode.showRoundResult && !currentMode.showMatchOver && !currentMode.winnerId
+        && currentMode.timeLeft != null && currentMode.timeLeft <= 10;
+    setMusicTempo(tense ? 1.18 : 1, tense ? 1.5 : 1);
+}
+
 let _screenKey = window.screen.width + 'x' + window.screen.height;
 function loop() {
     // Moving the window to a different-resolution monitor (or window.screen reporting the wrong
@@ -1656,6 +1667,7 @@ function loop() {
     if (sk !== _screenKey) { _screenKey = sk; refreshLayout(); }
 
     syncMusic();   // make the playing song match the screen (waits out the audio unlock)
+    updateMusicTension();
     if (isPortraitGate()) {
         if (!gateActive || canvas.width !== GATE_W) enterGate();
         drawRotateGate(ctx, canvas.width, canvas.height);
