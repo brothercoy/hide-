@@ -24,6 +24,7 @@ import { drawRotateGate } from './ui/RotateGate.js';
 import { GAME_INTRO_MS } from '../timings.js';   // shared: the server holds the first countdown this long
 import { getPref, setPref } from './prefs.js';
 import { unlockAudio, sfx, feedTick } from './audio/sfx.js';
+import { setMusic, syncMusic } from './audio/music.js';
 
 // Apply the saved theme before anything paints (default green). `theme` is read live everywhere —
 // UI shades, the click glow, and the CRT phosphor tint — so this one call colours the whole game.
@@ -396,6 +397,9 @@ function enterScreen(name, opts) {
 }
 
 function showScreen(name, opts = {}) {
+    // Every screen that goes through here is a menu — the theme loops under all
+    // of them. (The game bypasses showScreen and asks for BATTLE instead.)
+    setMusic('THEME');
     // Instant path: first paint, explicit request, or font not ready.
     if (currentScreen === null || opts.instant || !fontReady) {
         const firstPaint = currentScreen === null;
@@ -854,6 +858,7 @@ function setupRoomMessages(isReconnecting = false) {
         currentMode.countdownActive = true;
         currentMode.countdownStartTime = null;
         if (data.timeLeft != null) currentMode.timeLeft = data.timeLeft;   // box timer shows the real round time from frame one
+        setMusic('BATTLE');   // theme out — battle track in (silence until one named BATTLE is composed)
         currentScreen = 'game';
         uiManager.clear();
         setupGameHud();
@@ -914,6 +919,7 @@ function setupRoomMessages(isReconnecting = false) {
                 pendingLobbyEntry = false; // reconnecting into a live game, not the lobby
                 if (transition.isActive()) transition.cancelToEnd();
                 if (!currentMode) currentMode = createMode(data.mode || 'redacted', data);
+                setMusic('BATTLE');
                 currentScreen = 'game';
                 uiManager.clear();
                 setupGameHud();
@@ -959,6 +965,7 @@ function startSolo(level = { mode: 'redacted', settings: { charCount: 45, speedS
     gameScreen.prewarmGlyphs();
     soloGame = new SoloGame(canvas, ctx, level, gameScreen.charRadii(), { onEnd: endSolo });
     currentMode = soloGame;         // drawScreenInto('game') → soloGame.draw(gameScreen)
+    setMusic('BATTLE');
     currentScreen = 'game';
     uiManager.blocked = false;
     uiManager.lastTime = performance.now();
@@ -1648,6 +1655,7 @@ function loop() {
     const sk = window.screen.width + 'x' + window.screen.height;
     if (sk !== _screenKey) { _screenKey = sk; refreshLayout(); }
 
+    syncMusic();   // make the playing song match the screen (waits out the audio unlock)
     if (isPortraitGate()) {
         if (!gateActive || canvas.width !== GATE_W) enterGate();
         drawRotateGate(ctx, canvas.width, canvas.height);
