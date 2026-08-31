@@ -82,13 +82,12 @@ export function feedTick(chars, per = 10) {
     typeTick();
 }
 
-// A scheduled burst of ticks — for when a whole field of characters appears in
-// one frame (round start): sounds like the terminal typing them all out. Capped
-// so a dense field stays a flourish, not a drum roll.
-export function tickBurst(count, durS = 0.7) {
+// A simultaneous clump of ticks — for when a whole field of characters appears
+// in one frame (round start). All fire at once; each tick's own humanization
+// (pitch/gain vary + unique noise grains) makes it one thick material crunch
+// instead of a single click. Capped and attenuated so the stack can't blow out.
+export function tickBurst(count) {
     if (!audioReady()) return;
-    const n = Math.max(1, Math.min(24, Math.round(count || 0)));
-    for (let i = 0; i < n; i++) {
-        sfx('TELETYPE_TICK', { when: (i / n) * durS + Math.random() * 0.02 });
-    }
+    const n = Math.max(1, Math.min(16, Math.round(count || 0)));
+    for (let i = 0; i < n; i++) sfx('TELETYPE_TICK', { gainMul: 0.6 });
 }

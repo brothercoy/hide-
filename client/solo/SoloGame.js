@@ -11,6 +11,7 @@ import { GAME_MODES } from '../../gameModes.js';
 import { COUNTDOWN_MS } from '../../timings.js';
 import { theme } from '../ui/colors.js';
 import { sfx, tickBurst } from '../audio/sfx.js';
+import { setMusic } from '../audio/music.js';
 
 const RESULT_MS = 1600;      // hold the COMPLETE / TIME UP banner before returning to the menu
 const RESULT_FONT = 104;
@@ -87,6 +88,11 @@ export class SoloGame {
         this.phase = 'done';
         this.won = won;
         this._doneAt = Date.now();
+        if (!won) {
+            // Time's up — the round-open sound dropped low (a power-down), music cut.
+            sfx('ROUND_START', { freqMul: 0.45 });
+            setMusic(null);
+        }
     }
 
     // Tapped the target (game.js calls this when GameScreen.hitTest reports a hit) → level complete.

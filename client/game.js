@@ -933,6 +933,12 @@ function setupRoomMessages(isReconnecting = false) {
             }
             // The characters appear the moment the round goes live.
             if (type === 'roundStart') sfx('ROUND_START');
+            // Each new round's countdown re-arms the battle music (it stops on a
+            // time-up, and this is a no-op while it's already playing).
+            if (type === 'roundCountdown') setMusic('BATTLE');
+            // Time ran out: the round-open sound, dropped low — a power-down — and
+            // the battle music cuts.
+            if (type === 'timeUp') { sfx('ROUND_START', { freqMul: 0.45 }); setMusic(null); }
             if (currentMode) currentMode.onMessage(type, data);
             // After the mode ingests the round, its char field is populated — type them in.
             if (type === 'roundStart') tickBurst(currentMode?.chars?.length);
