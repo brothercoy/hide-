@@ -5,16 +5,13 @@
 // screen transition.
 import { makeButton, zToAlpha } from '../ui/Button.js';
 import { theme, disabledColor, glow } from '../ui/colors.js';
-import { getPref } from '../prefs.js';
 import { FLAGS, FLAG_W, FLAG_H, flagRows } from '../solo/flags.js';
+import { isChapterUnlocked } from '../solo/progress.js';
 
 const FLAG_FONT = 44;        // flag glyph size
 const FLAG_COLS = 3;         // flags per row (grid wraps after this)
 const FLAG_GAP = 60;         // horizontal gap between flags
 const FLAG_ROW_GAP = 50;     // vertical gap between grid rows
-
-const PREF_UNLOCKED = 'campaign.unlocked';
-const DEFAULT_UNLOCKED = 1;
 
 export class SoloScreen {
     constructor(canvas, ctx, uiManager, onSelectChapter) {
@@ -25,15 +22,12 @@ export class SoloScreen {
         this.flagButtons = [];   // one uiManager button per UNLOCKED flag (null for locked), by flag index
     }
 
-    _unlockedCount() { return getPref(PREF_UNLOCKED, DEFAULT_UNLOCKED); }
-
     enter() {
         this.ui.clear();
-        const unlocked = this._unlockedCount();
         // Real uiManager buttons (normal — so onClick fires at the end of the glow, like every button).
         // We don't draw them; we draw the flag using their press/glow state. Rects are set each frame.
         this.flagButtons = FLAGS.map((f, i) =>
-            i < unlocked ? makeButton('', 0, 0, () => this.onSelectChapter(f, i), { blocksInput: true }) : null);
+            isChapterUnlocked(FLAGS, i) ? makeButton('', 0, 0, () => this.onSelectChapter(f, i), { blocksInput: true }) : null);
         this.flagButtons.forEach(b => { if (b) this.ui.buttons.push(b); });
     }
 
@@ -52,13 +46,12 @@ export class SoloScreen {
         const gridH = numRows * flagH + (numRows - 1) * FLAG_ROW_GAP;
         const startX = this.canvas.width / 2 - gridW / 2;
         const top0 = this.canvas.height / 2 - gridH / 2;
-        const unlocked = this._unlockedCount();
         const placed = FLAGS.map((f, i) => {
             const col = i % cols, r = Math.floor(i / cols);
             const x = startX + col * (flagW + FLAG_GAP), top = top0 + r * (flagH + FLAG_ROW_GAP);
             const btn = this.flagButtons[i];
             if (btn) btn.rect = { x, y: top, w: flagW, h: flagH };
-            return { flag: f, unlocked: i < unlocked, x, top, btn };
+            return { flag: f, unlocked: isChapterUnlocked(FLAGS, i), x, top, btn };
         });
         return { placed, lh };
     }

@@ -7,6 +7,7 @@ import { SettingsScreen } from './screens/SettingsScreen.js';
 import { SettingsOverlay } from './screens/SettingsOverlay.js';
 import { QuickJoinOverlay } from './screens/QuickJoinOverlay.js';
 import { SoloGame } from './solo/SoloGame.js';
+import { completeLevel } from './solo/progress.js';
 import { SoloScreen } from './screens/SoloScreen.js';
 import { ChapterScreen } from './screens/ChapterScreen.js';
 import { LobbyScreen } from './screens/LobbyScreen.js';
@@ -51,6 +52,7 @@ let selectedSettings = {};
 let room;
 let currentMode = null;
 let soloGame = null;      // the offline single-player controller when a solo level is active (else null)
+let soloIdent = null;     // { chapterId, levelIdx } of the running campaign level (null = ad-hoc solo)
 let playerName = '';
 let isHost = false;
 let playerList = [];
@@ -319,7 +321,8 @@ const settingsScreen = new SettingsScreen(canvas, ctx, uiManager,
 // Chapter level page (defined before soloScreen so the flag click can target it). onSelectLevel
 // launches that solo level; BACK returns to the flag grid.
 const chapterScreen = new ChapterScreen(canvas, ctx, uiManager,
-    (chapterIdx, levelIdx) => startSolo(soloLevelConfig(chapterIdx, levelIdx)),
+    (chapterIdx, levelIdx) => startSolo(soloLevelConfig(chapterIdx, levelIdx),
+        { chapterId: chapterScreen.chapter?.id, levelIdx }),
     () => showScreen('solo')
 );
 
@@ -967,9 +970,9 @@ function setupRoomMessages(isReconnecting = false) {
 }
 
 // --- Solo (offline single-player) ---
-// STEP 2: launch one hardcoded level to prove offline play. No server, no networking — the whole
-// round runs from the shared gameSim in the browser. Chapters, level-select, progress save, and the
-// completion cue are step 3.
+// No server, no networking — the whole round runs from the shared gameSim in the browser.
+// Chapters/levels come from flags.js + ChapterScreen; wins persist via solo/progress.js (gating
+// enforcement is behind its GATED flag, off while content is still being built).
 // Difficulty for chapter `c` (0-based), level `n` (0-based). Placeholder ramp — more characters and
 // speed, less time, as the level climbs (and slightly harder per chapter). Tune later.
 function soloLevelConfig(c, n) {
@@ -980,7 +983,8 @@ function soloLevelConfig(c, n) {
     } };
 }
 
-function startSolo(level = { mode: 'redacted', settings: { charCount: 45, speedScale: 0.2, roundTime: 20 } }) {
+function startSolo(level = { mode: 'redacted', settings: { charCount: 45, speedScale: 0.2, roundTime: 20 } }, ident = null) {
+    soloIdent = ident;               // which campaign level this is (null = ad-hoc launch, no progress)
     if (transition.isActive()) transition.cancelToEnd();
     hideGameOverOverlay();
     if (currentMode) { currentMode.reset?.(); }
@@ -1000,11 +1004,14 @@ function startSolo(level = { mode: 'redacted', settings: { charCount: 45, speedS
     resizeCanvas();
 }
 
-function endSolo() {
+function endSolo(won) {
+    // A win is recorded permanently (progress.js) — level gating reads this once GATED flips on.
+    if (won && soloIdent?.chapterId != null) completeLevel(soloIdent.chapterId, soloIdent.levelIdx);
+    soloIdent = null;
     soloGame = null;
     currentMode = null;
     gameScreen.solo = false;
-    showScreen('chapter');   // back to the chapter's level page (later: mark the level done)
+    showScreen('chapter');   // back to the chapter's level page
 }
 
 function createMode(modeId, data) {

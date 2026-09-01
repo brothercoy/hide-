@@ -49,9 +49,37 @@ export const FLAGS = [
         '====================',
         '====================',
     ] },
-    { id: 'c2', name: 'CHAPTER 2', art: null },
-    { id: 'c3', name: 'CHAPTER 3', art: null },
-    { id: 'c4', name: 'CHAPTER 4', art: null },
-    { id: 'c5', name: 'CHAPTER 5', art: null },
+    // GREECE — canton (white cross on blue) + the 9 stripes reduced to our 5 rows.
+    // AUDITION: c3–c5 are TEMPORARY variants of the same flag so they can be compared live on this
+    // screen (type-in, hover, press all real). Once one wins, its art moves here and c3–c5 revert
+    // to locked placeholders.
+    { id: 'c2', name: 'GREECE', art: [       // V1 — US-style: solid '=' stripes, dashed canton bottom
+        '    |    |==========',
+        '====+====|==========',
+        '    |    |==========',
+        '----------==========',
+        '====================',
+    ] },
+    { id: 'c3', name: 'GREECE', art: [       // V2 — alternating stripes, whites as '-'
+        '    |    |==========',
+        '====+====|----------',
+        '    |    |==========',
+        '--------------------',
+        '====================',
+    ] },
+    { id: 'c4', name: 'GREECE', art: [       // V3 — alternating stripes, whites blank
+        '    |    |==========',
+        '====+====|          ',
+        '    |    |==========',
+        '                    ',
+        '====================',
+    ] },
+    { id: 'c5', name: 'GREECE', art: [       // V4 — like V1 but the cross joint is '|' not '+'
+        '    |    |==========',
+        '====|====|==========',
+        '    |    |==========',
+        '----------==========',
+        '====================',
+    ] },
     { id: 'c6', name: 'CHAPTER 6', art: null },
 ];

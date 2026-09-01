@@ -1,12 +1,12 @@
 // A chapter's level page — reached by selecting a flag on the SOLO screen. Shows the chapter title
 // (the flag's country) and a grid of numbered LEVEL buttons; selecting one launches that solo level.
-// BACK returns to the flag grid. (Per-level lock/complete states come later; all levels are open now.)
+// BACK returns to the flag grid. Locked levels (progress.js gating — inert until GATED flips on)
+// draw as disabled buttons: dim, unclickable, no hover.
 import { makeButton, drawButton, buttonRows } from '../ui/Button.js';
 import { textRow } from '../ui/Transition.js';
 import { theme } from '../ui/colors.js';
 import { bandTop } from '../ui/viewport.js';
-
-export const LEVELS = 12;
+import { LEVELS, isLevelUnlocked } from '../solo/progress.js';
 
 const TITLE_SIZE = 160;      // chapter (country) title
 const TITLE_Y = 50;
@@ -49,7 +49,8 @@ export class ChapterScreen {
         const L = this._layout();
         for (let i = 0; i < LEVELS; i++) {
             this.ui.buttons.push(makeButton(String(i + 1), L.levelPos[i].x, L.levelPos[i].y,
-                () => this.onSelectLevel(this.chapterIdx, i), { blocksInput: true }));
+                () => this.onSelectLevel(this.chapterIdx, i),
+                { blocksInput: true, disabled: !isLevelUnlocked(this.chapter?.id, i) }));
         }
         this.ui.buttons.push(makeButton('BACK', this.canvas.width / 2, L.backY, () => this.onBack(), { blocksInput: true }));
     }
