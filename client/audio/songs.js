@@ -211,7 +211,7 @@ export const SONGS = {
         ],
     },
     "BATTLE": {
-        name: 'BATTLE', bpm: 120,
+        name: 'BATTLE', bpm: 120, tensionStep: 16,
         instruments: ['LEAD', 'BASS'],
         chains: [[0, 1], [0], [0]],
         patterns: [
