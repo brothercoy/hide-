@@ -455,6 +455,11 @@ function deleteSong() {
 // of being padded out to the next power of two. Shrinking discards the rows past
 // the new end, so ask first if any of them actually hold notes.
 const MAX_LEN = 128;
+function setPatGain(pat, g) {
+    g = Math.round(Math.max(0.1, Math.min(2, g)) * 100) / 100;
+    if (g === 1) delete pat.gain; else pat.gain = g;
+    touchSongs();
+}
 function setPatLen(pat, n) {
     n = Math.max(1, Math.min(MAX_LEN, Math.round(n)));
     if (!n || n === pat.len) return;
@@ -597,7 +602,20 @@ function drawTracker() {
     }
     const beats = pat.len / 4;
     text(`(${Number.isInteger(beats) ? beats : beats.toFixed(2)} BEATS)`, x, y, DIM);
-    x += cw * 14;
+    x += cw * 12;
+    // Per-pattern mix level — scales every note this pattern triggers.
+    const pg = Math.round((pat.gain ?? 1) * 100);
+    text(`GAIN:${String(pg).padStart(3)}%`, x, y, pg === 100 ? MID : BRIGHT);
+    addHit(x, y, cw * 9, LH, () => {
+        const v = prompt('PATTERN GAIN % (10-200):', pg);
+        if (v !== null && v.trim() !== '' && !isNaN(+v)) setPatGain(pat, +v / 100);
+    });
+    x += cw * 10;
+    for (const [lbl, d] of [['-', -0.1], ['+', 0.1]]) {
+        text(lbl, x, y, MID);
+        addHit(x, y, cw, LH, () => setPatGain(pat, (pat.gain ?? 1) + d));
+        x += cw * 2;
+    }
     text(`OCT:${octave}`, x, y, MID);
     y += LH + 8;
 
@@ -670,6 +688,11 @@ function drawTracker() {
         'ARROWS ........ MOVE CURSOR',
         'SPACE ......... PLAY/STOP SONG',
         'SHIFT+SPACE ... LOOP THIS PATTERN',
+        'ENTER ......... PLAY SONG FROM CURSOR',
+        '',
+        'GAIN = this pattern\'s mix level: every',
+        'note it triggers is scaled by it (tame a',
+        'boomy bass pattern, push a chorus).',
         '',
         'HOLD = the DAW "drag note longer". A note',
         'plus three | rings four steps, then decays.',
@@ -790,6 +813,22 @@ function typeTest() {
     }
 }
 
+// The cursor's absolute step within the song: where the edited pattern sits in the
+// cursor channel's chain (preferring the selected slot), plus the cursor row. Lets
+// playback drop in mid-song instead of always starting from the top.
+function cursorSongStep(song) {
+    const chain = song.chains[cur.ch];
+    let slot = chainSel[cur.ch];
+    if (chain[slot] !== editPat) {
+        const idx = chain.indexOf(editPat);
+        if (idx < 0) return cur.row;   // pattern isn't in this chain — best effort
+        slot = idx;
+    }
+    let s = 0;
+    for (let i = 0; i < slot; i++) s += song.patterns[chain[i]]?.len || 0;
+    return s + cur.row;
+}
+
 function trackerKey(e) {
     const song = songs[songIdx];
     if (editPat >= song.patterns.length) editPat = 0;
@@ -801,6 +840,12 @@ function trackerKey(e) {
         if (player.playing()) player.stop();
         else if (e.shiftKey) player.play(song, { patternOnly: editPat });
         else player.play(song, { loop: true });
+        return;
+    }
+    if (e.key === 'Enter') {
+        e.preventDefault();
+        // Play the SONG from the cursor's position (restarts there if already playing).
+        player.play(song, { loop: true, startStep: cursorSongStep(song) });
         return;
     }
     if (e.ctrlKey || e.metaKey || e.altKey) return;
@@ -822,15 +867,15 @@ function trackerKey(e) {
     }
     else if (cur.ch === 2) {
         const d = DRUM_ENTRY[k];
-        if (d) { pat.ch[2][cur.row] = d; playPatch(bank[d]); advanceCur(); touchSongs(); }
+        if (d) { pat.ch[2][cur.row] = d; playPatch(bank[d], 0, { gainMul: pat.gain ?? 1 }); advanceCur(); touchSongs(); }
     }
     else if (NOTE_KEYS[k] !== undefined) {
         const midi = (octave + 1) * 12 + NOTE_KEYS[k];
         pat.ch[cur.ch][cur.row] = midi;
         const inst = bank[song.instruments[cur.ch]];
-        // Preview at the length it will actually ring, holds included
+        // Preview at the length and mix level it will actually play at, holds included
         const extra = (noteSteps(pat, cur.ch, cur.row) - 1) * (60 / song.bpm / 4);
-        playPatch(inst, 0, { freqMul: instrumentFreqMul(inst, midi), sustainFor: extra });
+        playPatch(inst, 0, { freqMul: instrumentFreqMul(inst, midi), sustainFor: extra, gainMul: pat.gain ?? 1 });
         advanceCur(); touchSongs();
     }
 }

@@ -5,9 +5,11 @@
 //     name: 'THEME',
 //     bpm: 110,                       // steps are 16th notes: stepDur = 60/bpm/4
 //     instruments: ['LEAD', 'BASS'],  // patch keys for channels 0 and 1
-//     patterns: [ { len: 16|32|64, ch: [ [cell...], [cell...], [cell...] ] } ],
+//     patterns: [ { len: 16|32|64, gain: 1, ch: [ [cell...], [cell...], [cell...] ] } ],
 //     chains: [ [1,1,2], [1,1,2], [0] ],   // ONE PATTERN CHAIN PER CHANNEL
 //   }
+//   A pattern's optional `gain` (default 1) scales every note it triggers — a
+//   per-section mixer knob (quiet intro, pushed chorus, tamed bass pattern).
 //   Channels 0/1 cells: MIDI note number (60 = C-4), HOLD, or null.
 //   Channel  2  cells: drum patch key ('KICK' | 'CLACK' | 'HAT' | 'HAT_OPEN') or null.
 //
@@ -111,9 +113,10 @@ export function createPlayer(resolve) {
             const pattern = song.patterns[loc.pat];
             const cell = pattern?.ch[c][loc.row];
             if (cell == null || cell === HOLD) continue;   // HOLD rows retrigger nothing
+            const pg = pattern.gain ?? 1;                  // per-pattern mix level
             if (c === 2) {
                 const d = resolve(cell);
-                if (d) playPatch(d, t - now(), { bus: 'music' });
+                if (d) playPatch(d, t - now(), { bus: 'music', gainMul: pg });
             } else {
                 const inst = resolve(song.instruments[c]);
                 if (!inst) continue;
@@ -123,6 +126,7 @@ export function createPlayer(resolve) {
                     freqMul: instrumentFreqMul(inst, cell),
                     sustainFor: extra,
                     bus: 'music',
+                    gainMul: pg,
                 });
             }
         }
