@@ -518,6 +518,8 @@ function drawTracker() {
         if (player.playing()) player.stop();
         else player.play(song, { patternOnly: editPat });
     });
+    x += cw * 6;
+    if (song.loopStep) text(`LOOP@${song.loopStep}`, x, y, DIM);
     y += LH + 2;
 
     // ── Rows 2-4: one independent pattern chain per channel ──
@@ -531,13 +533,17 @@ function drawTracker() {
         const chain = song.chains[c];
         text(CHANNEL_NAMES[c], x0, y, cur.ch === c ? BRIGHT : MID);
         x = x0 + cw * 5;
+        let slotStart = 0;
         chain.forEach((p, i) => {
             const sel = i === chainSel[c];
-            const lbl = sel ? `[${p}]` : `${p}`;
+            // '>' marks where the song's loop point lands in this chain (post-intro start)
+            const atLoop = song.loopStep && slotStart === song.loopStep;
+            const lbl = (atLoop ? '>' : '') + (sel ? `[${p}]` : `${p}`);
             const live = pos && pos.chans[c] && pos.chans[c].slot === i;
             text(lbl, x, y, live ? '#aaffaa' : (sel ? BRIGHT : (slotHasNotes(p, c) ? MID : DIM)));
             addHit(x, y, cw * lbl.length, LH, () => { chainSel[c] = i; editPat = p; cur.ch = c; });
             x += cw * (lbl.length + 0.7);
+            slotStart += song.patterns[p]?.len || 0;
         });
         x += cw;
         const sel = () => chainSel[c];
@@ -689,6 +695,10 @@ function drawTracker() {
         'SPACE ......... PLAY/STOP SONG',
         'SHIFT+SPACE ... LOOP THIS PATTERN',
         'ENTER ......... PLAY SONG FROM CURSOR',
+        'L ............. LOOP POINT AT SELECTED SLOT',
+        '                (intro plays once, song then',
+        '                cycles from the > marker; L',
+        '                there again clears it)',
         '',
         'GAIN = this pattern\'s mix level: every',
         'note it triggers is scaled by it (tame a',
@@ -846,6 +856,16 @@ function trackerKey(e) {
         e.preventDefault();
         // Play the SONG from the cursor's position (restarts there if already playing).
         player.play(song, { loop: true, startStep: cursorSongStep(song) });
+        return;
+    }
+    // L — set the song's loop point at the selected slot's start (the intro before
+    // it plays once; the song then cycles from here). L on the same spot clears it.
+    if (e.key === 'l' || e.key === 'L') {
+        const s = cursorSongStep(song) - cur.row;   // slot start, row ignored
+        if (song.loopStep === s || s === 0) delete song.loopStep;
+        else song.loopStep = s;
+        flash(song.loopStep ? `LOOP POINT @ STEP ${s} — INTRO PLAYS ONCE` : 'LOOP POINT CLEARED');
+        touchSongs();
         return;
     }
     if (e.ctrlKey || e.metaKey || e.altKey) return;

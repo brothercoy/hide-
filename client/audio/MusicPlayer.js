@@ -10,6 +10,11 @@
 //   }
 //   A pattern's optional `gain` (default 1) scales every note it triggers — a
 //   per-section mixer knob (quiet intro, pushed chorus, tamed bass pattern).
+//
+//   An optional `loopStep` makes the opening an intro: the song plays 0..end once,
+//   then cycles the region [loopStep, end) forever instead of returning to 0.
+//   (end = the longest chain's total.) Set it on a drum-loop multiple to keep the
+//   drums phase-locked across the wrap.
 //   Channels 0/1 cells: MIDI note number (60 = C-4), HOLD, or null.
 //   Channel  2  cells: drum patch key ('KICK' | 'CLACK' | 'HAT' | 'HAT_OPEN') or null.
 //
@@ -67,6 +72,17 @@ export function chainTotal(song, c) {
     return n;
 }
 
+// Map a raw step onto the song's timeline honoring its loop point: the first pass
+// runs 0..end once, then the region [loopStep, end) repeats. Pure, so it's shared
+// by scheduling and tests.
+export function loopedStep(song, s) {
+    const L = song.loopStep || 0;
+    if (!L) return s;
+    const E = Math.max(chainTotal(song, 0), chainTotal(song, 1), chainTotal(song, 2));
+    if (E <= L || s < E) return s;
+    return L + ((s - L) % (E - L));
+}
+
 // Where channel c sits at global step s: which pattern, which row, which chain slot.
 // Pure, so playback and the UI agree and it can be tested directly.
 export function locate(song, c, s, patternOnly = null) {
@@ -106,8 +122,9 @@ export function createPlayer(resolve) {
 
     function scheduleStep(s, t, stepDur) {
         const chans = [];
+        const es = patternOnly !== null ? s : loopedStep(song, s);
         for (let c = 0; c < 3; c++) {
-            const loc = locate(song, c, s, patternOnly);
+            const loc = locate(song, c, es, patternOnly);
             chans.push(loc);
             if (!loc) continue;
             const pattern = song.patterns[loc.pat];
@@ -145,9 +162,9 @@ export function createPlayer(resolve) {
             // A queued song takes over exactly at a drum-loop boundary, inheriting
             // the beat grid (nextTime carries straight on) — the "vertical" handoff.
             if (pending && step > 0 && step % quantum() === 0) {
-                song = pending;
+                song = pending.song;
+                step = pending.startStep || 0;
                 pending = null;
-                step = 0;
                 posQueue = [];
             }
             const stepDur = 60 / song.bpm / 4 / tempoScale;
@@ -160,13 +177,14 @@ export function createPlayer(resolve) {
     }
 
     // Queue a song to take over at the end of the current song's drum-loop pass —
-    // the theme finishes its full measure, then the next song enters on the beat.
+    // the theme finishes its full measure, then the next song enters on the beat,
+    // at `startStep` (e.g. its loop point, to skip an already-heard intro).
     // Falls back to an immediate play when nothing is running.
-    function queue(s) {
-        if (!timer || !song) { play(s, { loop: true }); return; }
+    function queue(s, startStep = 0) {
+        if (!timer || !song) { play(s, { loop: true, startStep }); return; }
         const next = normalizeSong(s);
         if (next === song) { pending = null; return; }
-        pending = next;
+        pending = { song: next, startStep };
     }
 
     // Scale playback speed without touching pitch. rampS eases there over that many

@@ -17,6 +17,7 @@ const player = createPlayer(k => PATCHES[k]);
 
 let desired = null;   // song name the game wants right now (null = silence)
 let current = null;   // song name actually playing
+const heard = new Set();   // songs whose intro has already played this session
 
 export function setMusic(name) {
     desired = name;
@@ -33,7 +34,10 @@ export function syncMusic() {
     // Musical handoff: the running song finishes its current drum-loop pass, then
     // the new one enters on the beat (immediate when nothing is playing). Asking
     // for the running song again before the boundary cancels the switch.
-    player.queue(song);
+    // A song's intro plays only the FIRST time this session — every later entry
+    // (e.g. back to the menu after a match) drops straight into its loop region.
+    player.queue(song, heard.has(song.name) ? (song.loopStep || 0) : 0);
+    heard.add(song.name);
     current = song.name;
 }
 
