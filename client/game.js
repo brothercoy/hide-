@@ -872,7 +872,7 @@ function setupRoomMessages(isReconnecting = false) {
         currentMode.countdownActive = true;
         currentMode.countdownStartTime = null;
         if (data.timeLeft != null) currentMode.timeLeft = data.timeLeft;   // box timer shows the real round time from frame one
-        setMusic(null);   // the Find/countdown screen is silent — BATTLE starts at roundStart
+        setMusic(null, { atBar: true });   // the theme finishes its measure, then the Find screen is silent
         currentScreen = 'game';
         uiManager.clear();
         setupGameHud();
@@ -993,7 +993,7 @@ function startSolo(level = { mode: 'redacted', settings: { charCount: 45, speedS
     gameScreen.prewarmGlyphs();
     soloGame = new SoloGame(canvas, ctx, level, gameScreen.charRadii(), { onEnd: endSolo });
     currentMode = soloGame;         // drawScreenInto('game') → soloGame.draw(gameScreen)
-    setMusic(null);                 // silent through the Find/countdown — BATTLE starts with the round
+    setMusic(null, { atBar: true }); // the theme finishes its measure; BATTLE starts with the round
     currentScreen = 'game';
     uiManager.blocked = false;
     uiManager.lastTime = performance.now();

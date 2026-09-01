@@ -17,17 +17,26 @@ const player = createPlayer(k => PATCHES[k]);
 
 let desired = null;   // song name the game wants right now (null = silence)
 let current = null;   // song name actually playing
+let stopAtBar = false;     // silence request rides to the next drum-loop boundary
 const heard = new Set();   // songs whose intro has already played this session
 
-export function setMusic(name) {
+// setMusic(null, { atBar: true }) lets the running song finish its current
+// measure before going silent (a menu song bowing out as a game begins);
+// plain setMusic(null) cuts immediately (round endings).
+export function setMusic(name, opts = {}) {
     desired = name;
+    stopAtBar = !name && !!opts.atBar;
 }
 
 export function syncMusic() {
     if (!audioReady()) return;
     const song = desired ? SONGS[desired] : null;
     if (!song) {
-        if (current) { player.stop(); current = null; }
+        if (current) {
+            if (stopAtBar) player.queue(null);
+            else player.stop();
+            current = null;
+        }
         return;
     }
     if (current === song.name && player.playing()) return;

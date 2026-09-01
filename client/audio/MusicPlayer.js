@@ -180,6 +180,10 @@ export function createPlayer(resolve) {
             // A queued song takes over exactly at a drum-loop boundary, inheriting
             // the beat grid (nextTime carries straight on) — the "vertical" handoff.
             if (step > 0 && step % quantum() === 0) {
+                if (pending && pending.song === null) {
+                    stop();                      // quantized stop — the measure just ended
+                    return;
+                }
                 if (pending) {
                     song = pending.song;
                     step = pending.startStep || 0;
@@ -206,8 +210,13 @@ export function createPlayer(resolve) {
     // Queue a song to take over at the end of the current song's drum-loop pass —
     // the theme finishes its full measure, then the next song enters on the beat,
     // at `startStep` (e.g. its loop point, to skip an already-heard intro).
+    // queue(null) is a QUANTIZED STOP: the song finishes its measure, then silence.
     // Falls back to an immediate play when nothing is running.
     function queue(s, startStep = 0) {
+        if (s == null) {
+            if (timer) pending = { song: null, startStep: 0 };
+            return;
+        }
         if (!timer || !song) { play(s, { loop: true, startStep }); return; }
         const next = normalizeSong(s);
         if (next === song) { pending = null; return; }
