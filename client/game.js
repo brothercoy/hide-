@@ -396,10 +396,15 @@ function enterScreen(name, opts) {
     if (s) s.enter(opts);
 }
 
+// Which song underlies which menu: the original THEME owns the pre-game spaces
+// (lobby, level select); THEME2 carries every other menu. Switches ride the
+// beat-aligned handoff, and each song's intro plays only once per session —
+// leaving a match for the lobby or the main menu re-enters the right song at
+// its loop point.
+const SCREEN_MUSIC = { lobby: 'THEME', chapter: 'THEME' };
+
 function showScreen(name, opts = {}) {
-    // Every screen that goes through here is a menu — the theme loops under all
-    // of them. (The game bypasses showScreen and asks for BATTLE instead.)
-    setMusic('THEME');
+    setMusic(SCREEN_MUSIC[name] || 'THEME2');
     // Instant path: first paint, explicit request, or font not ready.
     if (currentScreen === null || opts.instant || !fontReady) {
         const firstPaint = currentScreen === null;
