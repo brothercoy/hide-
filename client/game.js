@@ -1030,7 +1030,7 @@ const MODAL_OK_SNAP_STEP = 10;   // px the brackets flash inward
 const MODAL_OK_FLASH_IN = 600;   // ms the brackets stay snapped in
 const MODAL_OK_FLASH_OUT = 600;  // ms at rest between flashes
 
-const modalOk = { hover: 0, animT: 0, snap: 0, over: false, rect: null };
+const modalOk = { hover: 0, animT: 0, snap: 0, over: false, pressed: false, rect: null };
 
 function showModal(message) {
     sfx('ERROR');
@@ -1095,10 +1095,13 @@ function drawModal() {
     // OK (row 4) — brackets face OUTWARD at rest ( { OK } ); on hover they swap
     // to inward ( } OK { ) and flash tight→spread.
     const okY = boxTop + 4 * lh;
-    const gap = MODAL_OK_REST - modalOk.snap;
+    // Held down: brackets hold the pressed state (inward, snapped tight, steady) —
+    // same hold-preview as every bracket control.
+    const held = modalOk.pressed;
+    const gap = MODAL_OK_REST - (held ? MODAL_OK_SNAP_STEP : modalOk.snap);
     ctx.fillText('OK', cx, okY);
-    ctx.fillText(modalOk.over ? '}' : '{', cx - gap, okY);
-    ctx.fillText(modalOk.over ? '{' : '}', cx + gap, okY);
+    ctx.fillText(held || modalOk.over ? '}' : '{', cx - gap, okY);
+    ctx.fillText(held || modalOk.over ? '{' : '}', cx + gap, okY);
 
     // Hit rect uses the REST spread (widest extent) so hovering doesn't shrink it
     // and flicker the hover state.
@@ -1579,11 +1582,15 @@ document.addEventListener('visibilitychange', () => {
 
 canvas.addEventListener('mousedown', (e) => {
     if (gateActive) return;   // portrait rotate gate — ignore input
-    // Modal OK: the press sound belongs on press-down (the action still fires on click).
+    // Modal OK: the press sound belongs on press-down (the action still fires on
+    // click), and while held the brackets hold their pressed state.
     if (modalMessage) {
         const p = hudEventPos(e);
         const r = getModalOkRect();
-        if (p.x >= r.x && p.x <= r.x + r.w && p.y >= r.y && p.y <= r.y + r.h) sfx('BTN_PRESS');
+        if (p.x >= r.x && p.x <= r.x + r.w && p.y >= r.y && p.y <= r.y + r.h) {
+            modalOk.pressed = true;
+            sfx('BTN_PRESS');
+        }
         return;
     }
     if (transition.isActive() || hudIntroPending) return;
@@ -1615,6 +1622,7 @@ canvas.addEventListener('mousedown', (e) => {
 
 canvas.addEventListener('mouseup', (e) => {
     if (gateActive) return;   // portrait rotate gate — ignore input
+    modalOk.pressed = false;  // end the OK hold-preview (dismissal itself rides the click)
     const { x, y } = hudEventPos(e);
     if (quickJoinSearching) { quickJoinOverlay.onMouseUp(x, y); return; }
     if (settingsPanelOpen) { settingsOverlay.onMouseUp(x, y); return; }

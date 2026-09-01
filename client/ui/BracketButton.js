@@ -60,9 +60,11 @@ export function drawBracketButton(ctx, btn, elapsed, FONT_SIZE) {
     // Active non-toggle (COPY CODE "COPIED!"): just held INNER, no hover anim.
     // HELD DOWN: preview the state release will produce — the OPPOSITE of the
     // current one, held steady (no pulse): pressing an unselected toggle holds the
-    // brackets in; pressing a selected one holds them spread out.
+    // brackets in; pressing a selected TOGGLE holds them spread out. An ACTIVE
+    // non-toggle (a selected theme/speed option, COPIED!) can't be deselected, so
+    // it previews nothing.
     let snap, outward = false;
-    if (btn._isPressed && !btn.disabled) {
+    if (btn._isPressed && !btn.disabled && (btn.toggle || !btn.active)) {
         if (btn.active) { snap = 0; outward = true; }   // will deselect → held spread
         else { snap = BRACKET_STEP; }                    // will select → held tight in
     } else if (btn.active) {
