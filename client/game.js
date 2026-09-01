@@ -667,6 +667,7 @@ const GO_BTN_SPACING  = 120;    // vertical gap between the stacked vote-button 
 
 // Scripted game-over reveal timeline (ms from when the overlay appears).
 let gameOverStart = 0;
+let gameOverTicked = 0;   // audio: chars already tick'd during the winner reveal
 const GO_SCRIM_MS   = 1000;  // scrim interpolates 0 → GAME_OVER_SCRIM over this; "Winner:" shows meanwhile
 const GO_PAUSE1_MS  = 500;   // pause (cursor blinking after "Winner:") before the name types
 const GO_NAME_MS    = 75;    // per-character type speed for the winner's name (and the '!')
@@ -751,15 +752,21 @@ function drawGameOverModal() {
     // Vote buttons type in one after another; drawButtonPartial reflects live hover/press and sets
     // the hit-rect, so they're fully interactive while (and after) they appear.
     layoutGameOverButtons();
+    let typedChars = revealed;   // winner-name chars shown — feeds the teletype tick
     const btns = [gameOverBtns.playAgain, gameOverBtns.returnToLobby, gameOverBtns.mainMenu].filter(Boolean);
     for (let i = 0; i < btns.length; i++) {
         const start = btnsStart + i * (GO_BTN_MS + GO_BTN_GAP_MS);
         if (t < start) continue;
         const b = btns[i];
         const p = Math.min(1, (t - start) / GO_BTN_MS);
+        const n = p >= 1 ? buttonCharCount(b, GO_BTN_SIZE) : Math.ceil(p * buttonCharCount(b, GO_BTN_SIZE));
+        typedChars += n;
         if (p >= 1) drawButton(ctx, b, uiManager.elapsed, GO_BTN_SIZE);
-        else drawButtonPartial(ctx, b, Math.ceil(p * buttonCharCount(b, GO_BTN_SIZE)), uiManager.elapsed, GO_BTN_SIZE);
+        else drawButtonPartial(ctx, b, n, uiManager.elapsed, GO_BTN_SIZE);
     }
+    // The reveal ticks like every other typed feed (name keystrokes + button rows).
+    if (typedChars > gameOverTicked) feedTick(typedChars - gameOverTicked, 2);
+    gameOverTicked = Math.max(gameOverTicked, typedChars);
 }
 
 // PLAY AGAIN needs at least two connected players, so disable it (dim + non-interactive)
@@ -773,6 +780,8 @@ function updatePlayAgainState() {
 function showGameOverOverlay(winner) {
     winnerId = winner;
     gameOverStart = performance.now();   // kick off the scripted reveal
+    gameOverTicked = 0;                  // reset the winner-typing tick counter
+    setMusic(null);                      // the winner screen is silent, by design not by luck
     uiManager.clear();
     // Same interaction/look as the lobby's REDACTED/FREQUENCY mode buttons: fire on
     // release, no glow pulse, '*' corners.
@@ -863,7 +872,7 @@ function setupRoomMessages(isReconnecting = false) {
         currentMode.countdownActive = true;
         currentMode.countdownStartTime = null;
         if (data.timeLeft != null) currentMode.timeLeft = data.timeLeft;   // box timer shows the real round time from frame one
-        setMusic('BATTLE');   // theme out — battle track in (silence until one named BATTLE is composed)
+        setMusic(null);   // the Find/countdown screen is silent — BATTLE starts at roundStart
         currentScreen = 'game';
         uiManager.clear();
         setupGameHud();
@@ -924,7 +933,6 @@ function setupRoomMessages(isReconnecting = false) {
                 pendingLobbyEntry = false; // reconnecting into a live game, not the lobby
                 if (transition.isActive()) transition.cancelToEnd();
                 if (!currentMode) currentMode = createMode(data.mode || 'redacted', data);
-                setMusic('BATTLE');
                 currentScreen = 'game';
                 uiManager.clear();
                 setupGameHud();
@@ -936,17 +944,24 @@ function setupRoomMessages(isReconnecting = false) {
                 // is landing on the screen for the first time, so it types in like any other.
                 if (!data.resumed) typeGameIn();
             }
-            // The characters appear the moment the round goes live.
-            if (type === 'roundStart') sfx('ROUND_START');
-            // Each new round's countdown re-arms the battle music (it stops on a
-            // time-up, and this is a no-op while it's already playing).
-            if (type === 'roundCountdown') setMusic('BATTLE');
+            // BATTLE plays ONLY while a round is live: it enters with the characters
+            // at roundStart, and every other surface — the Find/countdown screen,
+            // round-over lives/points, scoreboards, match/game over — is silent.
+            if (type === 'roundStart') { sfx('ROUND_START'); setMusic('BATTLE'); }
+            if (type === 'roundCountdown' || type === 'roundOver' || type === 'roundResult'
+                || type === 'matchOver' || type === 'gameOver') setMusic(null);
             // Time ran out: the round-open sound, dropped low — a power-down — and
             // the battle music cuts.
             if (type === 'timeUp') { sfx('ROUND_START', { freqMul: 0.45 }); setMusic(null); }
             if (currentMode) currentMode.onMessage(type, data);
             // After the mode ingests the round, its char field is populated — type them in.
             if (type === 'roundStart') tickBurst(currentMode?.chars?.length);
+            // Reconnecting lands on whatever surface the round is at — match the audio to it.
+            if (type === 'reconnected' && data.gameStarted) {
+                const live = currentMode && !currentMode.countdownActive && !currentMode.showRoundOver
+                    && !currentMode.showRoundResult && !currentMode.showMatchOver && !currentMode.winnerId;
+                setMusic(live ? 'BATTLE' : null);
+            }
         });
     });
 }
@@ -978,7 +993,7 @@ function startSolo(level = { mode: 'redacted', settings: { charCount: 45, speedS
     gameScreen.prewarmGlyphs();
     soloGame = new SoloGame(canvas, ctx, level, gameScreen.charRadii(), { onEnd: endSolo });
     currentMode = soloGame;         // drawScreenInto('game') → soloGame.draw(gameScreen)
-    setMusic('BATTLE');
+    setMusic(null);                 // silent through the Find/countdown — BATTLE starts with the round
     currentScreen = 'game';
     uiManager.blocked = false;
     uiManager.lastTime = performance.now();

@@ -66,6 +66,7 @@ export class SoloGame {
                 this.timeLeft = this.settings.roundTime;
                 this.lastUpdateTime = now;
                 sfx('ROUND_START');                 // same round-open as multiplayer
+                setMusic('BATTLE');                 // music runs only while the round is live
                 tickBurst(this.chars?.length);      // the field types in
             }
             return;
@@ -88,11 +89,9 @@ export class SoloGame {
         this.phase = 'done';
         this.won = won;
         this._doneAt = Date.now();
-        if (!won) {
-            // Time's up — the round-open sound dropped low (a power-down), music cut.
-            sfx('ROUND_START', { freqMul: 0.45 });
-            setMusic(null);
-        }
+        setMusic(null);   // the result screen is silent, win or lose
+        // Time's up — the round-open sound dropped low (a power-down).
+        if (!won) sfx('ROUND_START', { freqMul: 0.45 });
     }
 
     // Tapped the target (game.js calls this when GameScreen.hitTest reports a hit) → level complete.
