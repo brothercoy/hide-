@@ -127,13 +127,9 @@ export const PATCHES = {
         ],
     },
     BASS: {
-        name: 'BASS', desc: 'Tracker bass — sub fundamental + quiet octave-up square so low notes stay audible',
+        name: 'BASS', desc: 'Tracker bass — tuned by ear; tracker pitches notes relative to voice 1',
         voices: [
             { wave: 'triangle', freq: 31, freqEnd: null, delay: 0, attack: 0.004, decay: 2.036, gain: 0.045, filter: { type: 'lowpass', cutoff: 2500, q: 0.7 } },
-            // Octave-doubling layer (2x voice 1, tracked automatically): square harmonics
-            // give a low note presence on small speakers without moving the note up.
-            // Tune its GAIN in the lab to set how much "audible" rides over the "felt".
-            { wave: 'square', freq: 62, freqEnd: null, delay: 0, attack: 0.004, decay: 2.036, gain: 0.014, filter: { type: 'lowpass', cutoff: 1200, q: 0.7 } },
         ],
     },
 
