@@ -50,3 +50,16 @@ export function setMusicTempo(mul, rampS = 2) {
     tempoTarget = mul;
     player.setTempo(mul, rampS);
 }
+
+// Round-tension mode, asserted every frame by the game: ramps toward double speed
+// over the tension window, and — if the current song marks a tensionStep — jumps
+// playback into that section (on a drum-loop boundary) and loops only it until
+// tension lifts. Songs without a tensionStep just speed up in full, as before.
+let tense = false;
+export function setMusicTension(on) {
+    if (on === tense) return;
+    tense = on;
+    setMusicTempo(on ? 2 : 1, on ? 10 : 1);
+    const song = current ? SONGS[current] : null;
+    player.setSection(on && song?.tensionStep != null ? song.tensionStep : null);
+}

@@ -15,6 +15,10 @@
 //   then cycles the region [loopStep, end) forever instead of returning to 0.
 //   (end = the longest chain's total.) Set it on a drum-loop multiple to keep the
 //   drums phase-locked across the wrap.
+//
+//   An optional `tensionStep` marks the song's tension section: when the game
+//   raises tension (a round's final seconds), playback jumps there on a drum-loop
+//   boundary and confines itself to [tensionStep, end) until tension lifts.
 //   Channels 0/1 cells: MIDI note number (60 = C-4), HOLD, or null.
 //   Channel  2  cells: drum patch key ('KICK' | 'CLACK' | 'HAT' | 'HAT_OPEN') or null.
 //
@@ -114,15 +118,29 @@ export function createPlayer(resolve) {
     let pending = null;      // song queued to take over at the next drum-loop boundary
     let tempoScale = 1;      // 1 = song bpm; >1 = faster. Ramped toward tempoTarget.
     let tempoTarget = 1, tempoRate = 0;
+    let section = null;      // when set: playback confines to [section, end) — tension mode
+    let pendingSection;      // undefined = no change queued; number|null applies at a boundary
 
     // The musical switching quantum: one full pass of the song's drum chain.
     function quantum() {
         return chainTotal(song, 2) || song.patterns[0]?.len || 16;
     }
 
+    function endTotal() {
+        return Math.max(chainTotal(song, 0), chainTotal(song, 1), chainTotal(song, 2));
+    }
+
+    // The song timeline honoring an active section confinement, else the loop point.
+    function confinedStep(s) {
+        if (section == null) return loopedStep(song, s);
+        const E = endTotal();
+        if (E <= section) return loopedStep(song, s);   // bogus section — ignore it
+        return s < section ? s : section + ((s - section) % (E - section));
+    }
+
     function scheduleStep(s, t, stepDur) {
         const chans = [];
-        const es = patternOnly !== null ? s : loopedStep(song, s);
+        const es = patternOnly !== null ? s : confinedStep(s);
         for (let c = 0; c < 3; c++) {
             const loc = locate(song, c, es, patternOnly);
             chans.push(loc);
@@ -161,11 +179,20 @@ export function createPlayer(resolve) {
         while (timer && step < endStep && nextTime < now() + AHEAD) {
             // A queued song takes over exactly at a drum-loop boundary, inheriting
             // the beat grid (nextTime carries straight on) — the "vertical" handoff.
-            if (pending && step > 0 && step % quantum() === 0) {
-                song = pending.song;
-                step = pending.startStep || 0;
-                pending = null;
-                posQueue = [];
+            if (step > 0 && step % quantum() === 0) {
+                if (pending) {
+                    song = pending.song;
+                    step = pending.startStep || 0;
+                    pending = null;
+                    section = null;              // a new song starts unconfined
+                    pendingSection = undefined;
+                    posQueue = [];
+                }
+                if (pendingSection !== undefined) {
+                    section = pendingSection;
+                    pendingSection = undefined;
+                    if (section != null) step = section;   // jump into the section on the beat
+                }
             }
             const stepDur = 60 / song.bpm / 4 / tempoScale;
             scheduleStep(step, nextTime, stepDur);
@@ -194,12 +221,21 @@ export function createPlayer(resolve) {
         tempoRate = rampS > 0 ? Math.abs(tempoTarget - tempoScale) / rampS : Infinity;
     }
 
+    // Confine playback to [startStep, end) — the tension section — entering on the
+    // next drum-loop boundary. null lifts the confinement (wraps resume normally).
+    // Mark section starts on drum-loop multiples to keep boundaries aligned.
+    function setSection(startStep) {
+        if (!timer) { section = startStep ?? null; pendingSection = undefined; return; }
+        pendingSection = startStep ?? null;
+    }
+
     function play(s, opts = {}) {
         stop();
         song = normalizeSong(s);
         loop = opts.loop !== false;
         patternOnly = opts.patternOnly ?? null;
         tempoScale = 1; tempoTarget = 1; tempoRate = 0;
+        section = null; pendingSection = undefined;
         step = opts.startStep || 0;
         endStep = Infinity;
         if (!loop) {
@@ -227,5 +263,5 @@ export function createPlayer(resolve) {
         return posQueue[0].t <= now() + 0.03 ? posQueue[0] : null;
     }
 
-    return { play, queue, setTempo, stop, playing, position };
+    return { play, queue, setTempo, setSection, stop, playing, position };
 }

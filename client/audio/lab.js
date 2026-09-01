@@ -519,7 +519,8 @@ function drawTracker() {
         else player.play(song, { patternOnly: editPat });
     });
     x += cw * 6;
-    if (song.loopStep) text(`LOOP@${song.loopStep}`, x, y, DIM);
+    if (song.loopStep) { text(`LOOP@${song.loopStep}`, x, y, DIM); x += cw * 10; }
+    if (song.tensionStep != null) text(`TENSE@${song.tensionStep}`, x, y, DIM);
     y += LH + 2;
 
     // ── Rows 2-4: one independent pattern chain per channel ──
@@ -536,9 +537,10 @@ function drawTracker() {
         let slotStart = 0;
         chain.forEach((p, i) => {
             const sel = i === chainSel[c];
-            // '>' marks where the song's loop point lands in this chain (post-intro start)
+            // '>' marks the loop point, '*' the tension section, where they land in this chain
             const atLoop = song.loopStep && slotStart === song.loopStep;
-            const lbl = (atLoop ? '>' : '') + (sel ? `[${p}]` : `${p}`);
+            const atTense = song.tensionStep != null && slotStart === song.tensionStep;
+            const lbl = (atLoop ? '>' : '') + (atTense ? '*' : '') + (sel ? `[${p}]` : `${p}`);
             const live = pos && pos.chans[c] && pos.chans[c].slot === i;
             text(lbl, x, y, live ? '#aaffaa' : (sel ? BRIGHT : (slotHasNotes(p, c) ? MID : DIM)));
             addHit(x, y, cw * lbl.length, LH, () => { chainSel[c] = i; editPat = p; cur.ch = c; });
@@ -699,6 +701,9 @@ function drawTracker() {
         '                (intro plays once, song then',
         '                cycles from the > marker; L',
         '                there again clears it)',
+        'F ............. TENSION SECTION AT SLOT (*):',
+        '                a round\'s final seconds play',
+        '                only [here, end), sped up',
         '',
         'GAIN = this pattern\'s mix level: every',
         'note it triggers is scaled by it (tame a',
@@ -865,6 +870,16 @@ function trackerKey(e) {
         if (song.loopStep === s || s === 0) delete song.loopStep;
         else song.loopStep = s;
         flash(song.loopStep ? `LOOP POINT @ STEP ${s} — INTRO PLAYS ONCE` : 'LOOP POINT CLEARED');
+        touchSongs();
+        return;
+    }
+    // F — mark the TENSION section at the selected slot's start: in a round's
+    // final seconds the game plays only [here, end), sped up. F there again clears.
+    if (e.key === 'f' || e.key === 'F') {
+        const s = cursorSongStep(song) - cur.row;
+        if (song.tensionStep === s) delete song.tensionStep;
+        else song.tensionStep = s;
+        flash(song.tensionStep != null ? `TENSION SECTION @ STEP ${s} — FINAL-SECONDS LOOP` : 'TENSION SECTION CLEARED');
         touchSongs();
         return;
     }
