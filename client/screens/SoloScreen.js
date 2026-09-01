@@ -53,7 +53,28 @@ export class SoloScreen {
             if (btn) btn.rect = { x, y: top, w: flagW, h: flagH };
             return { flag: f, unlocked: isChapterUnlocked(FLAGS, i), x, top, btn };
         });
-        return { placed, lh };
+        return { placed, lh, cw };
+    }
+
+    // Freeform overlay glyphs (flag.overlays) — drawn on top of the grid art at fractional cell
+    // positions with per-glyph size (see flags.js). First `n` only, so the type-in can pop them
+    // one by one after the flag's rows. Resets font/align state for the caller's grid drawing.
+    _drawOverlays(flag, x, top, cw, lh, st, n = Infinity) {
+        const ctx = this.ctx;
+        const list = flag.overlays || [];
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.globalAlpha = st.alpha;
+        ctx.fillStyle = st.color;
+        for (let i = 0; i < Math.min(n, list.length); i++) {
+            const o = list[i];
+            ctx.font = `${Math.round(FLAG_FONT * (o.s || 1))}px "IBMVGA"`;
+            ctx.fillText(o.ch, x + cw + o.x * cw, top + lh + o.y * lh);
+        }
+        ctx.font = `${FLAG_FONT}px "IBMVGA"`;
+        ctx.textAlign = 'left';
+        ctx.textBaseline = 'top';
+        ctx.globalAlpha = 1;
     }
 
     // Live render state for a flag from its button lifecycle — alpha (z→dim on press), colour (glow on
@@ -77,7 +98,7 @@ export class SoloScreen {
     // One typeable per flag row (grouped by Y so flags in a grid row type together). Each draw reads the
     // LIVE flag state, so hovering/pressing during the scroll-in animates just like it does at rest.
     getTypeables() {
-        const { placed, lh } = this._flagLayout();
+        const { placed, lh, cw } = this._flagLayout();
         const font = `${FLAG_FONT}px "IBMVGA"`;
         const rows = [];
         for (const { flag, unlocked, x, top, btn } of placed) {
@@ -95,13 +116,23 @@ export class SoloScreen {
                     },
                 });
             }
+            // Overlay glyphs pop in one by one after the flag's bottom border (like the menu specials).
+            if (unlocked && flag.overlays?.length) {
+                rows.push({
+                    y: top + (FLAG_H - 1) * lh + 1, x, cost: flag.overlays.length,
+                    draw: (ctx, n) => {
+                        if (n <= 0) return;
+                        this._drawOverlays(flag, x, top, cw, lh, this._flagState(unlocked, btn), n);
+                    },
+                });
+            }
         }
         return rows;
     }
 
     draw() {
         const ctx = this.ctx;
-        const { placed, lh } = this._flagLayout();
+        const { placed, lh, cw } = this._flagLayout();
         ctx.font = `${FLAG_FONT}px "IBMVGA"`;
         ctx.textAlign = 'left';
         ctx.textBaseline = 'top';
@@ -110,6 +141,7 @@ export class SoloScreen {
             ctx.globalAlpha = st.alpha;
             ctx.fillStyle = st.color;
             flagRows(flag, unlocked, st.hover, st.pressed).forEach((r, i) => ctx.fillText(r, x, top + i * lh));
+            if (unlocked && flag.overlays?.length) this._drawOverlays(flag, x, top, cw, lh, st);
         }
         ctx.globalAlpha = 1;
     }
