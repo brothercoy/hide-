@@ -1367,6 +1367,7 @@ function hudOnMouseDown(mx, my) {
             hudPressedItem = it;
             it.releasePhase = null;
             it.glowT = 0;
+            sfx('BTN_PRESS');   // press-down, like every other button
             break;
         }
     }
@@ -1578,7 +1579,14 @@ document.addEventListener('visibilitychange', () => {
 
 canvas.addEventListener('mousedown', (e) => {
     if (gateActive) return;   // portrait rotate gate — ignore input
-    if (transition.isActive() || modalMessage || hudIntroPending) return;
+    // Modal OK: the press sound belongs on press-down (the action still fires on click).
+    if (modalMessage) {
+        const p = hudEventPos(e);
+        const r = getModalOkRect();
+        if (p.x >= r.x && p.x <= r.x + r.w && p.y >= r.y && p.y <= r.y + r.h) sfx('BTN_PRESS');
+        return;
+    }
+    if (transition.isActive() || hudIntroPending) return;
     if (quickJoinSearching) { const p = hudEventPos(e); quickJoinOverlay.onMouseDown(p.x, p.y); return; }
     if (settingsPanelOpen) { const p = hudEventPos(e); settingsOverlay.onMouseDown(p.x, p.y); return; }
     const { x, y } = hudEventPos(e);
@@ -1630,8 +1638,7 @@ canvas.addEventListener('click', (e) => {
 
     if (modalMessage) {
         if (hits(getModalOkRect())) {
-            sfx('BTN_PRESS');   // bracket-style OK — press-only, like the other toggles
-            modalMessage = null;
+            modalMessage = null;   // press sound already rang on mousedown
             uiManager.blocked = false;
             uiManager.lastTime = performance.now();
         }
@@ -1650,7 +1657,7 @@ canvas.addEventListener('click', (e) => {
 
     if (!hudIntroPending) {
         const hudItem = hudHit(mx, my);
-        if (hudItem) { sfx('BTN_PRESS'); hudItem.onClick(); return; }
+        if (hudItem) { hudItem.onClick(); return; }   // press sound already rang on mousedown
     }
 
     // Game taps (target press/glow + miss glitch) are handled on mousedown/mouseup above so a

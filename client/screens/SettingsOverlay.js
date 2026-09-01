@@ -137,8 +137,8 @@ export class SettingsOverlay {
                 this._pressed = btn;
                 this._mouseDown = true;
                 sfx('BTN_PRESS');
+                btn._isPressed = true;   // brackets use this for the hold-preview
                 if (!btn.plain) {
-                    btn._isPressed = true;
                     if (btn.releasePhase === 'returning') { btn.releasePhase = null; btn.charZ = null; btn.charRot = null; }
                 }
                 return;
@@ -152,7 +152,7 @@ export class SettingsOverlay {
         this._pressed = null;
         this._mouseDown = false;
         if (!btn) return;
-        if (!btn.plain) btn._isPressed = false;
+        btn._isPressed = false;
         if (this._hit(btn.rect, mx, my)) {
             // Plain (theme options) fire immediately on release; normal (MAIN MENU) overshoot into the
             // glow and fire onClick at its end (updateButtonZ sets _fireClick) — same as uiManager.

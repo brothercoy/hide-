@@ -27,14 +27,14 @@ export function unlockAudio() {
     startAmbience();   // the monitor hum runs under everything from the moment audio lives
 }
 
-// The CRT's transformer-hum bed — continuous, quiet, on the music bus so the
-// MUSIC slider governs the "background" layer as a whole. Toggleable in settings
-// via the ambience.hum pref.
+// The CRT's transformer-hum bed — continuous, quiet, on the SFX bus (it's part of
+// the machine, not the soundtrack — the SFX slider governs it). Toggleable in
+// settings via the ambience.hum pref.
 let ambience = null;
 export function startAmbience() {
     if (ambience || !audioReady()) return;
     if (!getPref('ambience.hum', true)) return;
-    ambience = startSustain(PATCHES.HUM, 0.5, 'music');
+    ambience = startSustain(PATCHES.HUM, 0.5);
 }
 export function stopAmbience() {
     if (ambience) { ambience.stop(); ambience = null; }
