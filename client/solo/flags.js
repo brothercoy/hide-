@@ -59,19 +59,32 @@ export const FLAGS = [
     // glyphs: '_' draws at a cell's BOTTOM edge, '¯' (macron) at its TOP — so the horizontal arm's
     // lips can sit exactly on its boundaries. AUDITION: c3 is a TEMPORARY variant for live
     // comparison; the winner keeps c2 and the spare reverts to a locked placeholder.
+    // Stripes are OVERLAY '=' lines at the row BOUNDARIES (integer y) — the empty space a solid
+    // block of grid '=' rows leaves between its rows — so each stripe's double line straddles the
+    // seam instead of sitting at a cell's center. The grid art carries only the canton.
     { id: 'c2', name: 'GREECE', art: [       // A — 3-row canton (V2 layout): the arm's line on its
-        '|||   ||| ==========',               //     TOP layer (¯); US-style stripes: = / empty,
-        '¯¯¯   ¯¯¯           ',               //     starting with = at the top
-        '|||   ||| ==========',
+        '|||   |||           ',               //     TOP layer (¯); stripes right of the canton,
+        '¯¯¯   ¯¯¯           ',               //     then full-width below it
+        '|||   |||           ',
         '                    ',
-        '====================',
+        '                    ',
+    ], overlays: [
+        { ch: '==========', x: 15, y: 1 },
+        { ch: '==========', x: 15, y: 2 },
+        { ch: '====================', x: 10, y: 3 },
+        { ch: '====================', x: 10, y: 4 },
     ] },
     { id: 'c3', name: 'GREECE', art: [       // B — full-height canton, cross dead-center: _ lip
-        '|||   ||| ==========',               //     above the arm, ¯ lip below, open in between;
-        '___   ___           ',               //     the arm rides the middle blue (=) stripe
-        '          ==========',
+        '|||   |||           ',               //     above the arm, ¯ lip below, open in between;
+        '___   ___           ',               //     stripe seams at y=2/3 run co-linear with the
+        '                    ',               //     arm's lip lines
         '¯¯¯   ¯¯¯           ',
-        '|||   ||| ==========',
+        '|||   |||           ',
+    ], overlays: [
+        { ch: '==========', x: 15, y: 1 },
+        { ch: '==========', x: 15, y: 2 },
+        { ch: '==========', x: 15, y: 3 },
+        { ch: '==========', x: 15, y: 4 },
     ] },
     { id: 'c4', name: 'CHAPTER 4', art: null },
     { id: 'c5', name: 'CHAPTER 5', art: null },
