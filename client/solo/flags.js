@@ -55,35 +55,30 @@ export const FLAGS = [
         '====================',
         '====================',
     ] },
-    // GREECE — NEGATIVE-SPACE cross: the white cross is empty space carved out of the blue, its
-    // edges drawn with | (vertical arm sides) and _ (horizontal arm's lower lip; the fill above is
-    // its upper lip). AUDITION: c3–c4 are TEMPORARY variants for live comparison on this screen.
-    // Once one wins, its art moves to c2 and the spares revert to locked placeholders.
-    { id: 'c2', name: 'GREECE', art: [       // V1 — thick stripes: arm rides the blue stripe, the
-        '===| |===|==========',               //      vertical arm opens into the white row below
-        '___   ___|==========',
-        '                    ',
-        '====================',
-        '====================',
-    ] },
-    { id: 'c3', name: 'GREECE', art: [       // V2 — alternating stripes as _ lines / = fill,
-        '===| |===|==========',               //      full cross outline centered in a 3-row canton
-        '___   ___|__________',
-        '===| |===|==========',
+    // GREECE — negative-space cross, all blue drawn as vertical-bar fence texture, whites as line
+    // glyphs: '_' draws at a cell's BOTTOM edge, '¯' (macron) at its TOP — so the horizontal arm's
+    // lips can sit exactly on its boundaries. AUDITION: c3 is a TEMPORARY variant for live
+    // comparison; the winner keeps c2 and the spare reverts to a locked placeholder.
+    { id: 'c2', name: 'GREECE', art: [       // A — 3-row canton (V2 layout): the arm's line moved
+        '|||   ||| ||||||||||',               //     to its TOP layer (¯), stripes under the canton
+        '¯¯¯   ¯¯¯ __________',
+        '|||   ||| ||||||||||',
         '____________________',
-        '====================',
+        '||||||||||||||||||||',
     ] },
-    { id: 'c4', name: 'GREECE', art: [       // V3 — pure carve: solid canton, cross is only the
-        '===   ===|==========',               //      missing space, no outline characters at all
-        '         |==========',
-        '===   ===|          ',
-        '====================',
-        '====================',
+    { id: 'c3', name: 'GREECE', art: [       // B — full-height canton, cross dead-center: _ lip
+        '|||   ||| ||||||||||',               //     above the arm, ¯ lip below, open in between;
+        '___   ___ __________',               //     the arm rides the middle BLUE stripe
+        '          ||||||||||',
+        '¯¯¯   ¯¯¯ __________',
+        '|||   ||| ||||||||||',
     ] },
-    // CHINA — first draft, and the proof of `overlays`: the big star is a '*' drawn at over twice
-    // the grid size, the four small ones arc beside it at fractional positions — none of which the
+    { id: 'c4', name: 'CHAPTER 4', art: null },
+    { id: 'c5', name: 'CHAPTER 5', art: null },
+    // CHINA — the LAST chapter. Proof of `overlays`: the big star is a '*' drawn at over twice the
+    // grid size, the four small ones arc beside it at fractional positions — none of which the
     // uniform character grid could place. The field stays empty: nothing but the stars.
-    { id: 'c5', name: 'CHINA', art: [
+    { id: 'c6', name: 'CHINA', art: [
         '                    ',
         '                    ',
         '                    ',
@@ -96,5 +91,4 @@ export const FLAGS = [
         { ch: '*', x: 7.8, y: 2.1, s: 0.75 },
         { ch: '*', x: 6.5, y: 2.85, s: 0.75 },
     ] },
-    { id: 'c6', name: 'CHAPTER 6', art: null },
 ];
