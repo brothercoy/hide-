@@ -75,9 +75,9 @@ export const FLAGS = [
         '                    ',
     ], overlays: [
         { ch: '==== ===============', x: 10, y: 0 },   // stripe 1: full width, vertical-arm gap
-        { ch: '==== ====', x: 4.5, y: 0.65 },          // canton density lines squeezed toward the
-        { ch: '===========', x: 14.5, y: 1 },          //   arm so its height ~ the vertical gap;
-        { ch: '==== ====', x: 4.5, y: 1.35 },          //   stripe 2 hugs the canton edge (col 9)
+        { ch: '==== ====', x: 4.5, y: 0.5 },           // canton density lines at the white-gap
+        { ch: '===========', x: 14.5, y: 1 },          //   heights of the stripes beside them;
+        { ch: '==== ====', x: 4.5, y: 1.5 },           //   stripe 2 hugs the canton edge (col 9)
         { ch: '==== ===============', x: 10, y: 2 },   // stripe 3: full width, arm's bottom opened
         { ch: '====================', x: 10, y: 3 },
         { ch: '====================', x: 10, y: 4 },
