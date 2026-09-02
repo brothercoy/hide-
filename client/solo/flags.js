@@ -74,11 +74,11 @@ export const FLAGS = [
         '                    ',
         '                    ',
     ], overlays: [
-        { ch: '==== ==== ==========', x: 10, y: 0 },   // stripe 1: canton (arm gap) + right side
-        { ch: '==== ====', x: 4.5, y: 0.5 },           // canton density line (white-gap height)
-        { ch: '==========', x: 15, y: 1 },             // stripe 2: right side only — the canton's
-        { ch: '==== ====', x: 4.5, y: 1.5 },           //   missing line here IS the horizontal arm
-        { ch: '====================', x: 10, y: 2 },   // stripe 3 onward: full width
+        { ch: '==== ===============', x: 10, y: 0 },   // stripe 1: full width, vertical-arm gap
+        { ch: '==== ====', x: 4.5, y: 0.65 },          // canton density lines squeezed toward the
+        { ch: '===========', x: 14.5, y: 1 },          //   arm so its height ~ the vertical gap;
+        { ch: '==== ====', x: 4.5, y: 1.35 },          //   stripe 2 hugs the canton edge (col 9)
+        { ch: '==== ===============', x: 10, y: 2 },   // stripe 3: full width, arm's bottom opened
         { ch: '====================', x: 10, y: 3 },
         { ch: '====================', x: 10, y: 4 },
         { ch: '====================', x: 10, y: 5 },
