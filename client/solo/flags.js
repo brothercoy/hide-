@@ -48,15 +48,23 @@ export function flagRows(flag, unlocked, hover = 0, pressed = false) {
 
 // 6 chapters. `art` is the interior (INNER_H rows × INNER_W chars) or null until designed.
 export const FLAGS = [
-    // USA canton: '#' fill (audition). The starfield version, to revert to:
+    // USA canton: SOLID '#' block via packed overlays (audition), like Russia's blue band —
+    // 0.48 spacing so the 0.56-tall # ink fuses, flush from the interior top down to the canton's
+    // dash line. The starfield version, to revert to (no overlays):
     //   '* * * * *|==========',
     //   ' * * * * |==========',
     { id: 'c1', name: 'USA', art: [
-        '#########|==========',
-        '#########|==========',
+        '         |==========',
+        '         |==========',
         '----------==========',
         '====================',
         '====================',
+    ], overlays: [
+        { ch: '#########', x: 4.5, y: 0.28 },
+        { ch: '#########', x: 4.5, y: 0.76 },
+        { ch: '#########', x: 4.5, y: 1.24 },
+        { ch: '#########', x: 4.5, y: 1.72 },
+        { ch: '#########', x: 4.5, y: 2.2 },
     ] },
     // GREECE — negative-space cross, all blue drawn as vertical-bar fence texture, whites as line
     // glyphs: '_' draws at a cell's BOTTOM edge, '¯' (macron) at its TOP — so the horizontal arm's
@@ -98,9 +106,9 @@ export const FLAGS = [
         '                    ',
         '                    ',
     ], overlays: [
-        { ch: '####################', x: 10, y: 1.95 },
-        { ch: '####################', x: 10, y: 2.5 },
-        { ch: '####################', x: 10, y: 3.05 },
+        { ch: '####################', x: 10, y: 2.0 },
+        { ch: '####################', x: 10, y: 2.6 },
+        { ch: '####################', x: 10, y: 3.2 },
         { ch: '====================', x: 10, y: 3.65 },
         { ch: '====================', x: 10, y: 3.95 },
         { ch: '====================', x: 10, y: 4.25 },
