@@ -59,19 +59,19 @@ export const FLAGS = [
     // glyphs: '_' draws at a cell's BOTTOM edge, '¯' (macron) at its TOP — so the horizontal arm's
     // lips can sit exactly on its boundaries. AUDITION: c3 is a TEMPORARY variant for live
     // comparison; the winner keeps c2 and the spare reverts to a locked placeholder.
-    { id: 'c2', name: 'GREECE', art: [       // A — 3-row canton (V2 layout): the arm's line moved
-        '|||   ||| ||||||||||',               //     to its TOP layer (¯), stripes under the canton
-        '¯¯¯   ¯¯¯ __________',
-        '|||   ||| ||||||||||',
-        '____________________',
-        '||||||||||||||||||||',
+    { id: 'c2', name: 'GREECE', art: [       // A — 3-row canton (V2 layout): the arm's line on its
+        '|||   ||| ==========',               //     TOP layer (¯); US-style stripes: = / empty,
+        '¯¯¯   ¯¯¯           ',               //     starting with = at the top
+        '|||   ||| ==========',
+        '                    ',
+        '====================',
     ] },
     { id: 'c3', name: 'GREECE', art: [       // B — full-height canton, cross dead-center: _ lip
-        '|||   ||| ||||||||||',               //     above the arm, ¯ lip below, open in between;
-        '___   ___ __________',               //     the arm rides the middle BLUE stripe
-        '          ||||||||||',
-        '¯¯¯   ¯¯¯ __________',
-        '|||   ||| ||||||||||',
+        '|||   ||| ==========',               //     above the arm, ¯ lip below, open in between;
+        '___   ___           ',               //     the arm rides the middle blue (=) stripe
+        '          ==========',
+        '¯¯¯   ¯¯¯           ',
+        '|||   ||| ==========',
     ] },
     { id: 'c4', name: 'CHAPTER 4', art: null },
     { id: 'c5', name: 'CHAPTER 5', art: null },
