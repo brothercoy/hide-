@@ -59,20 +59,25 @@ export const FLAGS = [
     // glyphs: '_' draws at a cell's BOTTOM edge, '¯' (macron) at its TOP — so the horizontal arm's
     // lips can sit exactly on its boundaries. AUDITION: c3 is a TEMPORARY variant for live
     // comparison; the winner keeps c2 and the spare reverts to a locked placeholder.
-    // Stripes are OVERLAY '=' lines at the row BOUNDARIES (integer y) — the empty space a solid
-    // block of grid '=' rows leaves between its rows — so each stripe's double line straddles the
-    // seam instead of sitting at a cell's center. The grid art carries only the canton.
-    { id: 'c2', name: 'GREECE', art: [       // A — 3-row canton (V2 layout): the arm's line on its
-        '|||   |||           ',               //     TOP layer (¯); stripes right of the canton,
-        '¯¯¯   ¯¯¯           ',               //     then full-width below it
-        '|||   |||           ',
-        '                    ',
+    // Stripes are OVERLAY '=' lines at the row BOUNDARIES (integer y, from the top seam y=0 to the
+    // bottom seam y=5) — the empty space a solid block of grid '=' rows leaves between its rows —
+    // so each stripe's double line straddles the seam instead of sitting at a cell's center.
+    { id: 'c2', name: 'GREECE', art: [       // A — cross built FROM the stripes: the horizontal arm
+        '                    ',               //     is a = line ON the y=1 seam (the SECOND blue
+        '                    ',               //     stripe, like the real flag), the vertical arm a
+        '                    ',               //     bar column crossing it; 2-row canton so that
+        '                    ',               //     seam is its centerline. Grid art carries nothing.
         '                    ',
     ], overlays: [
+        { ch: '=========', x: 4.5, y: 1 },    // cross: horizontal arm (canton-wide)
+        { ch: '|', x: 4.5, y: 0.5 },          // cross: vertical arm, upper half
+        { ch: '|', x: 4.5, y: 1.5 },          // cross: vertical arm, lower half
+        { ch: '==========', x: 15, y: 0 },    // stripes beside the canton
         { ch: '==========', x: 15, y: 1 },
-        { ch: '==========', x: 15, y: 2 },
+        { ch: '====================', x: 10, y: 2 },   // full-width from the canton's bottom seam
         { ch: '====================', x: 10, y: 3 },
         { ch: '====================', x: 10, y: 4 },
+        { ch: '====================', x: 10, y: 5 },
     ] },
     { id: 'c3', name: 'GREECE', art: [       // B — full-height canton, cross dead-center: _ lip
         '|||   |||           ',               //     above the arm, ¯ lip below, open in between;
@@ -81,10 +86,12 @@ export const FLAGS = [
         '¯¯¯   ¯¯¯           ',
         '|||   |||           ',
     ], overlays: [
+        { ch: '==========', x: 15, y: 0 },
         { ch: '==========', x: 15, y: 1 },
         { ch: '==========', x: 15, y: 2 },
         { ch: '==========', x: 15, y: 3 },
         { ch: '==========', x: 15, y: 4 },
+        { ch: '==========', x: 15, y: 5 },
     ] },
     { id: 'c4', name: 'CHAPTER 4', art: null },
     { id: 'c5', name: 'CHAPTER 5', art: null },
