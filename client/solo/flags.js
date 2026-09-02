@@ -74,14 +74,15 @@ export const FLAGS = [
         '                    ',
         '                    ',
     ], overlays: [
-        { ch: '==== ===============', x: 10, y: 0 },   // stripe 1: full width, vertical-arm gap
-        { ch: '==== ====', x: 4.5, y: 0.5 },           // canton density lines at the white-gap
-        { ch: '===========', x: 14.5, y: 1 },          //   heights of the stripes beside them;
-        { ch: '==== ====', x: 4.5, y: 1.5 },           //   stripe 2 hugs the canton edge (col 9)
-        { ch: '==== ===============', x: 10, y: 2 },   // stripe 3: full width, arm's bottom opened
-        { ch: '====================', x: 10, y: 3 },
-        { ch: '====================', x: 10, y: 4 },
-        { ch: '====================', x: 10, y: 5 },
+        // '#' = blue ('=' stays red, as on the USA stripes; blank = white)
+        { ch: '#### ###############', x: 10, y: 0 },   // stripe 1: full width, vertical-arm gap
+        { ch: '#### ####', x: 4.5, y: 0.5 },           // canton density lines at the white-gap
+        { ch: '###########', x: 14.5, y: 1 },          //   heights of the stripes beside them;
+        { ch: '#### ####', x: 4.5, y: 1.5 },           //   stripe 2 hugs the canton edge (col 9)
+        { ch: '#### ###############', x: 10, y: 2 },   // stripe 3: full width, arm's bottom opened
+        { ch: '####################', x: 10, y: 3 },
+        { ch: '####################', x: 10, y: 4 },
+        { ch: '####################', x: 10, y: 5 },
     ] },
     { id: 'c3', name: 'CHAPTER 3', art: null },
     { id: 'c4', name: 'CHAPTER 4', art: null },
