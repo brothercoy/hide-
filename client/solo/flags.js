@@ -87,10 +87,10 @@ export const FLAGS = [
     ], overlays: [
         // Big star centered on the small-star arc's middle pair (their y midpoint = its y), the
         // whole formation raised toward the top-left, arc pulled in tight around the big star.
-        { ch: '*', x: 3.8, y: 1.15, s: 2.2 },
-        { ch: '*', x: 6.1, y: 0.15, s: 0.75 },
-        { ch: '*', x: 7.3, y: 0.75, s: 0.75 },
-        { ch: '*', x: 7.3, y: 1.55, s: 0.75 },
-        { ch: '*', x: 6.1, y: 2.15, s: 0.75 },
+        { ch: '*', x: 3.4, y: 1.15, s: 2.6 },
+        { ch: '*', x: 6.0, y: 0.10, s: 0.95 },
+        { ch: '*', x: 7.5, y: 0.70, s: 0.95 },
+        { ch: '*', x: 7.5, y: 1.60, s: 0.95 },
+        { ch: '*', x: 6.0, y: 2.20, s: 0.95 },
     ] },
 ];
