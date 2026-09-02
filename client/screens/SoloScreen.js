@@ -116,14 +116,22 @@ export class SoloScreen {
                     },
                 });
             }
-            // Overlay glyphs pop in one by one after the flag's bottom border (like the menu specials).
+            // Each overlay glyph is its own typeable AT ITS OWN HEIGHT, so it types in with the
+            // rows as the scan passes it instead of popping in after the flag.
             if (unlocked && flag.overlays?.length) {
-                rows.push({
-                    y: top + (FLAG_H - 1) * lh + 1, x, cost: flag.overlays.length,
-                    draw: (ctx, n) => {
-                        if (n <= 0) return;
-                        this._drawOverlays(flag, x, top, cw, lh, this._flagState(unlocked, btn), n);
-                    },
+                flag.overlays.forEach((o) => {
+                    rows.push({
+                        y: top + lh + o.y * lh, x: x + cw + o.x * cw, cost: 1,
+                        draw: (ctx, n) => {
+                            if (n <= 0) return;
+                            const st = this._flagState(unlocked, btn);
+                            ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+                            ctx.globalAlpha = st.alpha; ctx.fillStyle = st.color;
+                            ctx.font = `${Math.round(FLAG_FONT * (o.s || 1))}px "IBMVGA"`;
+                            ctx.fillText(o.ch, x + cw + o.x * cw, top + lh + o.y * lh);
+                            ctx.globalAlpha = 1;
+                        },
+                    });
                 });
             }
         }

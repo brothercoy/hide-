@@ -82,13 +82,13 @@ export const FLAGS = [
     ] },
     // CHINA — first draft, and the proof of `overlays`: the big star is a '*' drawn at over twice
     // the grid size, the four small ones arc beside it at fractional positions — none of which the
-    // uniform character grid could place. Field logic mirrors USA: star region dark, field lit.
+    // uniform character grid could place. The field stays empty: nothing but the stars.
     { id: 'c5', name: 'CHINA', art: [
-        '           =========',
-        '           =========',
-        '           =========',
-        '====================',
-        '====================',
+        '                    ',
+        '                    ',
+        '                    ',
+        '                    ',
+        '                    ',
     ], overlays: [
         { ch: '*', x: 3.0, y: 1.4, s: 2.2 },
         { ch: '*', x: 6.5, y: 0.45, s: 0.75 },
