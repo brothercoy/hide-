@@ -84,7 +84,28 @@ export const FLAGS = [
         { ch: '####################', x: 10, y: 4 },
         { ch: '####################', x: 10, y: 5 },
     ] },
-    { id: 'c3', name: 'CHAPTER 3', art: null },
+    // RUSSIA — the tricolor via texture-as-color: blank = white, '#' = blue, '=' = red (matching
+    // USA's red stripes). Overlay lines at sub-cell spacing pack each band SOLID — # ink is 0.56
+    // cells tall so 0.55 spacing closes the blue; = ink is 0.25 so red needs ~0.24 spacing. Bands
+    // are exact thirds of the interior (0–1.67 / 1.67–3.33 / 3.33–5).
+    { id: 'c3', name: 'RUSSIA', art: [
+        '                    ',
+        '                    ',
+        '                    ',
+        '                    ',
+        '                    ',
+    ], overlays: [
+        { ch: '####################', x: 10, y: 1.95 },
+        { ch: '####################', x: 10, y: 2.5 },
+        { ch: '####################', x: 10, y: 3.05 },
+        { ch: '====================', x: 10, y: 3.46 },
+        { ch: '====================', x: 10, y: 3.7 },
+        { ch: '====================', x: 10, y: 3.94 },
+        { ch: '====================', x: 10, y: 4.18 },
+        { ch: '====================', x: 10, y: 4.42 },
+        { ch: '====================', x: 10, y: 4.66 },
+        { ch: '====================', x: 10, y: 4.9 },
+    ] },
     { id: 'c4', name: 'CHAPTER 4', art: null },
     { id: 'c5', name: 'CHAPTER 5', art: null },
     // CHINA — the LAST chapter. Proof of `overlays`: the big star is a '*' drawn at over twice the
