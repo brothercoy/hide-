@@ -62,37 +62,28 @@ export const FLAGS = [
     // Stripes are OVERLAY '=' lines at the row BOUNDARIES (integer y, from the top seam y=0 to the
     // bottom seam y=5) — the empty space a solid block of grid '=' rows leaves between its rows —
     // so each stripe's double line straddles the seam instead of sitting at a cell's center.
-    { id: 'c2', name: 'GREECE', art: [       // A — cross built FROM the stripes: the horizontal arm
-        '                    ',               //     is a = line ON the y=1 seam (the SECOND blue
-        '                    ',               //     stripe, like the real flag), the vertical arm a
-        '                    ',               //     bar column crossing it; 2-row canton so that
-        '                    ',               //     seam is its centerline. Grid art carries nothing.
+    // The whole flag is overlay '=' lines. Stripes sit on the row seams (integer y, top edge y=0 to
+    // bottom edge y=5); the CANTON is a DENSE field of lines at HALF-cell spacing (y=0, .5, 1.5, 2)
+    // whose half-height lines align with the white gaps of the stripes beside it. The cross is pure
+    // NEGATIVE SPACE in that field: the horizontal arm is the missing y=1 line (the second blue
+    // stripe's height), the vertical arm the missing middle column of every canton line.
+    { id: 'c2', name: 'GREECE', art: [
+        '                    ',
+        '                    ',
+        '                    ',
+        '                    ',
         '                    ',
     ], overlays: [
-        { ch: '=========', x: 4.5, y: 1 },    // cross: horizontal arm (canton-wide)
-        { ch: '|', x: 4.5, y: 0.5 },          // cross: vertical arm, upper half
-        { ch: '|', x: 4.5, y: 1.5 },          // cross: vertical arm, lower half
-        { ch: '==========', x: 15, y: 0 },    // stripes beside the canton
-        { ch: '==========', x: 15, y: 1 },
-        { ch: '====================', x: 10, y: 2 },   // full-width from the canton's bottom seam
+        { ch: '==== ==== ==========', x: 10, y: 0 },   // stripe 1: canton (arm gap) + right side
+        { ch: '==== ====', x: 4.5, y: 0.5 },           // canton density line (white-gap height)
+        { ch: '==========', x: 15, y: 1 },             // stripe 2: right side only — the canton's
+        { ch: '==== ====', x: 4.5, y: 1.5 },           //   missing line here IS the horizontal arm
+        { ch: '====================', x: 10, y: 2 },   // stripe 3 onward: full width
         { ch: '====================', x: 10, y: 3 },
         { ch: '====================', x: 10, y: 4 },
         { ch: '====================', x: 10, y: 5 },
     ] },
-    { id: 'c3', name: 'GREECE', art: [       // B — full-height canton, cross dead-center: _ lip
-        '|||   |||           ',               //     above the arm, ¯ lip below, open in between;
-        '___   ___           ',               //     stripe seams at y=2/3 run co-linear with the
-        '                    ',               //     arm's lip lines
-        '¯¯¯   ¯¯¯           ',
-        '|||   |||           ',
-    ], overlays: [
-        { ch: '==========', x: 15, y: 0 },
-        { ch: '==========', x: 15, y: 1 },
-        { ch: '==========', x: 15, y: 2 },
-        { ch: '==========', x: 15, y: 3 },
-        { ch: '==========', x: 15, y: 4 },
-        { ch: '==========', x: 15, y: 5 },
-    ] },
+    { id: 'c3', name: 'CHAPTER 3', art: null },
     { id: 'c4', name: 'CHAPTER 4', art: null },
     { id: 'c5', name: 'CHAPTER 5', art: null },
     // CHINA — the LAST chapter. Proof of `overlays`: the big star is a '*' drawn at over twice the
