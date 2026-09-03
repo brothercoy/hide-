@@ -7,7 +7,7 @@ import { SettingsScreen } from './screens/SettingsScreen.js';
 import { SettingsOverlay } from './screens/SettingsOverlay.js';
 import { QuickJoinOverlay } from './screens/QuickJoinOverlay.js';
 import { SoloGame } from './solo/SoloGame.js';
-import { completeLevel } from './solo/progress.js';
+import { completeLevel, LEVELS } from './solo/progress.js';
 import { SoloScreen } from './screens/SoloScreen.js';
 import { ChapterScreen } from './screens/ChapterScreen.js';
 import { LobbyScreen } from './screens/LobbyScreen.js';
@@ -975,14 +975,21 @@ function setupRoomMessages(isReconnecting = false) {
 // enforcement is behind its GATED flag, off while content is still being built).
 // Difficulty for chapter `c` (0-based), level `n` (0-based). Placeholder ramp — more characters and
 // speed, less time, as the level climbs (and slightly harder per chapter). Tune later.
-// `chapterId` seeds the RNG: campaign levels are PREDETERMINED — the same target, field and spawns
-// for every player, so people can compare notes on "ISRAEL level 12".
+// `chapterId` seeds the RNG: campaign levels are PREDETERMINED — the same target, twin and field
+// composition for every player (spawns reroll per attempt), so people can compare notes on
+// "ISRAEL level 12". `campaign` drives the ACK-style confusion ladder: level 12 is the target in a
+// pure sea of its closest look-alike (gameSim.generateSoloField).
 function soloLevelConfig(c, n, chapterId) {
-    return { mode: 'redacted', seed: chapterId ? `${chapterId}:${n}` : undefined, settings: {
-        charCount: 30 + n * 8 + c * 10,
-        speedScale: 0.15 + n * 0.02,
-        roundTime: Math.max(8, 22 - n),
-    } };
+    return {
+        mode: 'redacted',
+        seed: chapterId ? `${chapterId}:${n}` : undefined,
+        campaign: chapterId ? { level: n + 1, totalLevels: LEVELS } : undefined,
+        settings: {
+            charCount: 30 + n * 8 + c * 10,
+            speedScale: 0.15 + n * 0.02,
+            roundTime: Math.max(8, 22 - n),
+        },
+    };
 }
 
 function startSolo(level = { mode: 'redacted', settings: { charCount: 45, speedScale: 0.2, roundTime: 20 } }, ident = null) {
@@ -1006,6 +1013,9 @@ function startSolo(level = { mode: 'redacted', settings: { charCount: 45, speedS
     uiManager.blocked = false;
     uiManager.lastTime = performance.now();
     resizeCanvas();
+    // The game's frame types in like multiplayer's entry; SoloGame holds its countdown for the
+    // same GAME_INTRO_MS span, so "Find: X" starts the moment the feed lands.
+    typeGameIn();
 }
 
 function endSolo(won) {

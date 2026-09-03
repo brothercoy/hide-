@@ -8,7 +8,7 @@
 // no penalty — the timer is the only pressure.
 import * as sim from '../../gameSim.js';
 import { GAME_MODES } from '../../gameModes.js';
-import { COUNTDOWN_MS } from '../../timings.js';
+import { COUNTDOWN_MS, GAME_INTRO_MS } from '../../timings.js';
 import { theme } from '../ui/colors.js';
 import { sfx, tickBurst } from '../audio/sfx.js';
 import { setMusic } from '../audio/music.js';
@@ -28,19 +28,28 @@ export class SoloGame {
         this.settings = { ...this.gameMode.defaultSettings, ...(level.settings || {}) };
         this.currentRound = 1;
 
-        // A seeded level is PREDETERMINED: every player gets the same target, field and spawns,
-        // so "level 12" is the same puzzle for everyone. No seed → random (ad-hoc solo).
-        const field = sim.generateField({
-            gameMode: this.gameMode, settings: this.settings, currentRound: 1, charRadii: charRadii || {},
-            rng: level.seed ? sim.seededRng(level.seed) : undefined,
-        });
+        // A campaign level is PREDETERMINED: the seed fixes the target, its twin and the field
+        // composition identically for every player ("level 12" is one shared puzzle), while spawn
+        // positions/speeds reroll every attempt. Ad-hoc solo (no campaign) stays fully random.
+        const field = (level.campaign && level.seed)
+            ? sim.generateSoloField({
+                level: level.campaign.level, totalLevels: level.campaign.totalLevels,
+                settings: this.settings, charRadii: charRadii || {},
+                rng: sim.seededRng(level.seed),
+            })
+            : sim.generateField({
+                gameMode: this.gameMode, settings: this.settings, currentRound: 1, charRadii: charRadii || {},
+            });
         this.chars = field.chars;          // live sim objects (char, isTarget, x, y, rotation, …)
         this.targetChar = field.targetChar;
 
         this.timeLeft = this.settings.roundTime;
         this.phase = 'countdown';          // 'countdown' → 'round' → 'done'
         this.won = false;
-        this.countdownStartTime = Date.now();
+        // The countdown is HELD while the game's frame types in (game.js typeGameIn), exactly like
+        // the server holding the first multiplayer countdown for the intro: it starts when the feed
+        // lands, and draw() passes null until then so the prompt doesn't show early.
+        this.countdownStartTime = Date.now() + GAME_INTRO_MS;
         this.countdownMs = COUNTDOWN_MS;
         this.lastUpdateTime = Date.now();
         this._doneAt = 0;
@@ -118,7 +127,7 @@ export class SoloGame {
             eliminatedName: null, lifeCallout: null,
             showRoundResult: false, roundResult: null, roundResultStart: 0,
             countdownActive: this.phase === 'countdown',
-            countdownStartTime: this.countdownStartTime,
+            countdownStartTime: Date.now() < this.countdownStartTime ? null : this.countdownStartTime,
             countdownMs: this.countdownMs,
             lastUpdateTime: this.lastUpdateTime,
             winnerId: null,

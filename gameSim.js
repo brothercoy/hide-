@@ -177,6 +177,37 @@ export function generateField({ gameMode, settings, currentRound, charRadii, rng
     return { chars, targetChar, targetObj };
 }
 
+// Build a SOLO CAMPAIGN level's field — ACK's confusion ramp applied to the 12-level ladder:
+// early levels are the target in random noise, then rising fractions of ever-closer look-alikes
+// (broad families → subgroups → pairs), until the final level is the target in a pure sea of the
+// ONE glyph that resembles it most. Split RNGs: `rng` (seeded with the level id) fixes WHAT the
+// level is — target, twin, field composition — identically for every player; `spawnRng` (default
+// Math.random) rolls positions/speeds fresh each attempt, so retries shuffle the board without
+// changing the puzzle.
+export function generateSoloField({ level, totalLevels, settings, charRadii, rng, spawnRng = Math.random }) {
+    const targetChar = pickConfusionTarget(level, totalLevels, LETTERS, rng);
+    const forbidden = new Set(CONFLICTS[targetChar] || []);
+    forbidden.add(targetChar);
+    const pool = [...LETTERS].filter(c => !forbidden.has(c));
+    const twins = confusionDecoys(targetChar, level, totalLevels, rng).filter(c => !forbidden.has(c));
+    // Confusion scales to the chapter's own ladder (like ACK scales to the chosen round count),
+    // hitting 1.0 — pure camouflage — on the last level.
+    const p = totalLevels > 1 ? Math.min(1, (level - 1) / (totalLevels - 1)) : 1;
+    const confusion = twins.length ? p : 0;
+
+    const chars = [];
+    for (let i = 0; i < settings.charCount - 1; i++) {
+        const char = (confusion && rng() < confusion)
+            ? twins[Math.floor(rng() * twins.length)]
+            : pool[Math.floor(rng() * pool.length)];
+        chars.push(createChar(char, false, charRadii, settings.speedScale, spawnRng));
+    }
+    const targetIndex = Math.floor(rng() * settings.charCount);
+    const targetObj = createChar(targetChar, true, charRadii, settings.speedScale, spawnRng);
+    chars.splice(targetIndex, 0, targetObj);
+    return { chars, targetChar, targetObj };
+}
+
 // Advance the field one tick: move + rotate each char, bouncing its EDGE off the field walls (±1 maps
 // to the frame's inner edge) using its own stored radius so each glyph hits the brackets exactly.
 export function updateChars(chars, delta) {
