@@ -153,16 +153,16 @@ export const FLAGS = [
         '                    ',
     ], overlays: [
         { ch: '####################', x: 10, y: 0.7 },
-        { ch: '¯¯¯¯', x: 10, y: 2.15 },                // ▽ top edge (line lands ≈ y 1.74)
-        { ch: '/', x: 9.5, y: 1.75 },                  // △ apex
-        { ch: '\\', x: 10.5, y: 1.75 },
-        { ch: '\\', x: 8.5, y: 2.25 },                 // ▽ upper sides
-        { ch: '/', x: 11.5, y: 2.25 },
-        { ch: '/', x: 8.5, y: 2.75 },                  // △ lower sides
-        { ch: '\\', x: 11.5, y: 2.75 },
-        { ch: '\\', x: 9.5, y: 3.25 },                 // ▽ apex
-        { ch: '/', x: 10.5, y: 3.25 },
-        { ch: '____', x: 10, y: 2.9 },                 // △ base edge (line lands ≈ y 3.24)
+        // △ only for now (flip comes once it reads right). CONTINUOUS diagonals: '/' ink runs
+        // (−0.5,+0.25)→(+0.375,−0.25) around its nominal point, so each next slash steps
+        // 0.875 x-units out and 0.5 rows down to start exactly where the previous one ended.
+        { ch: '/', x: 9.6, y: 1.9 },                   // apex pair
+        { ch: '\\', x: 10.5, y: 1.9 },
+        { ch: '/', x: 8.75, y: 2.4 },
+        { ch: '\\', x: 11.35, y: 2.4 },
+        { ch: '/', x: 7.9, y: 2.9 },
+        { ch: '\\', x: 12.2, y: 2.9 },
+        { ch: '_____', x: 10, y: 2.81 },               // base (line lands ≈ y 3.15, corner height)
         { ch: '####################', x: 10, y: 4.3 },
     ] },
     // CHINA — the LAST chapter. Proof of `overlays`: the big star is a '*' drawn at over twice the
