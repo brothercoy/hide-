@@ -13,8 +13,9 @@
 import { makeConfusion } from './confusables.js';
 
 // ---- GREECE (chapter c2) ------------------------------------------------------------------------
-// (Γ is deliberately absent — its font rendering doesn't read as a Greek gamma.)
-const GREEK_GLYPHS = 'ΔΘΛΞΠΣΦΨΩαβγδεζηθικλμνξπρσςτυφχψω';
+// (Γ is in the pool as noise but appears in NO pair/subgroup tiers — its font rendering doesn't
+// genuinely resemble anything, so it must never be the camouflage.)
+const GREEK_GLYPHS = 'ΓΔΘΛΞΠΣΦΨΩαβγδεζηθικλμνξπρσςτυφχψω';
 
 // Perception tiers, same shape as confusables.js's ASCII CONFUSION_TIERS:
 // tier 0 broad families → tier 1 subgroups → tier 2 near-identical pairs.
@@ -23,7 +24,7 @@ const GREEK_TIERS = [
     [
         ['Θ', 'Φ', 'θ', 'φ', 'σ', 'ς', 'δ', 'β', 'ρ', 'α', 'ε'],   // rounds / bowls
         ['Δ', 'Λ', 'λ', 'χ'],                                       // angular strokes
-        ['Π', 'π', 'τ', 'η', 'ι'],                                  // stems & bars
+        ['Γ', 'Π', 'π', 'τ', 'η', 'ι'],                             // stems & bars
         ['Ω', 'Ψ', 'ω', 'ψ', 'μ', 'υ', 'ν', 'γ'],                   // prongs / open bowls
         ['Ξ', 'Σ', 'ζ', 'ξ', 'κ'],                                  // zigzags / stacked strokes
     ],

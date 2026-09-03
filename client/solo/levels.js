@@ -13,7 +13,8 @@ export const LEVEL_TARGETS = {
     'c1:8': '!',    // USA level 9
     'c1:10': '!',   // USA level 11
     'c1:11': 'M',   // USA level 12 — M in a sea of W's
-    // GREECE level 1 — γ in a full sea of λ's: they look nothing alike in this font (γ reads as a
-    // ribbon twist), so the pairing is the INTRO — it also teaches the sea-of-one-glyph concept.
-    'c2:0': { target: 'γ', twin: 'λ', confusion: 1 },
+    'c2:0': 'γ',    // GREECE level 1 — normal noise level, γ (the ribbon twist) as the target
+    // GREECE level 12 — the level-1 target returns: γ hiding in a sea of υ's. Ladder position
+    // already makes the final level a pure sea, so only the twin needs pinning.
+    'c2:11': { target: 'γ', twin: 'υ' },
 };
