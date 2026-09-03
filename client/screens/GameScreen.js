@@ -1062,6 +1062,13 @@ export class GameScreen {
         // beat reuses the same pulse. At game over the target stops pulsing and brightens with the field.
         let targetAnim = null;
         if (!overlayDim && !glitching) targetAnim = this._targetState(now);
+        else if (this.solo && showRoundOver && !glitching) {
+            // Solo time-up: nobody found it, so the reveal is louder than multiplayer's — the
+            // target stays FULL brightness with a pulsing glow overlay against the 0.15-dim field.
+            const phase = (now % ROUND_OVER_PULSE_MS) / ROUND_OVER_PULSE_MS;
+            const osc = 0.5 - 0.5 * Math.cos(phase * Math.PI * 2);
+            targetAnim = { alpha: 1, glow: 0.35 + 0.45 * osc };
+        }
         else if ((showRoundOver || showRoundResult) && !showMatchOver && !glitching && !winnerId) targetAnim = this._roundOverTargetState(now);
         for (let i = 0; i < nChars; i++) {
             const j = i * 3;

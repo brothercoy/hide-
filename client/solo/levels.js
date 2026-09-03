@@ -11,4 +11,5 @@ export const LEVEL_TARGETS = {
     'c1:8': '!',    // USA level 9
     'c1:10': '!',   // USA level 11
     'c1:11': 'M',   // USA level 12 — M in a sea of W's
+    'c2:11': 'γ',   // GREECE level 12 — γ in a sea of λ's (the near-rotation pair, as a live test)
 };

@@ -28,25 +28,25 @@ const GREEK_TIERS = [
     ],
     // ---- Tier 1: subgroups ----
     [
-        ['Θ', 'Φ'], ['θ', 'φ'], ['σ', 'ς', 'δ'], ['ε', 'ξ', 'ζ'], ['β', 'ρ'], ['α', 'δ'],
-        ['Δ', 'Λ', 'λ'], ['κ', 'χ'],
+        ['Θ', 'Φ'], ['θ', 'φ'], ['θ', 'σ'], ['σ', 'ς', 'δ'], ['ε', 'ξ', 'ζ'], ['β', 'ρ'], ['α', 'δ'],
+        ['Δ', 'Λ', 'λ', 'γ'], ['κ', 'χ'],
         ['Γ', 'τ'], ['Π', 'π', 'η'], ['ι', 'τ'],
-        ['Ω', 'ω'], ['Ψ', 'ψ'], ['ω', 'ψ'], ['μ', 'ν', 'υ'],
+        ['Ω', 'ω'], ['Ψ', 'ψ'], ['ω', 'ψ'], ['μ', 'ν', 'υ', 'η'],
         ['Ξ', 'Σ'],
     ],
-    // ---- Tier 2: pairs (the final-level "two options") ----
+    // ---- Tier 2: pairs (the final-level "two options") — only the CLOSEST pairings survive here
+    // (Γ/τ and Ξ/Σ demoted to tier 1; ι/τ, θ/σ, γ/λ, η/μ promoted in).
     [
-        ['Θ', 'Φ'], ['θ', 'φ'], ['σ', 'δ'], ['ζ', 'ς'], ['ε', 'ξ'], ['β', 'ρ'], ['α', 'δ'],
-        ['Δ', 'Λ'], ['Π', 'π'], ['Γ', 'τ'], ['Ξ', 'Σ'],
-        ['ν', 'υ'], ['ω', 'ψ'],
+        ['Θ', 'Φ'], ['θ', 'φ'], ['θ', 'σ'], ['σ', 'δ'], ['α', 'δ'],
+        ['ζ', 'ς'], ['ε', 'ξ'], ['β', 'ρ'],
+        ['ν', 'υ'], ['ω', 'ψ'], ['ι', 'τ'], ['γ', 'λ'], ['η', 'μ'],
+        ['Δ', 'Λ'], ['Π', 'π'],
     ],
 ];
 
-// Rotation-ambiguous pairs (the field spins its glyphs): kept out of each other's rounds.
-const GREEK_CONFLICT_GROUPS = [
-    ['γ', 'λ'],   // γ upside down reads as λ
-    ['η', 'μ'],   // η upside down reads as μ
-];
+// Rotation-ambiguous pairs: NONE for Greek — γ/λ and η/μ were considered, judged distinct enough
+// upside down, and instead promoted to tier-2 decoy pairs (Greece's level 12 is γ among λ's).
+const GREEK_CONFLICT_GROUPS = [];
 
 function buildConflicts(groups) {
     const m = {};

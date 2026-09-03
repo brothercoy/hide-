@@ -125,7 +125,9 @@ export class SoloGame {
             targetChar: this.targetChar,
             playerList: [], timeLeft: this.timeLeft,
             currentRound: this.currentRound, currentMatch: 1, totalMatches: 1, totalRounds: 0,
-            showRoundOver: false, showMatchOver: false, matchOverData: null,
+            // A LOST level shows the round-over treatment: the field dims hard and the missed
+            // target glows (GameScreen's solo branch), so the player sees where it was.
+            showRoundOver: this.phase === 'done' && !this.won, showMatchOver: false, matchOverData: null,
             eliminatedName: null, lifeCallout: null,
             showRoundResult: false, roundResult: null, roundResultStart: 0,
             countdownActive: this.phase === 'countdown',
@@ -141,7 +143,7 @@ export class SoloGame {
             ctx.textAlign = 'center';
             ctx.textBaseline = 'middle';
             ctx.fillStyle = theme.fg;
-            ctx.fillText(this.won ? 'COMPLETE!' : 'TIME UP', gameScreen.boxCenterX, this.canvas.height / 2);
+            ctx.fillText(this.won ? 'COMPLETE!' : "TIMES UP!", gameScreen.boxCenterX, this.canvas.height / 2);
         }
     }
 
