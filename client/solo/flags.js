@@ -141,7 +141,30 @@ export const FLAGS = [
         { ch: '=====', x: 10, y: 3.7 },
         { ch: '===', x: 10, y: 4.0 },
     ] },
-    { id: 'c5', name: 'CHAPTER 5', art: null },
+    // ISRAEL — white field, two thin blue bars (single # lines — Russia's band construction at a
+    // third the weight) inset from the borders, and the Star of David built from plain ASCII:
+    // two interlocked triangle OUTLINES — ¯/_ for the horizontal edges, / \ for the diagonals
+    // (slash slope = 1 x-unit per row, so stepped rows chain into continuous lines).
+    { id: 'c5', name: 'ISRAEL', art: [
+        '                    ',
+        '                    ',
+        '                    ',
+        '                    ',
+        '                    ',
+    ], overlays: [
+        { ch: '####################', x: 10, y: 0.7 },
+        { ch: '¯¯¯¯', x: 10, y: 2.15 },                // ▽ top edge (line lands ≈ y 1.74)
+        { ch: '/', x: 9.5, y: 1.75 },                  // △ apex
+        { ch: '\\', x: 10.5, y: 1.75 },
+        { ch: '\\', x: 8.5, y: 2.25 },                 // ▽ upper sides
+        { ch: '/', x: 11.5, y: 2.25 },
+        { ch: '/', x: 8.5, y: 2.75 },                  // △ lower sides
+        { ch: '\\', x: 11.5, y: 2.75 },
+        { ch: '\\', x: 9.5, y: 3.25 },                 // ▽ apex
+        { ch: '/', x: 10.5, y: 3.25 },
+        { ch: '____', x: 10, y: 2.9 },                 // △ base edge (line lands ≈ y 3.24)
+        { ch: '####################', x: 10, y: 4.3 },
+    ] },
     // CHINA — the LAST chapter. Proof of `overlays`: the big star is a '*' drawn at over twice the
     // grid size, the four small ones arc beside it at fractional positions — none of which the
     // uniform character grid could place. The field stays empty: nothing but the stars.
