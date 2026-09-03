@@ -106,9 +106,9 @@ export const FLAGS = [
         '                    ',
         '                    ',
     ], overlays: [
-        { ch: '####################', x: 10, y: 1.75 },
+        { ch: '####################', x: 10, y: 1.8 },
         { ch: '####################', x: 10, y: 2.5 },
-        { ch: '####################', x: 10, y: 3.25 },
+        { ch: '####################', x: 10, y: 3.2 },
         { ch: '====================', x: 10, y: 3.75 },
         { ch: '====================', x: 10, y: 4.05 },
         { ch: '====================', x: 10, y: 4.35 },
@@ -152,10 +152,9 @@ export const FLAGS = [
         '                    ',
         '                    ',
     ], overlays: [
-        // Bars sized/placed to the REAL flag's 15:25:80:25:15 proportions — each bar is two
-        // #-lines overlapped 0.22 apart (0.78 lh of ink) centered at y 0.86 / 4.14.
-        { ch: '####################', x: 10, y: 0.75 },
-        { ch: '####################', x: 10, y: 0.97 },
+        // Bars: single # lines placed with the BORDER LINE counted as the flag's edge (the border
+        // draws ~0.5 rows outside the interior), so the edge margin reads like the real flag's.
+        { ch: '####################', x: 10, y: 0.55 },
         // CONTINUOUS diagonals: '/' ink runs (−0.5,+0.25)→(+0.375,−0.25) around its nominal point,
         // so each next slash steps 0.875 x-units out and 0.5 rows down to start exactly where the
         // previous one ended. The ▽ interlocks: its flat top is the underscore line of the △ apex
@@ -177,8 +176,7 @@ export const FLAGS = [
         { ch: '/', x: 11.35, y: 2.82 },
         { ch: '\\', x: 9.65, y: 3.32 },                // ▽ apex pair (meets at ≈ y 3.6)
         { ch: '/', x: 10.48, y: 3.32 },
-        { ch: '####################', x: 10, y: 4.03 },
-        { ch: '####################', x: 10, y: 4.25 },
+        { ch: '####################', x: 10, y: 4.45 },
     ] },
     // CHINA — the LAST chapter. Proof of `overlays`: the big star is a '*' drawn at over twice the
     // grid size, the four small ones arc beside it at fractional positions — none of which the
