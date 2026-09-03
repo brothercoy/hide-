@@ -88,28 +88,50 @@ export function effConfusion(gameMode, settings, round) {
     return p * CONFUSION_MAX;
 }
 
+// Deterministic RNG (xmur3 string hash seeding mulberry32) for PREDETERMINED levels: seed
+// 'c2:5' always yields the same target, field composition, spawns and speeds, on every device —
+// integer math only, so the sequence is identical across JS engines. Campaign levels pass one of
+// these as `rng`; multiplayer leaves it out and keeps Math.random.
+export function seededRng(seedStr) {
+    let h = 1779033703 ^ seedStr.length;
+    for (let i = 0; i < seedStr.length; i++) {
+        h = Math.imul(h ^ seedStr.charCodeAt(i), 3432918353);
+        h = (h << 13) | (h >>> 19);
+    }
+    let a = (h ^= h >>> 16) >>> 0;
+    return function () {
+        a |= 0; a = (a + 0x6D2B79F5) | 0;
+        let t = Math.imul(a ^ (a >>> 15), 1 | a);
+        t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+        return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+    };
+}
+
 // One field character. Per-char collision radius (normalized) is stored on it so the bounce reads it
 // directly. Falls back to a small default until a client's radii table arrives. Spawns anywhere the
 // whole glyph fits inside the field (so it never starts overlapping the frame).
-export function createChar(char, isTarget, charRadii, speed) {
+export function createChar(char, isTarget, charRadii, speed, rng = Math.random) {
     const rr = charRadii[char] || { rx: 0.03, ry: 0.05 };
     return {
         char,
         isTarget,
         rx: rr.rx,
         ry: rr.ry,
-        x: (Math.random() * 2 - 1) * (1 - rr.rx),
-        y: (Math.random() * 2 - 1) * (1 - rr.ry),
-        speedX: (Math.random() - 0.5) * speed,
-        speedY: (Math.random() - 0.5) * speed,
-        rotation: Math.random() * Math.PI * 2,
-        rotationSpeed: Math.random() < 0.05 ? 0 : (Math.random() - 0.5) * 2
+        x: (rng() * 2 - 1) * (1 - rr.rx),
+        y: (rng() * 2 - 1) * (1 - rr.ry),
+        speedX: (rng() - 0.5) * speed,
+        speedY: (rng() - 0.5) * speed,
+        rotation: rng() * Math.PI * 2,
+        rotationSpeed: rng() < 0.05 ? 0 : (rng() - 0.5) * 2
     };
 }
 
 // Build a round's field. Pure — returns { chars, targetChar, targetObj }. The caller assigns those to
 // its state and clears its own target-position history for the new round.
-export function generateField({ gameMode, settings, currentRound, charRadii }) {
+// Pass `rng` (a seededRng) to make the whole field deterministic — predetermined campaign levels.
+// (Frequency's pickConfusionTarget still rolls Math.random internally; only the uniform-target
+// modes are fully deterministic today, which covers the solo campaign's redacted levels.)
+export function generateField({ gameMode, settings, currentRound, charRadii, rng = Math.random }) {
     const chars = [];
     // TEST: on a Frequency FINAL round with TEST_PAIRS_IN_ORDER on, walk the tier-2 pairs in order
     // (target = pair[0], field = copies of pair[1]) so every pair can be reviewed once. See confusables.js.
@@ -121,7 +143,7 @@ export function generateField({ gameMode, settings, currentRound, charRadii }) {
         ? testWalk.pair[0]
         : (gameMode.id === 'frequency'
             ? pickConfusionTarget(currentRound, settings.rounds, LETTERS)
-            : LETTERS[Math.floor(Math.random() * LETTERS.length)]);
+            : LETTERS[Math.floor(rng() * LETTERS.length)]);
     const charCount = effCharCount(gameMode, settings, currentRound);
 
     // This round's field pool: every glyph EXCEPT the target and its rotation look-alikes.
@@ -142,14 +164,14 @@ export function generateField({ gameMode, settings, currentRound, charRadii }) {
 
     const speed = effSpeed(gameMode, settings, currentRound);   // same magnitude for the whole field
     for (let i = 0; i < charCount - 1; i++) {
-        const char = (confusion && Math.random() < confusion)
-            ? twins[Math.floor(Math.random() * twins.length)]         // a near-twin (camouflage)
-            : pool[Math.floor(Math.random() * pool.length)];          // random noise
-        chars.push(createChar(char, false, charRadii, speed));
+        const char = (confusion && rng() < confusion)
+            ? twins[Math.floor(rng() * twins.length)]                 // a near-twin (camouflage)
+            : pool[Math.floor(rng() * pool.length)];                  // random noise
+        chars.push(createChar(char, false, charRadii, speed, rng));
     }
 
-    const targetIndex = Math.floor(Math.random() * charCount);
-    const targetObj = createChar(targetChar, true, charRadii, speed);
+    const targetIndex = Math.floor(rng() * charCount);
+    const targetObj = createChar(targetChar, true, charRadii, speed, rng);
     chars.splice(targetIndex, 0, targetObj);
 
     return { chars, targetChar, targetObj };

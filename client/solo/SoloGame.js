@@ -28,8 +28,11 @@ export class SoloGame {
         this.settings = { ...this.gameMode.defaultSettings, ...(level.settings || {}) };
         this.currentRound = 1;
 
+        // A seeded level is PREDETERMINED: every player gets the same target, field and spawns,
+        // so "level 12" is the same puzzle for everyone. No seed → random (ad-hoc solo).
         const field = sim.generateField({
             gameMode: this.gameMode, settings: this.settings, currentRound: 1, charRadii: charRadii || {},
+            rng: level.seed ? sim.seededRng(level.seed) : undefined,
         });
         this.chars = field.chars;          // live sim objects (char, isTarget, x, y, rotation, …)
         this.targetChar = field.targetChar;

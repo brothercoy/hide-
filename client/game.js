@@ -321,7 +321,7 @@ const settingsScreen = new SettingsScreen(canvas, ctx, uiManager,
 // Chapter level page (defined before soloScreen so the flag click can target it). onSelectLevel
 // launches that solo level; BACK returns to the flag grid.
 const chapterScreen = new ChapterScreen(canvas, ctx, uiManager,
-    (chapterIdx, levelIdx) => startSolo(soloLevelConfig(chapterIdx, levelIdx),
+    (chapterIdx, levelIdx) => startSolo(soloLevelConfig(chapterIdx, levelIdx, chapterScreen.chapter?.id),
         { chapterId: chapterScreen.chapter?.id, name: chapterScreen.chapter?.name, levelIdx }),
     () => showScreen('solo')
 );
@@ -975,8 +975,10 @@ function setupRoomMessages(isReconnecting = false) {
 // enforcement is behind its GATED flag, off while content is still being built).
 // Difficulty for chapter `c` (0-based), level `n` (0-based). Placeholder ramp — more characters and
 // speed, less time, as the level climbs (and slightly harder per chapter). Tune later.
-function soloLevelConfig(c, n) {
-    return { mode: 'redacted', settings: {
+// `chapterId` seeds the RNG: campaign levels are PREDETERMINED — the same target, field and spawns
+// for every player, so people can compare notes on "ISRAEL level 12".
+function soloLevelConfig(c, n, chapterId) {
+    return { mode: 'redacted', seed: chapterId ? `${chapterId}:${n}` : undefined, settings: {
         charCount: 30 + n * 8 + c * 10,
         speedScale: 0.15 + n * 0.02,
         roundTime: Math.max(8, 22 - n),
@@ -992,8 +994,8 @@ function startSolo(level = { mode: 'redacted', settings: { charCount: 45, speedS
     gameCopyBtn = null;             // solo has no room code → no COPY CODE button
     uiManager.clear();
     gameScreen.solo = true;
-    // The HUD line under the box: "USA: 1" (country + 1-based level) instead of Match X/Y.
-    gameScreen.soloLabel = ident?.name ? `${ident.name}: ${ident.levelIdx + 1}` : '';
+    // The HUD line under the box: "USA: Level 1" (country + 1-based level) instead of Match X/Y.
+    gameScreen.soloLabel = ident?.name ? `${ident.name}: Level ${ident.levelIdx + 1}` : '';
     gameScreen.setMode(level.mode);
     gameScreen.setRoomCode('');
     gameScreen.prewarmGlyphs();
