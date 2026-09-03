@@ -37,6 +37,7 @@ export class SoloGame {
                 settings: this.settings, charRadii: charRadii || {},
                 rng: sim.seededRng(level.seed),
                 forceTarget: level.target,   // authored target (client/solo/levels.js), if any
+                charset: level.charset,      // the chapter's own alphabet (charsets.js), if any
             })
             : sim.generateField({
                 gameMode: this.gameMode, settings: this.settings, currentRound: 1, charRadii: charRadii || {},

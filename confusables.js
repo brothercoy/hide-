@@ -57,47 +57,65 @@ export const CONFUSION_TIERS = [
 ];
 
 // Per-tier glyph -> its decoys (union of that tier's groups containing it).
-const TIER_MAPS = CONFUSION_TIERS.map(groups => {
-    const m = {};
-    for (const g of groups) for (const c of g) {
-        const set = m[c] || (m[c] = new Set());
-        for (const o of g) if (o !== c) set.add(o);
-    }
-    for (const c of Object.keys(m)) m[c] = [...m[c]];
-    return m;
-});
+function buildTierMaps(tiers) {
+    return tiers.map(groups => {
+        const m = {};
+        for (const g of groups) for (const c of g) {
+            const set = m[c] || (m[c] = new Set());
+            for (const o of g) if (o !== c) set.add(o);
+        }
+        for (const c of Object.keys(m)) m[c] = [...m[c]];
+        return m;
+    });
+}
 
 // Ramp progress + confusion tier for a round. p: 0 on round 1 → 1 on the final round (scaled to the
 // game's chosen round count). tier: 0 (broad) → deepest (pairs) as p climbs. A 1-round game has no ramp
 // — its single round IS the final round, so it's treated as p=1 (the full two-option field), not p=0.
-function rampTier(round, totalRounds) {
+function rampTier(maps, round, totalRounds) {
     const p = totalRounds > 1 ? Math.min(1, (round - 1) / (totalRounds - 1)) : 1;
-    return { p, tier: Math.min(TIER_MAPS.length - 1, Math.floor(p * TIER_MAPS.length)) };
+    return { p, tier: Math.min(maps.length - 1, Math.floor(p * maps.length)) };
 }
 
-// Frequency's target for a round. Early rounds draw from ALL glyphs (`allGlyphs`); as the ramp climbs,
-// the chance to instead draw a glyph that's grouped at the CURRENT tier rises to 100% by the final
-// round — so the last round always lands on a glyph with a pair twin (a real "two options" field).
-// A no-twin glyph can still be the target early, where the field is near-pure noise anyway.
-// `rng` (default Math.random) makes the pick deterministic — solo's predetermined levels pass a
-// seeded rng; multiplayer callers omit it and are unchanged.
+// A confusion SET for any alphabet: pass tier data shaped like CONFUSION_TIERS and get back the
+// pickTarget/decoys pair bound to it. The solo campaign builds one per country charset
+// (charsets.js); the ASCII default below keeps the original exports working unchanged.
+export function makeConfusion(tiers) {
+    const maps = buildTierMaps(tiers);
+    return {
+        // A round's target. Early rounds draw from ALL glyphs (`allGlyphs`); as the ramp climbs,
+        // the chance to instead draw a glyph grouped at the CURRENT tier rises to 100% by the
+        // final round — so the last round always lands on a glyph with a pair twin (a real "two
+        // options" field). `rng` (default Math.random) makes the pick deterministic — solo's
+        // predetermined levels pass a seeded rng; multiplayer callers omit it.
+        pickTarget(round, totalRounds, allGlyphs, rng = Math.random) {
+            const { p, tier } = rampTier(maps, round, totalRounds);
+            const pool = rng() < p ? Object.keys(maps[tier]) : [...allGlyphs];
+            return pool[Math.floor(rng() * pool.length)];
+        },
+        // The target's decoys for a round: the CURRENT tier's group for the glyph (falling back
+        // toward broad if it isn't grouped that deep), collapsed to a single twin at the pair tier
+        // so the final round is the target among copies of one glyph. [] if no look-alikes.
+        decoys(glyph, round, totalRounds, rng = Math.random) {
+            const { tier } = rampTier(maps, round, totalRounds);
+            const deepest = maps.length - 1;
+            for (let t = tier; t >= 0; t--) {
+                const set = maps[t][glyph];
+                if (set) return t === deepest ? [set[Math.floor(rng() * set.length)]] : set;
+            }
+            return [];
+        },
+    };
+}
+
+const DEFAULT_CONFUSION = makeConfusion(CONFUSION_TIERS);
+
 export function pickConfusionTarget(round, totalRounds, allGlyphs, rng = Math.random) {
-    const { p, tier } = rampTier(round, totalRounds);
-    const pool = rng() < p ? Object.keys(TIER_MAPS[tier]) : [...allGlyphs];
-    return pool[Math.floor(rng() * pool.length)];
+    return DEFAULT_CONFUSION.pickTarget(round, totalRounds, allGlyphs, rng);
 }
 
-// The target's decoys for a given round: the CURRENT tier's group for the glyph (falling back toward
-// broad if it isn't grouped that deep), collapsed to a single RANDOM twin at the pair tier so the final
-// round is the target among copies of one glyph. Returns [] for glyphs with no look-alikes.
 export function confusionDecoys(glyph, round, totalRounds, rng = Math.random) {
-    const { tier } = rampTier(round, totalRounds);
-    const deepest = TIER_MAPS.length - 1;
-    for (let t = tier; t >= 0; t--) {
-        const set = TIER_MAPS[t][glyph];
-        if (set) return t === deepest ? [set[Math.floor(rng() * set.length)]] : set;
-    }
-    return [];
+    return DEFAULT_CONFUSION.decoys(glyph, round, totalRounds, rng);
 }
 
 // ---- TEST HARNESS: walk the tier-2 pairs in order ----------------------------------------------

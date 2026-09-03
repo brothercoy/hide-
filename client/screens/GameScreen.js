@@ -298,15 +298,17 @@ export class GameScreen {
     // Per-char collision radius normalized to the play half-size (pixel radius is the
     // same for everyone since the box is a fixed size). Sent to the server so its
     // wall bounce keeps each glyph's edge off the frame. Computed once from cached
-    // opentype metrics — covers printable ASCII, which includes the server's charset.
-    charRadii() {
+    // opentype metrics — covers printable ASCII (the server's charset), plus any
+    // `extraChars` a solo chapter's alphabet needs (Greek, Cyrillic, …).
+    charRadii(extraChars = '') {
         const phw = this.playHalfW, phh = this.playHalfH;
         const table = {};
-        for (let code = 33; code <= 126; code++) {
-            const ch = String.fromCharCode(code);
+        const add = (ch) => {
             const r = this._getMetrics(ch).radius;
             table[ch] = { rx: r / phw, ry: r / phh };
-        }
+        };
+        for (let code = 33; code <= 126; code++) add(String.fromCharCode(code));
+        for (const ch of extraChars) if (!table[ch]) add(ch);
         return table;
     }
 

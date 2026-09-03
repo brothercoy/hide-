@@ -9,6 +9,7 @@ import { QuickJoinOverlay } from './screens/QuickJoinOverlay.js';
 import { SoloGame } from './solo/SoloGame.js';
 import { completeLevel, LEVELS } from './solo/progress.js';
 import { LEVEL_TARGETS } from './solo/levels.js';
+import { CHARSETS } from '../charsets.js';
 import { SoloScreen } from './screens/SoloScreen.js';
 import { ChapterScreen } from './screens/ChapterScreen.js';
 import { LobbyScreen } from './screens/LobbyScreen.js';
@@ -986,6 +987,7 @@ function soloLevelConfig(c, n, chapterId) {
         seed: chapterId ? `${chapterId}:${n}` : undefined,
         campaign: chapterId ? { level: n + 1, totalLevels: LEVELS } : undefined,
         target: chapterId ? LEVEL_TARGETS[`${chapterId}:${n}`] : undefined,   // authored target, if any
+        charset: chapterId ? CHARSETS[chapterId] : undefined,   // the chapter's own alphabet, if any
         settings: {
             charCount: 30 + n * 8 + c * 10,
             speedScale: 0.15 + n * 0.02,
@@ -1008,7 +1010,7 @@ function startSolo(level = { mode: 'redacted', settings: { charCount: 45, speedS
     gameScreen.setMode(level.mode);
     gameScreen.setRoomCode('');
     gameScreen.prewarmGlyphs();
-    soloGame = new SoloGame(canvas, ctx, level, gameScreen.charRadii(), { onEnd: endSolo });
+    soloGame = new SoloGame(canvas, ctx, level, gameScreen.charRadii(level.charset?.glyphs || ''), { onEnd: endSolo });
     currentMode = soloGame;         // drawScreenInto('game') → soloGame.draw(gameScreen)
     setMusic(null, { atBar: true }); // the theme finishes its measure; BATTLE starts with the round
     currentScreen = 'game';

@@ -185,13 +185,21 @@ export function generateField({ gameMode, settings, currentRound, charRadii, rng
 // Math.random) rolls positions/speeds fresh each attempt, so retries shuffle the board without
 // changing the puzzle.
 // `forceTarget` (optional) is an AUTHORED target for the level — the seed then only picks the
-// twin and composition around it.
-export function generateSoloField({ level, totalLevels, settings, charRadii, rng, spawnRng = Math.random, forceTarget }) {
-    const targetChar = forceTarget || pickConfusionTarget(level, totalLevels, LETTERS, rng);
-    const forbidden = new Set(CONFLICTS[targetChar] || []);
+// twin and composition around it. `charset` (optional, charsets.js) swaps in a chapter's own
+// alphabet: its glyph pool, its rotation conflicts and its confusion ladder — USA (no charset)
+// uses the ASCII set below.
+export function generateSoloField({ level, totalLevels, settings, charRadii, rng, spawnRng = Math.random, forceTarget, charset }) {
+    const glyphs = charset?.glyphs ?? LETTERS;
+    const conflicts = charset?.conflicts ?? CONFLICTS;
+    const targetChar = forceTarget
+        || (charset ? charset.confusion.pickTarget(level, totalLevels, glyphs, rng)
+                    : pickConfusionTarget(level, totalLevels, LETTERS, rng));
+    const forbidden = new Set(conflicts[targetChar] || []);
     forbidden.add(targetChar);
-    const pool = [...LETTERS].filter(c => !forbidden.has(c));
-    const twins = confusionDecoys(targetChar, level, totalLevels, rng).filter(c => !forbidden.has(c));
+    const pool = [...glyphs].filter(c => !forbidden.has(c));
+    const twins = (charset ? charset.confusion.decoys(targetChar, level, totalLevels, rng)
+                           : confusionDecoys(targetChar, level, totalLevels, rng))
+        .filter(c => !forbidden.has(c));
     // Confusion scales to the chapter's own ladder (like ACK scales to the chosen round count),
     // hitting 1.0 — pure camouflage — on the last level.
     const p = totalLevels > 1 ? Math.min(1, (level - 1) / (totalLevels - 1)) : 1;
