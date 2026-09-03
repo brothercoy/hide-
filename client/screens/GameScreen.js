@@ -14,6 +14,10 @@ const TICK_RATE = 50;
 // — tune these two to resize the play field.
 const BOX_COLS = 35;
 const BOX_ROWS = 10;
+// Solo (campaign) box: phone-screen proportions in landscape. A phone held vertical is ~9:19.5;
+// rotated that's ~2.17:1 — 43 cols × 10 rows of the 1:2 frame cells gives 2.15:1, the closest
+// whole-cell match (and a larger field than multiplayer's 35).
+const SOLO_BOX_COLS = 43;
 const BOX_LEFT_MARGIN = 80;   // box is left-aligned this far from the canvas's left edge
 const PLAY_EDGE_GAP = 6;      // px gap between the frame's INK line and how close a char may get,
                               // the SAME on all four sides (lower = characters hug the box tighter)
@@ -67,6 +71,7 @@ export class GameScreen {
         this._inkCache = new Map();   // measured ink bounds per string at the FRAME font
         this.modeId = 'redacted';     // 'redacted' hides the Round; other modes show it
         this.solo = false;            // single-player campaign: centered box, no player column / room code
+        this.soloLabel = '';          // campaign HUD label under the box, e.g. "USA: 1" (set by game.js)
         this.glitchUntil = 0;         // scramble the play field until this timestamp (miss feedback)
         this._glitchGlyphs = [];      // per-char random glyph while glitching
         this._glitchSwapAt = 0;       // last time the glitch glyphs were re-rolled
@@ -250,8 +255,11 @@ export class GameScreen {
         return g;
     }
 
+    // Game-box width in cells — solo uses the wider phone-landscape box.
+    get _boxCols() { return this.solo ? SOLO_BOX_COLS : BOX_COLS; }
+
     // Outer frame size (used to draw the border and to position the HUD around it).
-    get boxW() { return BOX_COLS * this._frameCW(); }
+    get boxW() { return this._boxCols * this._frameCW(); }
     get boxH() { return BOX_ROWS * this.FRAME_SIZE; }
 
     // Box center X — left-aligned (not canvas-centered) in multiplayer, leaving room on the right for
@@ -260,7 +268,7 @@ export class GameScreen {
 
     // Total frame width in cells. Multiplayer: game box + player column. Solo: just the game box.
     get _totalCols() {
-        if (this.solo) return BOX_COLS;
+        if (this.solo) return SOLO_BOX_COLS;
         const avail = this.canvas.width - 2 * BOX_LEFT_MARGIN;
         return Math.max(BOX_COLS + 2, Math.floor(avail / this._frameCW()));
     }
@@ -452,9 +460,10 @@ export class GameScreen {
     _frameStrings() {
         if (this.solo) {
             // Just the game box — closed on both sides, no player column / brackets.
-            const edgeRow = '='.repeat(BOX_COLS);
-            const mid = new Array(BOX_COLS).fill(' ');
-            mid[0] = ']'; mid[BOX_COLS - 1] = '[';
+            const cols = SOLO_BOX_COLS;
+            const edgeRow = '='.repeat(cols);
+            const mid = new Array(cols).fill(' ');
+            mid[0] = ']'; mid[cols - 1] = '[';
             return { edgeRow, topRow: edgeRow, midRow: mid.join(''), bracketL: -1, bracketR: -1 };
         }
         const total = this._totalCols;
@@ -501,6 +510,15 @@ export class GameScreen {
 
         for (let i = 0; i < BOX_ROWS; i++) {
             const y = top + i * lh;
+            if (this.solo) {
+                // Plain closed box: solid = edges, ] [ bracket rows. No player column.
+                if (i === 0 || i === BOX_ROWS - 1) out.push(row(edgeRow, left, y));
+                else {
+                    out.push(row(midRow[0], left, y));
+                    out.push(row(midRow[midRow.length - 1], left + (midRow.length - 1) * cw, y));
+                }
+                continue;
+            }
             if (i === 0) {
                 // The top edge reads left-to-right as ONE sweep: the game-box = edge, the player
                 // section's [ , PLAYERS in the gap, its ] , then the trailing =. Split at those
@@ -1089,10 +1107,13 @@ export class GameScreen {
         ctx.textBaseline = 'top';
         const inkTop = Math.max(0, this._inkBounds('M0').top);
         const bottomY = cy + halfH + findGap - inkTop;
-        // Redacted has matches (no rounds); the other modes have rounds (no matches).
-        const roundLabel = this.modeId === 'redacted'
-            ? `Match ${currentMatch}/${totalMatches}`
-            : `Round ${currentRound}${totalRounds ? '/' + totalRounds : ''}`;
+        // Solo shows its campaign position ("USA: 1"). Multiplayer: redacted has matches
+        // (no rounds); the other modes have rounds (no matches).
+        const roundLabel = this.solo && this.soloLabel
+            ? this.soloLabel
+            : this.modeId === 'redacted'
+                ? `Match ${currentMatch}/${totalMatches}`
+                : `Round ${currentRound}${totalRounds ? '/' + totalRounds : ''}`;
         ctx.textAlign = 'center';
         ctx.fillText(roundLabel, screenCx, bottomY);
 

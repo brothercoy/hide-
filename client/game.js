@@ -322,7 +322,7 @@ const settingsScreen = new SettingsScreen(canvas, ctx, uiManager,
 // launches that solo level; BACK returns to the flag grid.
 const chapterScreen = new ChapterScreen(canvas, ctx, uiManager,
     (chapterIdx, levelIdx) => startSolo(soloLevelConfig(chapterIdx, levelIdx),
-        { chapterId: chapterScreen.chapter?.id, levelIdx }),
+        { chapterId: chapterScreen.chapter?.id, name: chapterScreen.chapter?.name, levelIdx }),
     () => showScreen('solo')
 );
 
@@ -992,6 +992,8 @@ function startSolo(level = { mode: 'redacted', settings: { charCount: 45, speedS
     gameCopyBtn = null;             // solo has no room code → no COPY CODE button
     uiManager.clear();
     gameScreen.solo = true;
+    // The HUD line under the box: "USA: 1" (country + 1-based level) instead of Match X/Y.
+    gameScreen.soloLabel = ident?.name ? `${ident.name}: ${ident.levelIdx + 1}` : '';
     gameScreen.setMode(level.mode);
     gameScreen.setRoomCode('');
     gameScreen.prewarmGlyphs();
