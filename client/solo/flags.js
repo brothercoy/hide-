@@ -108,7 +108,7 @@ export const FLAGS = [
     ], overlays: [
         { ch: '####################', x: 10, y: 1.9 },
         { ch: '####################', x: 10, y: 2.5 },
-        { ch: '####################', x: 10, y: 3.1 },
+        { ch: '####################', x: 10, y: 3.25 },
         { ch: '====================', x: 10, y: 3.75 },
         { ch: '====================', x: 10, y: 4.05 },
         { ch: '====================', x: 10, y: 4.35 },
@@ -153,16 +153,26 @@ export const FLAGS = [
         '                    ',
     ], overlays: [
         { ch: '####################', x: 10, y: 0.7 },
-        // △ only for now (flip comes once it reads right). CONTINUOUS diagonals: '/' ink runs
-        // (−0.5,+0.25)→(+0.375,−0.25) around its nominal point, so each next slash steps
-        // 0.875 x-units out and 0.5 rows down to start exactly where the previous one ended.
-        { ch: '/', x: 9.6, y: 1.9 },                   // apex pair
+        // CONTINUOUS diagonals: '/' ink runs (−0.5,+0.25)→(+0.375,−0.25) around its nominal point,
+        // so each next slash steps 0.875 x-units out and 0.5 rows down to start exactly where the
+        // previous one ended. The ▽ interlocks: its flat top is the underscore line of the △ apex
+        // row (__/_\__), its sides cross the △ sides, its apex hangs below the △ base.
+        { ch: '/', x: 9.6, y: 1.9 },                   // △ apex pair
         { ch: '\\', x: 10.5, y: 1.9 },
-        { ch: '/', x: 8.75, y: 2.4 },
+        { ch: '__', x: 8.25, y: 1.9 },                 // ▽ top edge, left of the apex
+        { ch: '__', x: 10.05, y: 1.9 },                //   …under the apex peak
+        { ch: '__', x: 11.8, y: 1.9 },                 //   …right of the apex (line lands ≈ 2.24)
+        { ch: '/', x: 8.75, y: 2.4 },                  // △ sides
         { ch: '\\', x: 11.35, y: 2.4 },
-        { ch: '/', x: 7.9, y: 2.9 },
+        { ch: '\\', x: 7.9, y: 2.52 },                 // ▽ sides, from the top-edge corners
+        { ch: '/', x: 12.22, y: 2.52 },
+        { ch: '/', x: 7.9, y: 2.9 },                   // △ sides to the base corners
         { ch: '\\', x: 12.2, y: 2.9 },
-        { ch: '_____', x: 10, y: 2.81 },               // base (line lands ≈ y 3.15, corner height)
+        { ch: '_____', x: 10, y: 2.81 },               // △ base (line lands ≈ y 3.15)
+        { ch: '\\', x: 8.78, y: 3.02 },                // ▽ sides converging…
+        { ch: '/', x: 11.35, y: 3.02 },
+        { ch: '\\', x: 9.65, y: 3.52 },                // ▽ apex pair (meets at ≈ y 3.8)
+        { ch: '/', x: 10.48, y: 3.52 },
         { ch: '####################', x: 10, y: 4.3 },
     ] },
     // CHINA — the LAST chapter. Proof of `overlays`: the big star is a '*' drawn at over twice the
