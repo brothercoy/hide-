@@ -125,13 +125,21 @@ export const FLAGS = [
         '                    ',
         '                    ',
     ], overlays: [
-        { ch: '####', x: 10, y: 1.06 },
-        { ch: '######', x: 10, y: 1.54 },
-        { ch: '#######', x: 10, y: 2.02 },
-        { ch: '#######', x: 10, y: 2.5 },
-        { ch: '#######', x: 10, y: 2.98 },
-        { ch: '######', x: 10, y: 3.46 },
-        { ch: '####', x: 10, y: 3.94 },
+        // '=' disc (red, per the color code), Russia-band line spacing. The solid '#' version:
+        //   { ch: '####', y: 1.06 }, { ch: '######', y: 1.54 }, { ch: '#######', y: 2.02 },
+        //   { ch: '#######', y: 2.5 }, { ch: '#######', y: 2.98 }, { ch: '######', y: 3.46 },
+        //   { ch: '####', y: 3.94 }   (all x: 10)
+        { ch: '===', x: 10, y: 1.0 },
+        { ch: '=====', x: 10, y: 1.3 },
+        { ch: '======', x: 10, y: 1.6 },
+        { ch: '======', x: 10, y: 1.9 },
+        { ch: '=======', x: 10, y: 2.2 },
+        { ch: '=======', x: 10, y: 2.5 },
+        { ch: '=======', x: 10, y: 2.8 },
+        { ch: '======', x: 10, y: 3.1 },
+        { ch: '======', x: 10, y: 3.4 },
+        { ch: '=====', x: 10, y: 3.7 },
+        { ch: '===', x: 10, y: 4.0 },
     ] },
     { id: 'c5', name: 'CHAPTER 5', art: null },
     // CHINA — the LAST chapter. Proof of `overlays`: the big star is a '*' drawn at over twice the
