@@ -116,7 +116,23 @@ export const FLAGS = [
         { ch: '====================', x: 10, y: 4.95 },
         { ch: '====================', x: 10, y: 5.25 },
     ] },
-    { id: 'c4', name: 'CHAPTER 4', art: null },
+    // JAPAN — the sun disc: packed '#' rows (0.48 spacing, like the USA canton block) whose widths
+    // trace a circle. Cells are 2:1 tall, so 7 columns × ~3.4 rows of ink reads as ROUND. Centered.
+    { id: 'c4', name: 'JAPAN', art: [
+        '                    ',
+        '                    ',
+        '                    ',
+        '                    ',
+        '                    ',
+    ], overlays: [
+        { ch: '####', x: 10, y: 1.06 },
+        { ch: '######', x: 10, y: 1.54 },
+        { ch: '#######', x: 10, y: 2.02 },
+        { ch: '#######', x: 10, y: 2.5 },
+        { ch: '#######', x: 10, y: 2.98 },
+        { ch: '######', x: 10, y: 3.46 },
+        { ch: '####', x: 10, y: 3.94 },
+    ] },
     { id: 'c5', name: 'CHAPTER 5', art: null },
     // CHINA — the LAST chapter. Proof of `overlays`: the big star is a '*' drawn at over twice the
     // grid size, the four small ones arc beside it at fractional positions — none of which the
@@ -135,24 +151,5 @@ export const FLAGS = [
         { ch: '*', x: 7.5, y: 0.70, s: 0.95 },
         { ch: '*', x: 7.5, y: 1.60, s: 0.95 },
         { ch: '*', x: 6.0, y: 2.20, s: 0.95 },
-        // TEST: red field fill — packed = lines (0.3 spacing) with holes carved around the stars
-        { ch: '=====  =============', x: 10, y: 0.15 },
-        { ch: '=====   ============', x: 10, y: 0.45 },
-        { ch: '==   == ============', x: 10, y: 0.75 },
-        { ch: '==   == ============', x: 10, y: 1.05 },
-        { ch: '==   == ============', x: 10, y: 1.35 },
-        { ch: '==   == ============', x: 10, y: 1.65 },
-        { ch: '=====   ============', x: 10, y: 1.95 },
-        { ch: '=====  =============', x: 10, y: 2.25 },
-        { ch: '=====  =============', x: 10, y: 2.55 },
-        { ch: '====================', x: 10, y: 2.85 },
-        { ch: '====================', x: 10, y: 3.15 },
-        { ch: '====================', x: 10, y: 3.45 },
-        { ch: '====================', x: 10, y: 3.75 },
-        { ch: '====================', x: 10, y: 4.05 },
-        { ch: '====================', x: 10, y: 4.35 },
-        { ch: '====================', x: 10, y: 4.65 },
-        { ch: '====================', x: 10, y: 4.95 },
-        { ch: '====================', x: 10, y: 5.25 },
     ] },
 ];
