@@ -72,6 +72,7 @@ export class GameScreen {
         this.modeId = 'redacted';     // 'redacted' hides the Round; other modes show it
         this.solo = false;            // single-player campaign: centered box, no player column / room code
         this.soloLabel = '';          // campaign HUD label under the box, e.g. "USA: 1" (set by game.js)
+        this.soloGlyphs = '';         // the chapter's alphabet — miss-glitch noise draws from it (set by game.js)
         this.glitchUntil = 0;         // scramble the play field until this timestamp (miss feedback)
         this._glitchGlyphs = [];      // per-char random glyph while glitching
         this._glitchSwapAt = 0;       // last time the glitch glyphs were re-rolled
@@ -1037,13 +1038,17 @@ export class GameScreen {
         const nChars = Math.min(chars.length, (posA.length / 3) | 0, (posB.length / 3) | 0);
         // Miss glitch: while active, show a random glyph per char, re-rolled every GLITCH_SWAP_MS
         // (all printable-ASCII tiles are prewarmed, so any letter is near-free). Pick from the FULL
-        // charset (33-126), NOT the letters on screen — otherwise a confusion round (target + one twin)
-        // would scramble into just those two glyphs instead of true noise.
+        // charset — a solo chapter's own alphabet when one is set, else printable ASCII (33-126) —
+        // NOT the letters on screen: otherwise a confusion round (target + one twin) would scramble
+        // into just those two glyphs instead of true noise.
         const glitching = now < this.glitchUntil;
         if (glitching && now - this._glitchSwapAt >= GLITCH_SWAP_MS) {
             this._glitchSwapAt = now;
+            const gpool = this.solo && this.soloGlyphs ? this.soloGlyphs : null;
             for (let i = 0; i < nChars; i++) {
-                this._glitchGlyphs[i] = String.fromCharCode(33 + ((Math.random() * 94) | 0));  // any printable ASCII
+                this._glitchGlyphs[i] = gpool
+                    ? gpool[(Math.random() * gpool.length) | 0]
+                    : String.fromCharCode(33 + ((Math.random() * 94) | 0));
             }
         }
         // A round/match over dims the field so the life-loss list reads over it. Game over

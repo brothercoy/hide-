@@ -1013,6 +1013,7 @@ function startSolo(level = { mode: 'redacted', settings: { charCount: 45, speedS
     gameScreen.solo = true;
     // The HUD line under the box: "USA: Level 1" (country + 1-based level) instead of Match X/Y.
     gameScreen.soloLabel = ident?.name ? `${ident.name}: Level ${ident.levelIdx + 1}` : '';
+    gameScreen.soloGlyphs = level.charset?.glyphs || '';   // miss-glitch scrambles in the chapter's alphabet
     gameScreen.setMode(level.mode);
     gameScreen.setRoomCode('');
     gameScreen.prewarmGlyphs();

@@ -14,7 +14,8 @@ export const LEVEL_TARGETS = {
     'c1:10': '!',   // USA level 11
     'c1:11': 'M',   // USA level 12 — M in a sea of W's
     'c2:0': 'γ',    // GREECE level 1 — normal noise level, γ (the ribbon twist) as the target
-    // GREECE level 12 — the level-1 target returns: γ hiding in a sea of υ's. Ladder position
-    // already makes the final level a pure sea, so only the twin needs pinning.
-    'c2:11': { target: 'γ', twin: 'υ' },
+    'c2:1': 'Ψ',    // GREECE level 2 — seeded roll was μ, which is reserved as level 12's sea
+    // GREECE level 12 — η hiding in a pure sea of μ's. Ladder position already makes the final
+    // level full camouflage, so only the twin needs pinning.
+    'c2:11': { target: 'η', twin: 'μ' },
 };
