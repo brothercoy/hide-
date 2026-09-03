@@ -987,7 +987,7 @@ function soloLevelConfig(c, n, chapterId) {
         settings: {
             charCount: 30 + n * 8 + c * 10,
             speedScale: 0.15 + n * 0.02,
-            roundTime: Math.max(8, 22 - n),
+            roundTime: 60 - c * 10,   // per CHAPTER: USA 60s … −10s each … China 10s (same for all 12 levels)
         },
     };
 }
