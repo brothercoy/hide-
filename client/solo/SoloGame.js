@@ -36,7 +36,10 @@ export class SoloGame {
                 level: level.campaign.level, totalLevels: level.campaign.totalLevels,
                 settings: this.settings, charRadii: charRadii || {},
                 rng: sim.seededRng(level.seed),
-                forceTarget: level.target,   // authored target (client/solo/levels.js), if any
+                // Authored overrides (client/solo/levels.js), if any:
+                forceTarget: level.authored?.target,
+                forceTwin: level.authored?.twin,
+                forceConfusion: level.authored?.confusion,
                 charset: level.charset,      // the chapter's own alphabet (charsets.js), if any
             })
             : sim.generateField({

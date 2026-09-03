@@ -13,7 +13,8 @@
 import { makeConfusion } from './confusables.js';
 
 // ---- GREECE (chapter c2) ------------------------------------------------------------------------
-const GREEK_GLYPHS = 'ΓΔΘΛΞΠΣΦΨΩαβγδεζηθικλμνξπρσςτυφχψω';
+// (Γ is deliberately absent — its font rendering doesn't read as a Greek gamma.)
+const GREEK_GLYPHS = 'ΔΘΛΞΠΣΦΨΩαβγδεζηθικλμνξπρσςτυφχψω';
 
 // Perception tiers, same shape as confusables.js's ASCII CONFUSION_TIERS:
 // tier 0 broad families → tier 1 subgroups → tier 2 near-identical pairs.
@@ -22,24 +23,25 @@ const GREEK_TIERS = [
     [
         ['Θ', 'Φ', 'θ', 'φ', 'σ', 'ς', 'δ', 'β', 'ρ', 'α', 'ε'],   // rounds / bowls
         ['Δ', 'Λ', 'λ', 'χ'],                                       // angular strokes
-        ['Γ', 'Π', 'π', 'τ', 'η', 'ι'],                             // stems & bars
+        ['Π', 'π', 'τ', 'η', 'ι'],                                  // stems & bars
         ['Ω', 'Ψ', 'ω', 'ψ', 'μ', 'υ', 'ν', 'γ'],                   // prongs / open bowls
         ['Ξ', 'Σ', 'ζ', 'ξ', 'κ'],                                  // zigzags / stacked strokes
     ],
     // ---- Tier 1: subgroups ----
     [
         ['Θ', 'Φ'], ['θ', 'φ'], ['θ', 'σ'], ['σ', 'ς', 'δ'], ['ε', 'ξ', 'ζ'], ['β', 'ρ'], ['α', 'δ'],
-        ['Δ', 'Λ', 'λ', 'γ'], ['κ', 'χ'],
-        ['Γ', 'τ'], ['Π', 'π', 'η'], ['ι', 'τ'],
+        ['Δ', 'Λ', 'λ'], ['κ', 'χ'],
+        ['Π', 'π', 'η'], ['ι', 'τ'],
         ['Ω', 'ω'], ['Ψ', 'ψ'], ['ω', 'ψ'], ['μ', 'ν', 'υ', 'η'],
         ['Ξ', 'Σ'],
     ],
     // ---- Tier 2: pairs (the final-level "two options") — only the CLOSEST pairings survive here
-    // (Γ/τ and Ξ/Σ demoted to tier 1; ι/τ, θ/σ, γ/λ, η/μ promoted in).
+    // (Ξ/Σ demoted to tier 1; ι/τ, θ/σ, η/μ promoted in). γ/λ turned out to look nothing alike
+    // (γ renders as a ribbon twist) — that pairing lives on as the authored LEVEL 1 sea instead.
     [
         ['Θ', 'Φ'], ['θ', 'φ'], ['θ', 'σ'], ['σ', 'δ'], ['α', 'δ'],
         ['ζ', 'ς'], ['ε', 'ξ'], ['β', 'ρ'],
-        ['ν', 'υ'], ['ω', 'ψ'], ['ι', 'τ'], ['γ', 'λ'], ['η', 'μ'],
+        ['ν', 'υ'], ['ω', 'ψ'], ['ι', 'τ'], ['η', 'μ'],
         ['Δ', 'Λ'], ['Π', 'π'],
     ],
 ];

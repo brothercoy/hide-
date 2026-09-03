@@ -184,11 +184,13 @@ export function generateField({ gameMode, settings, currentRound, charRadii, rng
 // level is — target, twin, field composition — identically for every player; `spawnRng` (default
 // Math.random) rolls positions/speeds fresh each attempt, so retries shuffle the board without
 // changing the puzzle.
-// `forceTarget` (optional) is an AUTHORED target for the level — the seed then only picks the
-// twin and composition around it. `charset` (optional, charsets.js) swaps in a chapter's own
-// alphabet: its glyph pool, its rotation conflicts and its confusion ladder — USA (no charset)
-// uses the ASCII set below.
-export function generateSoloField({ level, totalLevels, settings, charRadii, rng, spawnRng = Math.random, forceTarget, charset }) {
+// AUTHORED overrides (optional): `forceTarget` pins the level's target, `forceTwin` its single
+// camouflage glyph, `forceConfusion` the camouflage fraction (1 = the whole field is the twin) —
+// so a "sea" level can be authored anywhere on the ladder. `charset` (optional, charsets.js)
+// swaps in a chapter's own alphabet: its glyph pool, its rotation conflicts and its confusion
+// ladder — USA (no charset) uses the ASCII set below.
+export function generateSoloField({ level, totalLevels, settings, charRadii, rng, spawnRng = Math.random,
+                                    forceTarget, forceTwin, forceConfusion, charset }) {
     const glyphs = charset?.glyphs ?? LETTERS;
     const conflicts = charset?.conflicts ?? CONFLICTS;
     const targetChar = forceTarget
@@ -197,13 +199,15 @@ export function generateSoloField({ level, totalLevels, settings, charRadii, rng
     const forbidden = new Set(conflicts[targetChar] || []);
     forbidden.add(targetChar);
     const pool = [...glyphs].filter(c => !forbidden.has(c));
-    const twins = (charset ? charset.confusion.decoys(targetChar, level, totalLevels, rng)
-                           : confusionDecoys(targetChar, level, totalLevels, rng))
-        .filter(c => !forbidden.has(c));
+    const twins = forceTwin
+        ? [forceTwin]
+        : (charset ? charset.confusion.decoys(targetChar, level, totalLevels, rng)
+                   : confusionDecoys(targetChar, level, totalLevels, rng))
+            .filter(c => !forbidden.has(c));
     // Confusion scales to the chapter's own ladder (like ACK scales to the chosen round count),
     // hitting 1.0 — pure camouflage — on the last level.
     const p = totalLevels > 1 ? Math.min(1, (level - 1) / (totalLevels - 1)) : 1;
-    const confusion = twins.length ? p : 0;
+    const confusion = forceConfusion ?? (twins.length ? p : 0);
 
     const chars = [];
     for (let i = 0; i < settings.charCount - 1; i++) {

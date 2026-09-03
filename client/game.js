@@ -986,7 +986,13 @@ function soloLevelConfig(c, n, chapterId) {
         mode: 'redacted',
         seed: chapterId ? `${chapterId}:${n}` : undefined,
         campaign: chapterId ? { level: n + 1, totalLevels: LEVELS } : undefined,
-        target: chapterId ? LEVEL_TARGETS[`${chapterId}:${n}`] : undefined,   // authored target, if any
+        // Authored override, if any: a plain string is just a target; an object may pin the twin
+        // and confusion too (see client/solo/levels.js).
+        authored: chapterId
+            ? (typeof LEVEL_TARGETS[`${chapterId}:${n}`] === 'string'
+                ? { target: LEVEL_TARGETS[`${chapterId}:${n}`] }
+                : LEVEL_TARGETS[`${chapterId}:${n}`])
+            : undefined,
         charset: chapterId ? CHARSETS[chapterId] : undefined,   // the chapter's own alphabet, if any
         settings: {
             charCount: 30 + n * 8 + c * 10,
