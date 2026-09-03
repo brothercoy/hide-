@@ -106,7 +106,7 @@ export const FLAGS = [
         '                    ',
         '                    ',
     ], overlays: [
-        { ch: '####################', x: 10, y: 1.9 },
+        { ch: '####################', x: 10, y: 1.75 },
         { ch: '####################', x: 10, y: 2.5 },
         { ch: '####################', x: 10, y: 3.25 },
         { ch: '====================', x: 10, y: 3.75 },
@@ -152,28 +152,33 @@ export const FLAGS = [
         '                    ',
         '                    ',
     ], overlays: [
-        { ch: '####################', x: 10, y: 0.7 },
+        // Bars sized/placed to the REAL flag's 15:25:80:25:15 proportions — each bar is two
+        // #-lines overlapped 0.22 apart (0.78 lh of ink) centered at y 0.86 / 4.14.
+        { ch: '####################', x: 10, y: 0.75 },
+        { ch: '####################', x: 10, y: 0.97 },
         // CONTINUOUS diagonals: '/' ink runs (−0.5,+0.25)→(+0.375,−0.25) around its nominal point,
         // so each next slash steps 0.875 x-units out and 0.5 rows down to start exactly where the
         // previous one ended. The ▽ interlocks: its flat top is the underscore line of the △ apex
         // row (__/_\__), its sides cross the △ sides, its apex hangs below the △ base.
-        { ch: '/', x: 9.6, y: 1.9 },                   // △ apex pair
-        { ch: '\\', x: 10.5, y: 1.9 },
-        { ch: '__', x: 8.25, y: 1.9 },                 // ▽ top edge, left of the apex
-        { ch: '__', x: 10.05, y: 1.9 },                //   …under the apex peak
-        { ch: '__', x: 11.8, y: 1.9 },                 //   …right of the apex (line lands ≈ 2.24)
-        { ch: '/', x: 8.75, y: 2.4 },                  // △ sides
-        { ch: '\\', x: 11.35, y: 2.4 },
-        { ch: '\\', x: 7.9, y: 2.52 },                 // ▽ sides, from the top-edge corners
-        { ch: '/', x: 12.22, y: 2.52 },
-        { ch: '/', x: 7.9, y: 2.9 },                   // △ sides to the base corners
-        { ch: '\\', x: 12.2, y: 2.9 },
-        { ch: '_____', x: 10, y: 2.81 },               // △ base (line lands ≈ y 3.15)
-        { ch: '\\', x: 8.78, y: 3.02 },                // ▽ sides converging…
-        { ch: '/', x: 11.35, y: 3.02 },
-        { ch: '\\', x: 9.65, y: 3.52 },                // ▽ apex pair (meets at ≈ y 3.8)
-        { ch: '/', x: 10.48, y: 3.52 },
-        { ch: '####################', x: 10, y: 4.3 },
+        // Star centered on the flag's center (ink 1.45..3.6, mid ≈ 2.5) like the real flag.
+        { ch: '/', x: 9.6, y: 1.7 },                   // △ apex pair
+        { ch: '\\', x: 10.5, y: 1.7 },
+        { ch: '__', x: 8.25, y: 1.7 },                 // ▽ top edge, left of the apex
+        { ch: '__', x: 10.05, y: 1.7 },                //   …under the apex peak
+        { ch: '__', x: 11.8, y: 1.7 },                 //   …right of the apex (line lands ≈ 2.04)
+        { ch: '/', x: 8.75, y: 2.2 },                  // △ sides
+        { ch: '\\', x: 11.35, y: 2.2 },
+        { ch: '\\', x: 7.9, y: 2.32 },                 // ▽ sides, from the top-edge corners
+        { ch: '/', x: 12.22, y: 2.32 },
+        { ch: '/', x: 7.9, y: 2.7 },                   // △ sides to the base corners
+        { ch: '\\', x: 12.2, y: 2.7 },
+        { ch: '_____', x: 10, y: 2.61 },               // △ base (line lands ≈ y 2.95)
+        { ch: '\\', x: 8.78, y: 2.82 },                // ▽ sides converging…
+        { ch: '/', x: 11.35, y: 2.82 },
+        { ch: '\\', x: 9.65, y: 3.32 },                // ▽ apex pair (meets at ≈ y 3.6)
+        { ch: '/', x: 10.48, y: 3.32 },
+        { ch: '####################', x: 10, y: 4.03 },
+        { ch: '####################', x: 10, y: 4.25 },
     ] },
     // CHINA — the LAST chapter. Proof of `overlays`: the big star is a '*' drawn at over twice the
     // grid size, the four small ones arc beside it at fractional positions — none of which the
