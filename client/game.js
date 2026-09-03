@@ -8,6 +8,7 @@ import { SettingsOverlay } from './screens/SettingsOverlay.js';
 import { QuickJoinOverlay } from './screens/QuickJoinOverlay.js';
 import { SoloGame } from './solo/SoloGame.js';
 import { completeLevel, LEVELS } from './solo/progress.js';
+import { LEVEL_TARGETS } from './solo/levels.js';
 import { SoloScreen } from './screens/SoloScreen.js';
 import { ChapterScreen } from './screens/ChapterScreen.js';
 import { LobbyScreen } from './screens/LobbyScreen.js';
@@ -984,6 +985,7 @@ function soloLevelConfig(c, n, chapterId) {
         mode: 'redacted',
         seed: chapterId ? `${chapterId}:${n}` : undefined,
         campaign: chapterId ? { level: n + 1, totalLevels: LEVELS } : undefined,
+        target: chapterId ? LEVEL_TARGETS[`${chapterId}:${n}`] : undefined,   // authored target, if any
         settings: {
             charCount: 30 + n * 8 + c * 10,
             speedScale: 0.15 + n * 0.02,

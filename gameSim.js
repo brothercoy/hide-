@@ -184,8 +184,10 @@ export function generateField({ gameMode, settings, currentRound, charRadii, rng
 // level is — target, twin, field composition — identically for every player; `spawnRng` (default
 // Math.random) rolls positions/speeds fresh each attempt, so retries shuffle the board without
 // changing the puzzle.
-export function generateSoloField({ level, totalLevels, settings, charRadii, rng, spawnRng = Math.random }) {
-    const targetChar = pickConfusionTarget(level, totalLevels, LETTERS, rng);
+// `forceTarget` (optional) is an AUTHORED target for the level — the seed then only picks the
+// twin and composition around it.
+export function generateSoloField({ level, totalLevels, settings, charRadii, rng, spawnRng = Math.random, forceTarget }) {
+    const targetChar = forceTarget || pickConfusionTarget(level, totalLevels, LETTERS, rng);
     const forbidden = new Set(CONFLICTS[targetChar] || []);
     forbidden.add(targetChar);
     const pool = [...LETTERS].filter(c => !forbidden.has(c));
