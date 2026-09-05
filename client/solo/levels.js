@@ -15,6 +15,9 @@ export const LEVEL_TARGETS = {
     'c1:11': 'M',   // USA level 12 — M in a sea of W's
     'c2:0': 'γ',    // GREECE level 1 — normal noise level, γ (the ribbon twist) as the target
     'c2:1': 'Ψ',    // GREECE level 2 — seeded roll was μ, which is reserved as level 12's sea
+    'c2:5': { target: 'Λ', twin: 'Δ' },   // GREECE level 6 — swapped: the three-sided Δ is the decoy
+    'c2:8': { target: 'ω', twin: 'Ω' },   // GREECE level 9 — Ω (closest to ω) is the abundant decoy, not ψ
+    'c2:9': { target: 'ι', twin: 'τ' },   // GREECE level 10 — swapped: hunt the bare stem among τ's
     // GREECE level 12 — η hiding in a pure sea of μ's. Ladder position already makes the final
     // level full camouflage, so only the twin needs pinning.
     'c2:11': { target: 'η', twin: 'μ' },
