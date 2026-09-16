@@ -22,16 +22,16 @@ export const SONGS = {
             len: 40,
             ch: [
                 /* LEAD */ [
-                    72, h, 74, h,          // o'er the
-                    76, h, 77, h,          // land of
-                    77, h,                 // the
-                    79, h, h, h, h,        // FREE —
-                    h, h, h, h, h,         //   (held)
-                    77, h, 76, h,          // and the
-                    74, h, 76, h,          // home of
-                    74, h,                 // the
-                    72, h, h, h, h,        // BRAVE —
-                    h, h, h, h, h,         //   (held)
+                    67, h, 67, h,          // o'er the      (G4 G4)
+                    72, h, 74, h,          // land of       (C5 D5)
+                    76, h,                 // the           (E5)
+                    79, h, h, h, h,        // FREE —        (G5, held)
+                    h, h, h, h, h,
+                    72, h, 76, h,          // and the       (C5 E5)
+                    76, h, 77, h,          // home of       (E5 F5)
+                    74, h,                 // the           (D5)
+                    72, h, h, h, h,        // BRAVE —       (C5, held)
+                    h, h, h, h, h,
                 ],
                 /* BASS */ [
                     48, h, h, h,
