@@ -40,12 +40,20 @@ const loadOne = (url) => new Promise((resolve, reject) => {
 });
 
 export function initFont(fontSize) {
+    // The CSS @font-face fonts must ALSO be force-loaded: canvas fillText doesn't trigger a
+    // font fetch on its own, so without this the first "Find: X" frames of a kana/hanzi chapter
+    // draw in a fallback face and visibly snap once the real font arrives. Non-fatal.
+    const cssFonts = (typeof document !== 'undefined' && document.fonts)
+        ? Promise.all(['IBMVGA', 'PixelJA', 'PixelZH'].map(
+            fam => document.fonts.load(`16px "${fam}"`).catch(() => {})))
+        : Promise.resolve();
     // The companions are non-fatal: if one fails to load, its chapters lose their glyphs
     // but the game (and every other chapter) still runs.
     return Promise.all([
         loadOne(fontUrl),
         loadOne(kanaUrl).catch(() => null),
         loadOne(hanziUrl).catch(() => null),
+        cssFonts,
     ]).then(([main, kana, hanzi]) => {
         otFont = main;
         kanaFont = kana;
