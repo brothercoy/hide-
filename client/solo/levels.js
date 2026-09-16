@@ -47,4 +47,18 @@ export const LEVEL_TARGETS = {
     'c5:2': 'ס',    // level 3 — samekh keeps the boxes-family field (was ט, 12's finale target)
     'c5:4': 'ד',    // level 5 — dalet among resh/final-kaf corners (was צ, duplicating 7)
     'c5:7': 'נ',    // level 8 — nun keeps the bent-bottom field (was כ, duplicating 11)
+    // CHINA: fully authored — targets rise in stroke count / visual complexity, ending on the
+    // battle-axe pair. Each inherits its slot's ladder depth (families → subgroups → pair seas).
+    'c6:0': '一',   // one stroke, pure noise
+    'c6:1': '人',
+    'c6:2': '山',
+    'c6:3': '木',   // 未/末/本 lean begins
+    'c6:4': '王',   // 玉/主/土/士 mix
+    'c6:5': '田',   // 由/甲/申/电 mix
+    'c6:6': '白',   // 日/曰/百/自 mix
+    'c6:7': '牛',   // 午/生/年 mix
+    'c6:8': '未',   // 末 sea
+    'c6:9': '己',   // 已 sea
+    'c6:10': '土',  // 士 sea — the classic
+    'c6:11': '戊',  // finale — 戌 sea, the most complex-looking trap
 };
