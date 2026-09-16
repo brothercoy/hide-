@@ -1,6 +1,6 @@
 import { theme, disconnectGlyph } from '../ui/colors.js';
 import { RowReveal, drawRevealSegments } from '../ui/RowReveal.js';
-import { otFont } from '../ui/Font.js';
+import { fontForChar } from '../ui/Font.js';
 import { bandTop } from '../ui/viewport.js';
 import { textRow } from '../ui/Transition.js';
 import { GLOW_SPEED } from '../ui/Button.js';   // share the buttons'/specials' glow length
@@ -227,7 +227,7 @@ export class GameScreen {
         cv.width = w; cv.height = h;
         const g2d = cv.getContext('2d');
         // getPath(char, originX, baselineY, FS): ink center lands at the tile center.
-        const path = otFont.getPath(char, w / 2 - m.inkCX, h / 2 + m.inkCY, this.FONT_SIZE);
+        const path = fontForChar(char).getPath(char, w / 2 - m.inkCX, h / 2 + m.inkCY, this.FONT_SIZE);
         path.fill = theme.fg;
         path.draw(g2d);
         g = { canvas: cv, w, h };
@@ -248,7 +248,7 @@ export class GameScreen {
         const h = Math.max(1, Math.ceil(m.height) + 2 * PAD);
         const cv = document.createElement('canvas');
         cv.width = w; cv.height = h;
-        const path = otFont.getPath(char, w / 2 - m.inkCX, h / 2 + m.inkCY, this.FONT_SIZE);
+        const path = fontForChar(char).getPath(char, w / 2 - m.inkCX, h / 2 + m.inkCY, this.FONT_SIZE);
         path.fill = theme.glowHi;
         path.draw(cv.getContext('2d'));
         g = { canvas: cv, w, h };
@@ -345,8 +345,9 @@ export class GameScreen {
     // baseline) used to center both the rendered tile and the collision circle.
     _getMetrics(char) {
         if (this._metricsCache.has(char)) return this._metricsCache.get(char);
-        const scale = this.FONT_SIZE / otFont.unitsPerEm;
-        const bbox = otFont.charToGlyph(char).getBoundingBox();
+        const font = fontForChar(char);   // VGA font, or a companion for kana/hanzi chapters
+        const scale = this.FONT_SIZE / font.unitsPerEm;
+        const bbox = font.charToGlyph(char).getBoundingBox();
         const width = (bbox.x2 - bbox.x1) * scale;
         const height = (bbox.y2 - bbox.y1) * scale;
         const radius = Math.sqrt(width * width + height * height) / 2;
@@ -720,7 +721,9 @@ export class GameScreen {
         const slot = SHOW_S + GAP_S;
         const T1 = T3 + 2 * slot;                  // "1" appears
 
-        ctx.font = `${this.FRAME_SIZE}px "IBMVGA"`;
+        // Companion families cover chapter glyphs (kana/hanzi) the VGA font lacks —
+        // this line draws the TARGET character.
+        ctx.font = `${this.FRAME_SIZE}px "IBMVGA", "PixelJA", "PixelZH"`;
         ctx.textBaseline = 'top';
         ctx.fillStyle = theme.fg;
         const cw = this._frameCW();
@@ -736,7 +739,7 @@ export class GameScreen {
             ctx.textAlign = 'center';
             ctx.textBaseline = 'middle';
             ctx.fillText('Final Round!', cx, midY);
-            ctx.font = `${this.FRAME_SIZE}px "IBMVGA"`;   // restore for the rest of the countdown
+            ctx.font = `${this.FRAME_SIZE}px "IBMVGA", "PixelJA", "PixelZH"`;   // restore for the rest of the countdown
             ctx.textBaseline = 'top';
         }
 
@@ -1110,7 +1113,7 @@ export class GameScreen {
         // above the box scales with the top margin WITHIN THE BAND (not the raw canvas), so it
         // stays identical between maximized and fullscreen — the extra fullscreen height is
         // margin above the band, not layout space.
-        ctx.font = `${this.FRAME_SIZE}px "IBMVGA"`;
+        ctx.font = `${this.FRAME_SIZE}px "IBMVGA", "PixelJA", "PixelZH"`;   // target may be kana/hanzi
         const findGap = Math.max(10, (cy - halfH - bandTop(this.canvas)) * 0.16);
         ctx.fillText('Find: ' + targetChar, screenCx, cy - halfH - findGap);
 

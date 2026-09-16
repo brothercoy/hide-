@@ -9,6 +9,19 @@
             src: url('PxPlus_IBM_VGA_8x16.ttf') format('truetype');
             font-display: block;
         }
+        /* Companion pixel fonts — Fusion Pixel 12px monospaced subsets (OFL, see
+           FUSION-PIXEL-OFL.txt): kana for the JAPAN chapter, hanzi for CHINA. Used as
+           fallbacks after IBMVGA wherever a chapter glyph can appear in canvas text. */
+        @font-face {
+            font-family: 'PixelJA';
+            src: url('fusion-pixel-ja.ttf') format('truetype');
+            font-display: block;
+        }
+        @font-face {
+            font-family: 'PixelZH';
+            src: url('fusion-pixel-zh.ttf') format('truetype');
+            font-display: block;
+        }
         * {
             margin: 0;
             padding: 0;
