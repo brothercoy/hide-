@@ -43,6 +43,9 @@ const GLITCH_SWAP_MS = 60;     // re-roll the random glyphs this often (flicker 
 // Field dims to this alpha while a round is over, so the life-loss list reads clearly on top
 // (replaces the old low-opacity black backdrop).
 const ROUND_OVER_CHAR_DIM = 0.15;
+// Solo time-up dims HARDER than the multiplayer round-over: nobody found the target, so the
+// field drops near-black and only the glowing missed target stands out.
+const SOLO_TIMEUP_CHAR_DIM = 0.05;
 // At game over the field brightens from ROUND_OVER_CHAR_DIM up to full over this long — matched to
 // game.js's GO_SCRIM_MS so the characters fade uniformly WITH the scrim instead of vanishing under it.
 const GO_CHAR_RISE_MS = 1000;
@@ -1089,7 +1092,10 @@ export class GameScreen {
             const anim = (chars[i].isTarget && targetAnim) ? targetAnim : null;
             const cos = Math.cos(rot), sin = Math.sin(rot);
             ctx.setTransform(cos, sin, -sin, cos, px, py);
-            ctx.globalAlpha = anim ? anim.alpha : (winnerId ? goAlpha : (roundOverlay ? ROUND_OVER_CHAR_DIM : 1));
+            ctx.globalAlpha = anim ? anim.alpha
+                : winnerId ? goAlpha
+                : roundOverlay ? (this.solo && showRoundOver ? SOLO_TIMEUP_CHAR_DIM : ROUND_OVER_CHAR_DIM)
+                : 1;
             const g = this._getGlyph(ch);
             ctx.drawImage(g.canvas, -g.w / 2, -g.h / 2);
             if (anim && anim.glow > 0) {                     // glow-colour overlay on the target

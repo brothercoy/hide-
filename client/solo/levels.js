@@ -32,12 +32,12 @@ export const LEVEL_TARGETS = {
     // ladder depth (decoy families tighten as the level climbs).
     'c4:0': 'ﾛ',
     'c4:1': 'ﾆ',
-    'c4:2': 'ﾊ',
-    'c4:3': 'ﾍ',
-    'c4:4': 'ｦ',
-    'c4:5': 'ﾄ',
-    'c4:6': 'ﾒ',    // ﾉ/ﾍ mix
-    'c4:7': 'ﾙ',    // ﾘ/ﾚ mix
+    'c4:2': 'ﾒ',    // ﾉ/ﾍ-leaning noise
+    'c4:3': 'ﾙ',    // ﾘ/ﾚ-leaning noise
+    'c4:4': 'ﾊ',
+    'c4:5': 'ﾍ',
+    'c4:6': 'ｦ',    // ｶ mix
+    'c4:7': 'ﾄ',    // ｲ mix
     'c4:8': 'ｬ',    // small ｬ among full-size ﾔ
     'c4:9': 'ﾇ',    // ｽ sea
     'c4:10': 'ｿ',   // the ｿ/ﾝ classic
