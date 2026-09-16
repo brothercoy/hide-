@@ -33,6 +33,8 @@ export const LEVEL_TARGETS = {
     // tightens into a proper sea at that depth).
     'c4:4': 'ﾛ',
     'c4:8': 'ﾒ',    // level 9 — ﾒ among ﾉ at pair depth (swapped with 12)
+    'c4:9': 'ﾙ',    // level 10 — ﾙ among ﾚ (swapped with 11)
+    'c4:10': 'ｿ',   // level 11 — the ｿ/ﾝ classic, one step deeper
     'c4:11': 'ｱ',   // level 12 — ｱ in a pure sea of small ｧ (the size pair as the finale)
     // ISRAEL: the seed dealt duplicate targets (3/12 ט, 5/7 צ, 8/11 כ); the LOWER level of each
     // pair gets an unused target from the same visual family, keeping its field feel.
