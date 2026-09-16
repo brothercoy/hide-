@@ -11,7 +11,7 @@ import { GAME_MODES } from '../../gameModes.js';
 import { COUNTDOWN_MS, GAME_INTRO_MS } from '../../timings.js';
 import { theme } from '../ui/colors.js';
 import { sfx, tickBurst } from '../audio/sfx.js';
-import { setMusic } from '../audio/music.js';
+import { setMusic, playJingle } from '../audio/music.js';
 
 const RESULT_MS = 1600;      // hold the COMPLETE / TIME UP banner before returning to the menu
 const RESULT_FONT = 104;
@@ -27,9 +27,11 @@ export class SoloGame {
         this.gameMode = GAME_MODES[level.mode] || GAME_MODES.redacted;
         this.settings = { ...this.gameMode.defaultSettings, ...(level.settings || {}) };
         this.currentRound = 1;
-        // First clear of the chapter's final level: winning plays the fanfare on the banner
-        // (game.js then runs the flag-unlock ceremony). Replays stay quiet.
+        // First clear of the chapter's final level: winning plays the country's anthem jingle
+        // over the CHAPTER COMPLETE! banner (game.js then runs the flag-unlock ceremony).
+        // Replays stay quiet and show the plain banner.
         this.isFinal = !!level.ceremony;
+        this.anthem = level.anthem || null;   // tracker song name (falls back to CHAPTER_CLEAR)
 
         // A campaign level is PREDETERMINED: the seed fixes the target, its twin and the field
         // composition identically for every player ("level 12" is one shared puzzle), while spawn
@@ -117,8 +119,11 @@ export class SoloGame {
         setMusic(null);   // the result screen is silent, win or lose
         // Time's up — the round-open sound dropped low (a power-down).
         if (!won) sfx('ROUND_START', { freqMul: 0.45 });
-        // Chapter completed — the fanfare rings over the COMPLETE! banner.
-        else if (this.isFinal) sfx('CHAPTER_CLEAR');
+        // Chapter completed — the country's anthem jingle rings out over the banner (and keeps
+        // playing across the return to the flag screen); CHAPTER_CLEAR if no anthem exists yet.
+        else if (this.isFinal) {
+            if (!this.anthem || !playJingle(this.anthem)) sfx('CHAPTER_CLEAR');
+        }
     }
 
     // Tapped the target (game.js calls this when GameScreen.hitTest reports a hit) → level complete.
@@ -156,7 +161,8 @@ export class SoloGame {
             ctx.textAlign = 'center';
             ctx.textBaseline = 'middle';
             ctx.fillStyle = theme.fg;
-            ctx.fillText(this.won ? 'COMPLETE!' : "TIMES UP!", gameScreen.boxCenterX, this.canvas.height / 2);
+            ctx.fillText(this.won ? (this.isFinal ? 'CHAPTER COMPLETE!' : 'COMPLETE!') : "TIMES UP!",
+                gameScreen.boxCenterX, this.canvas.height / 2);
         }
     }
 

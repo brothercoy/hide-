@@ -28,8 +28,25 @@ export function setMusic(name, opts = {}) {
     stopAtBar = !name && !!opts.atBar;
 }
 
+// One-shot jingle (chapter-clear anthem): plays the song ONCE on the shared player; syncMusic
+// waits for it to finish before (re)starting whatever screen music is desired, so the anthem can
+// ride across a screen change. Returns false if the song doesn't exist (caller can fall back).
+let jingle = false;
+export function playJingle(name) {
+    const song = SONGS[name];
+    if (!song) return false;
+    player.play(song, { loop: false });
+    jingle = true;
+    current = null;
+    return true;
+}
+
 export function syncMusic() {
     if (!audioReady()) return;
+    if (jingle) {
+        if (player.playing()) return;   // let the jingle finish; screen music starts after
+        jingle = false;
+    }
     const song = desired ? SONGS[desired] : null;
     if (!song) {
         if (current) {

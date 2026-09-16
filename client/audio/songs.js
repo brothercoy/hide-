@@ -8,6 +8,59 @@ const n = null;
 const h = '~';
 
 export const SONGS = {
+    // HAND-DRAFTED (not from a lab export — the lab merges it into the tracker for tuning):
+    // the last phrase of The Star-Spangled Banner, "O'er the land of the free and the home of
+    // the brave", approximated by ear for the USA chapter-clear jingle. Adjust notes/bpm in the
+    // tracker; the next songs export carries the tuned version.
+    "ANTHEM_USA": {
+        name: 'ANTHEM_USA', bpm: 130,
+        instruments: ['FANFARE', 'BASS'],
+        chains: [[0], [0], [0]],
+        patterns: [
+        // pattern 0 — 40 steps
+        {
+            len: 40,
+            ch: [
+                /* LEAD */ [
+                    72, h, 74, h,          // o'er the
+                    76, h, 77, h,          // land of
+                    77, h,                 // the
+                    79, h, h, h, h,        // FREE —
+                    h, h, h, h, h,         //   (held)
+                    77, h, 76, h,          // and the
+                    74, h, 76, h,          // home of
+                    74, h,                 // the
+                    72, h, h, h, h,        // BRAVE —
+                    h, h, h, h, h,         //   (held)
+                ],
+                /* BASS */ [
+                    48, h, h, h,
+                    h, h, h, h,
+                    h, h,
+                    43, h, h, h, h,
+                    h, h, h, h, h,
+                    41, h, h, h,
+                    h, h, h, h,
+                    h, h,
+                    36, h, h, h, h,
+                    h, h, h, h, h,
+                ],
+                /* DRUM */ [
+                    n, n, n, n,
+                    n, n, n, n,
+                    n, n,
+                    n, n, n, n, n,
+                    n, n, n, n, n,
+                    n, n, n, n,
+                    n, n, n, n,
+                    n, n,
+                    n, n, n, n, n,
+                    n, n, n, n, n,
+                ],
+            ],
+        },
+        ],
+    },
     "THEME": {
         name: 'THEME', bpm: 120,
         instruments: ['LEAD', 'BASS'],

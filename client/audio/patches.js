@@ -115,6 +115,13 @@ export const PATCHES = {
             { wave: 'square', freq: 2637, freqEnd: null, delay: 0.95, attack: 0.005, decay: 0.22, gain: 0.014, filter: { type: 'bandpass', cutoff: 2600, q: 8 } },
         ],
     },
+    FANFARE: {
+        name: 'FANFARE', desc: 'Anthem-jingle lead — the CHAPTER_CLEAR triangle voice as a tracker instrument (authored at C5)',
+        voices: [
+            { wave: 'triangle', freq: 523, freqEnd: null, delay: 0, attack: 0.005, decay: 0.35, gain: 0.13, filter: null },
+            { wave: 'square', freq: 2093, freqEnd: null, delay: 0, attack: 0.005, decay: 0.12, gain: 0.015, filter: { type: 'bandpass', cutoff: 2100, q: 6 } },
+        ],
+    },
     COUNTDOWN: {
         name: 'COUNTDOWN', desc: 'Round countdown blip',
         voices: [

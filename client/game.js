@@ -320,15 +320,21 @@ const settingsScreen = new SettingsScreen(canvas, ctx, uiManager,
     () => showScreen('main')
 );
 
+// Per-chapter anthem jingles (tracker songs in songs.js) — played once over the CHAPTER
+// COMPLETE! banner on a chapter's first clear. Chapters without one fall back to the
+// CHAPTER_CLEAR patch until their anthem is composed.
+const ANTHEMS = { c1: 'ANTHEM_USA' };
+
 // Chapter level page (defined before soloScreen so the flag click can target it). onSelectLevel
 // launches that solo level; BACK returns to the flag grid.
 const chapterScreen = new ChapterScreen(canvas, ctx, uiManager,
     (chapterIdx, levelIdx) => {
         const id = chapterScreen.chapter?.id;
-        // Ceremony = FIRST clear of the chapter's final level: fanfare at the banner, then the
-        // flag screen types in and the next chapter's flag unlocks. Replays skip all of it.
+        // Ceremony = FIRST clear of the chapter's final level: the country's anthem jingle at
+        // the CHAPTER COMPLETE! banner, then the flag screen types in and the next chapter's
+        // flag unlocks. Replays skip all of it.
         const ceremony = !!id && levelIdx === LEVELS - 1 && !isLevelComplete(id, levelIdx);
-        startSolo({ ...soloLevelConfig(chapterIdx, levelIdx, id), ceremony },
+        startSolo({ ...soloLevelConfig(chapterIdx, levelIdx, id), ceremony, anthem: ANTHEMS[id] },
             { chapterId: id, name: chapterScreen.chapter?.name, levelIdx, ceremony });
     },
     () => showScreen('solo')

@@ -8,6 +8,7 @@
 import { initAudio, audioReady, playPatch, startSustain, setMasterVolume, getMasterVolume, getAnalyser } from './SoundEngine.js';
 import { PATCHES } from './patches.js';
 import { createPlayer, instrumentFreqMul, normalizeSong, chainTotal, noteSteps, CHANNEL_NAMES, HOLD } from './MusicPlayer.js';
+import { SONGS as COMMITTED_SONGS } from './songs.js';
 
 const canvas = document.getElementById('c');
 const ctx = canvas.getContext('2d', { alpha: false });
@@ -122,6 +123,13 @@ try {
 } catch { /* corrupt save — start fresh */ }
 if (!songs) songs = [defaultSong('THEME')];
 songs.forEach(normalizeSong);   // upgrade songs written before per-channel chains
+// COMMITTED songs (songs.js) the autosave doesn't know yet appear in the tracker — a song added
+// straight to songs.js (e.g. a hand-drafted anthem jingle) is editable here and survives the
+// next export instead of being silently dropped.
+for (const key of Object.keys(COMMITTED_SONGS)) {
+    const c = COMMITTED_SONGS[key];
+    if (!songs.some(s => s.name === c.name)) songs.push(normalizeSong(JSON.parse(JSON.stringify(c))));
+}
 
 let editPat = 0, octave = 4;
 let chainSel = [0, 0, 0];       // selected slot within each channel's chain
