@@ -52,7 +52,7 @@ export class ChapterScreen {
             // once reachable, a checkmark once completed (still clickable — replays allowed).
             const done = isLevelComplete(this.chapter?.id, i);
             const open = isLevelUnlocked(this.chapter?.id, i);
-            const label = done ? '✓' : (open ? String(i + 1) : '?');
+            const label = done ? '_/' : (open ? String(i + 1) : '?');   // '_/' = ASCII checkmark
             this.ui.buttons.push(makeButton(label, L.levelPos[i].x, L.levelPos[i].y,
                 () => this.onSelectLevel(this.chapterIdx, i),
                 { blocksInput: true, disabled: !open }));

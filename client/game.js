@@ -7,7 +7,7 @@ import { SettingsScreen } from './screens/SettingsScreen.js';
 import { SettingsOverlay } from './screens/SettingsOverlay.js';
 import { QuickJoinOverlay } from './screens/QuickJoinOverlay.js';
 import { SoloGame } from './solo/SoloGame.js';
-import { completeLevel, LEVELS } from './solo/progress.js';
+import { completeLevel, LEVELS, devCompleteAll, devReset } from './solo/progress.js';
 import { LEVEL_TARGETS } from './solo/levels.js';
 import { CHARSETS } from '../charsets.js';
 import { SoloScreen } from './screens/SoloScreen.js';
@@ -1028,6 +1028,14 @@ function startSolo(level = { mode: 'redacted', settings: { charCount: 45, speedS
     // same GAME_INTRO_MS span, so "Find: X" starts the moment the feed lands.
     typeGameIn();
 }
+
+// Dev tools (browser console): `dev.completeAll()` marks every campaign level beaten;
+// `dev.reset()` wipes progress back to a brand-new start. Both reload so every screen
+// re-reads the state.
+window.dev = {
+    completeAll() { devCompleteAll(); location.reload(); },
+    reset() { devReset(); location.reload(); },
+};
 
 function endSolo(won) {
     // A win is recorded permanently (progress.js) — level gating reads this once GATED flips on.

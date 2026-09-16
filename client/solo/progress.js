@@ -53,3 +53,20 @@ export function isChapterUnlocked(flags, idx) {
     const prev = flags[idx - 1];
     return !!prev?.art && isLevelComplete(prev.id, LEVELS - 1);
 }
+
+// --- Dev tools (exposed on window.dev by game.js) ---------------------------------------------
+// NOTE: local-only for now. Eventually progress moves server-side, tied to an identity, so it
+// follows the player between devices (see the rule in prefs.js).
+import { FLAGS } from './flags.js';
+
+// Everything beaten: every chapter open, every level checkmarked.
+export function devCompleteAll() {
+    const p = {};
+    for (const f of FLAGS) p[f.id] = Array(LEVELS).fill(true);
+    setPref(KEY, p);
+}
+
+// Brand-new player: no wins, only USA level 1 reachable.
+export function devReset() {
+    setPref(KEY, {});
+}
