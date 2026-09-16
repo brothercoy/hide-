@@ -8,12 +8,16 @@
 //
 // The @ / $ / ! / ! run through USA is deliberate sequence-planting for a later idea.
 export const LEVEL_TARGETS = {
-    'c1:1': '@',    // USA level 2
-    'c1:5': '$',    // USA level 6
-    'c1:7': '!',    // USA level 8 (swapped with 9 — the planted ! moved up a slot)
-    'c1:8': 'b',    // USA level 9 (level 8's old seeded target, pinned)
-    'c1:10': '!',   // USA level 11
-    'c1:11': 'M',   // USA level 12 — M in a sea of W's
+    // USA — the @ $ ! ! plant now sits on EVEN levels 2/4/6/8 (sequence-planting for a later
+    // idea; the twin ! targets are deliberate). Displaced seeded targets pinned around them.
+    'c1:1': '@',    // level 2
+    'c1:3': '$',    // level 4
+    'c1:4': 'G',    // level 5 (shifted up)
+    'c1:5': '!',    // level 6
+    'c1:7': '!',    // level 8
+    'c1:8': 'b',    // level 9
+    'c1:10': 'n',   // level 11 (swapped down from old 6's slot)
+    'c1:11': 'M',   // level 12 — M in a sea of W's
     'c2:0': 'γ',    // GREECE level 1 — normal noise level, γ (the ribbon twist) as the target
     'c2:1': 'β',    // GREECE level 2 — an unused glyph (seeded roll was μ, reserved as 12's sea)
     'c2:6': 'Ψ',    // GREECE level 7 — the trident (was η, which duplicated level 12's target)
