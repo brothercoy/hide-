@@ -49,29 +49,13 @@ export class ChapterScreen {
         const L = this._layout();
         for (let i = 0; i < LEVELS; i++) {
             // Level button states: '?' dim while locked (previous level not beaten), its number
-            // once reachable, an ASCII-art checkmark once completed (still clickable — replays).
+            // once reachable, a ✓ once completed (still clickable — replays allowed).
             const done = isLevelComplete(this.chapter?.id, i);
             const open = isLevelUnlocked(this.chapter?.id, i);
-            this.ui.buttons.push(makeButton(done ? '  ' : (open ? String(i + 1) : '?'),
+            this.ui.buttons.push(makeButton(done ? '✓' : (open ? String(i + 1) : '?'),
                 L.levelPos[i].x, L.levelPos[i].y,
                 () => this.onSelectLevel(this.chapterIdx, i),
-                {
-                    blocksInput: true, disabled: !open,
-                    // The checkmark: \/ dip with a long CONNECTED riser — each stroke placed so
-                    // its ink starts exactly where the previous stroke's ink ends
-                    // (dx 0.875 cell, dy 0.625 row per step):    /
-                    //                                           /
-                    //                                         \/
-                    labelArt: done ? {
-                        rows: 2,   // rows sets the stroke size (artFS = font/rows) — 2 = big strokes
-                        marks: [
-                            { ch: '\\', x: 0, y: 2 },
-                            { ch: '/', x: 1.025, y: 2 },
-                            { ch: '/', x: 2.05, y: 1.375 },
-                            { ch: '/', x: 2.925, y: 0.75 },
-                        ],
-                    } : null,
-                }));
+                { blocksInput: true, disabled: !open }));
         }
         this.ui.buttons.push(makeButton('BACK', this.canvas.width / 2, L.backY, () => this.onBack(), { blocksInput: true }));
     }
