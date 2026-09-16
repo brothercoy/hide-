@@ -1663,6 +1663,7 @@ canvas.addEventListener('mousedown', (e) => {
             else room.send('tap', { nx: hit.nx, ny: hit.ny, time: Date.now() });   // MP: server validates
         } else if (gameScreen.isInPlayField(cx, cy)) {
             gameScreen.triggerGlitch();          // missed inside the field — scramble (no penalty)
+            sfx('ERROR2');                       // the sour glitter that goes with the scramble
         }
     }
 });

@@ -69,6 +69,30 @@ export const PATCHES = {
             { wave: 'sawtooth', freq: 151, freqEnd: 153, delay: 0, attack: 0.005, decay: 0.28, gain: 0.273, filter: { type: 'lowpass', cutoff: 1000, q: 1 } },
         ],
     },
+    ERROR2: {
+        name: 'ERROR2', desc: 'Miss-glitch: ERROR buzz wearing BTN_CONFIRM glitter — sour sparks in beating detuned pairs, all bending DOWN, dying out low',
+        vary: { freq: 0.04, gain: 0.15 },
+        voices: [
+            // The ERROR body, shortened — buzz with a downward sag
+            { wave: 'sawtooth', freq: 151, freqEnd: 138, delay: 0, attack: 0.005, decay: 0.18, gain: 0.22, filter: { type: 'lowpass', cutoff: 1000, q: 1 } },
+            { wave: 'square', freq: 53, freqEnd: 44, delay: 0.02, attack: 0.005, decay: 0.2, gain: 0.14, filter: { type: 'lowpass', cutoff: 800, q: 1 } },
+            // Sour glitter: noise chirp + a semitone-clashing ping pair per spark, pitch bending down
+            { wave: 'noise', freq: 440, freqEnd: null, delay: 0.05, attack: 0.001, decay: 0.03, gain: 0.045, filter: { type: 'bandpass', cutoff: 5200, q: 6 } },
+            { wave: 'sawtooth', freq: 2489, freqEnd: 2114, delay: 0.05, attack: 0.003, decay: 0.13, gain: 0.03, filter: { type: 'bandpass', cutoff: 2500, q: 8 } },
+            { wave: 'square', freq: 2637, freqEnd: 2240, delay: 0.055, attack: 0.003, decay: 0.12, gain: 0.018, filter: { type: 'bandpass', cutoff: 2600, q: 8 } },
+            { wave: 'noise', freq: 440, freqEnd: null, delay: 0.14, attack: 0.001, decay: 0.03, gain: 0.04, filter: { type: 'bandpass', cutoff: 7400, q: 6 } },
+            { wave: 'sawtooth', freq: 3520, freqEnd: 2992, delay: 0.14, attack: 0.003, decay: 0.12, gain: 0.026, filter: { type: 'bandpass', cutoff: 3500, q: 8 } },
+            { wave: 'square', freq: 3729, freqEnd: 3169, delay: 0.145, attack: 0.003, decay: 0.11, gain: 0.015, filter: { type: 'bandpass', cutoff: 3700, q: 8 } },
+            { wave: 'noise', freq: 440, freqEnd: null, delay: 0.23, attack: 0.001, decay: 0.028, gain: 0.035, filter: { type: 'bandpass', cutoff: 4200, q: 6 } },
+            { wave: 'sawtooth', freq: 1760, freqEnd: 1496, delay: 0.23, attack: 0.003, decay: 0.12, gain: 0.026, filter: { type: 'bandpass', cutoff: 1800, q: 8 } },
+            { wave: 'square', freq: 1865, freqEnd: 1585, delay: 0.235, attack: 0.003, decay: 0.11, gain: 0.015, filter: { type: 'bandpass', cutoff: 1900, q: 8 } },
+            { wave: 'noise', freq: 440, freqEnd: null, delay: 0.32, attack: 0.001, decay: 0.025, gain: 0.028, filter: { type: 'bandpass', cutoff: 8600, q: 6 } },
+            { wave: 'sawtooth', freq: 4978, freqEnd: 4231, delay: 0.32, attack: 0.003, decay: 0.1, gain: 0.018, filter: { type: 'bandpass', cutoff: 5000, q: 8 } },
+            // Dying ember — a last low sour pair, sagging away
+            { wave: 'sawtooth', freq: 1245, freqEnd: 1058, delay: 0.4, attack: 0.004, decay: 0.14, gain: 0.02, filter: { type: 'bandpass', cutoff: 1250, q: 8 } },
+            { wave: 'square', freq: 1319, freqEnd: 1121, delay: 0.405, attack: 0.004, decay: 0.13, gain: 0.012, filter: { type: 'bandpass', cutoff: 1350, q: 8 } },
+        ],
+    },
     COUNTDOWN: {
         name: 'COUNTDOWN', desc: 'Round countdown blip',
         voices: [
