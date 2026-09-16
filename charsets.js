@@ -94,6 +94,44 @@ const CYRILLIC_TIERS = [
     ],
 ];
 
+// ---- ISRAEL (chapter c5) ------------------------------------------------------------------------
+// All 27 Hebrew glyphs (22 letters + 5 final forms) are outline-unique against ASCII, Greek and
+// Cyrillic — the whole alphabet ships. No cases; the confusables are Hebrew's classic mix-ups.
+const HEBREW_GLYPHS = 'אבגדהוזחטיכךלמםנןסעפףצץקרשת';
+
+const HEBREW_TIERS = [
+    // ---- Tier 0: broad families ----
+    [
+        ['ו', 'ן', 'ז', 'י', 'ל'],            // bare stems (vav/final-nun/zayin/yod/lamed)
+        ['ד', 'ר', 'ך'],                       // top-corner shapes
+        ['ח', 'ה', 'ת', 'ק'],                  // gates (two legs under a roof)
+        ['ב', 'כ', 'נ', 'ג'],                  // bent-bottom shapes
+        ['ם', 'ס', 'ט', 'מ'],                  // boxes (closed / near-closed)
+        ['ע', 'צ', 'ץ', 'א', 'ש'],             // branchy / diagonal
+        ['פ', 'ף'],                            // pe curls
+        ['ך', 'ן', 'ף', 'ץ', 'ק'],             // descenders (the final forms + qof)
+    ],
+    // ---- Tier 1: subgroups ----
+    [
+        ['ו', 'ז', 'ן'], ['י', 'ו'],
+        ['ד', 'ר'], ['ד', 'ך'],
+        ['ח', 'ה', 'ת'], ['ה', 'ק'],
+        ['ב', 'כ', 'נ'], ['ג', 'נ'],
+        ['ם', 'ס'], ['ט', 'מ'],
+        ['ע', 'צ'], ['צ', 'ץ'],
+        ['פ', 'ף'], ['ך', 'ן', 'ף', 'ץ'],
+    ],
+    // ---- Tier 2: pairs (the final-level "two options") — Hebrew's canonical look-alikes ----
+    [
+        ['ד', 'ר'], ['ך', 'ד'],
+        ['ח', 'ה'], ['ה', 'ת'],
+        ['ב', 'כ'], ['ג', 'נ'],
+        ['ם', 'ס'], ['ט', 'מ'],
+        ['ו', 'ן'], ['ז', 'ו'],
+        ['ע', 'צ'], ['פ', 'ף'],
+    ],
+];
+
 export const CHARSETS = {
     c2: {
         glyphs: GREEK_GLYPHS,
@@ -104,5 +142,10 @@ export const CHARSETS = {
         glyphs: CYRILLIC_GLYPHS,
         conflicts: buildConflicts([]),   // none yet — playtesting decides
         confusion: makeConfusion(CYRILLIC_TIERS),
+    },
+    c5: {
+        glyphs: HEBREW_GLYPHS,
+        conflicts: buildConflicts([]),   // none yet — playtesting decides
+        confusion: makeConfusion(HEBREW_TIERS),
     },
 };
