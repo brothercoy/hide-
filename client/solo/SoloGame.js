@@ -27,6 +27,9 @@ export class SoloGame {
         this.gameMode = GAME_MODES[level.mode] || GAME_MODES.redacted;
         this.settings = { ...this.gameMode.defaultSettings, ...(level.settings || {}) };
         this.currentRound = 1;
+        // First clear of the chapter's final level: winning plays the fanfare on the banner
+        // (game.js then runs the flag-unlock ceremony). Replays stay quiet.
+        this.isFinal = !!level.ceremony;
 
         // A campaign level is PREDETERMINED: the seed fixes the target, its twin and the field
         // composition identically for every player ("level 12" is one shared puzzle), while spawn
@@ -114,6 +117,8 @@ export class SoloGame {
         setMusic(null);   // the result screen is silent, win or lose
         // Time's up — the round-open sound dropped low (a power-down).
         if (!won) sfx('ROUND_START', { freqMul: 0.45 });
+        // Chapter completed — the fanfare rings over the COMPLETE! banner.
+        else if (this.isFinal) sfx('CHAPTER_CLEAR');
     }
 
     // Tapped the target (game.js calls this when GameScreen.hitTest reports a hit) → level complete.

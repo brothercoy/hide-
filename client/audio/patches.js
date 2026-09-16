@@ -93,6 +93,28 @@ export const PATCHES = {
             { wave: 'square', freq: 1319, freqEnd: 1121, delay: 0.405, attack: 0.004, decay: 0.13, gain: 0.012, filter: { type: 'bandpass', cutoff: 1350, q: 8 } },
         ],
     },
+    CHAPTER_CLEAR: {
+        name: 'CHAPTER_CLEAR', desc: 'Chapter complete — the confirm thunk opening into a rising C-major arpeggio with IN-TUNE glitter (the anti-ERROR2)',
+        voices: [
+            // The confirm's release thunk opens it
+            { wave: 'noise', freq: 440, freqEnd: null, delay: 0, attack: 0.001, decay: 0.02, gain: 0.25, filter: { type: 'bandpass', cutoff: 2800, q: 1.2 } },
+            { wave: 'sine', freq: 45, freqEnd: 150, delay: 0, attack: 0.003, decay: 0.09, gain: 0.45, filter: null },
+            // Rising arpeggio: C5 E5 G5 C6
+            { wave: 'triangle', freq: 523, freqEnd: null, delay: 0.05, attack: 0.004, decay: 0.4, gain: 0.11, filter: null },
+            { wave: 'triangle', freq: 659, freqEnd: null, delay: 0.19, attack: 0.004, decay: 0.4, gain: 0.11, filter: null },
+            { wave: 'triangle', freq: 784, freqEnd: null, delay: 0.33, attack: 0.004, decay: 0.45, gain: 0.11, filter: null },
+            { wave: 'triangle', freq: 1046, freqEnd: null, delay: 0.47, attack: 0.004, decay: 0.9, gain: 0.13, filter: null },
+            { wave: 'square', freq: 2093, freqEnd: null, delay: 0.47, attack: 0.005, decay: 0.35, gain: 0.022, filter: { type: 'bandpass', cutoff: 2100, q: 6 } },
+            // Glitter, but harmonic — sparks on chord tones climbing away
+            { wave: 'noise', freq: 440, freqEnd: null, delay: 0.62, attack: 0.001, decay: 0.03, gain: 0.04, filter: { type: 'bandpass', cutoff: 5200, q: 6 } },
+            { wave: 'square', freq: 1319, freqEnd: null, delay: 0.62, attack: 0.003, decay: 0.2, gain: 0.03, filter: { type: 'bandpass', cutoff: 1300, q: 8 } },
+            { wave: 'noise', freq: 440, freqEnd: null, delay: 0.72, attack: 0.001, decay: 0.03, gain: 0.035, filter: { type: 'bandpass', cutoff: 7400, q: 6 } },
+            { wave: 'square', freq: 1568, freqEnd: null, delay: 0.72, attack: 0.003, decay: 0.2, gain: 0.026, filter: { type: 'bandpass', cutoff: 1600, q: 8 } },
+            { wave: 'noise', freq: 440, freqEnd: null, delay: 0.82, attack: 0.001, decay: 0.025, gain: 0.03, filter: { type: 'bandpass', cutoff: 9500, q: 6 } },
+            { wave: 'square', freq: 2093, freqEnd: null, delay: 0.82, attack: 0.003, decay: 0.18, gain: 0.022, filter: { type: 'bandpass', cutoff: 2100, q: 8 } },
+            { wave: 'square', freq: 2637, freqEnd: null, delay: 0.95, attack: 0.005, decay: 0.22, gain: 0.014, filter: { type: 'bandpass', cutoff: 2600, q: 8 } },
+        ],
+    },
     COUNTDOWN: {
         name: 'COUNTDOWN', desc: 'Round countdown blip',
         voices: [

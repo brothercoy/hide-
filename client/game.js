@@ -7,7 +7,7 @@ import { SettingsScreen } from './screens/SettingsScreen.js';
 import { SettingsOverlay } from './screens/SettingsOverlay.js';
 import { QuickJoinOverlay } from './screens/QuickJoinOverlay.js';
 import { SoloGame } from './solo/SoloGame.js';
-import { completeLevel, LEVELS, devCompleteAll, devReset } from './solo/progress.js';
+import { completeLevel, isLevelComplete, LEVELS, devCompleteAll, devReset } from './solo/progress.js';
 import { LEVEL_TARGETS } from './solo/levels.js';
 import { CHARSETS } from '../charsets.js';
 import { SoloScreen } from './screens/SoloScreen.js';
@@ -323,8 +323,14 @@ const settingsScreen = new SettingsScreen(canvas, ctx, uiManager,
 // Chapter level page (defined before soloScreen so the flag click can target it). onSelectLevel
 // launches that solo level; BACK returns to the flag grid.
 const chapterScreen = new ChapterScreen(canvas, ctx, uiManager,
-    (chapterIdx, levelIdx) => startSolo(soloLevelConfig(chapterIdx, levelIdx, chapterScreen.chapter?.id),
-        { chapterId: chapterScreen.chapter?.id, name: chapterScreen.chapter?.name, levelIdx }),
+    (chapterIdx, levelIdx) => {
+        const id = chapterScreen.chapter?.id;
+        // Ceremony = FIRST clear of the chapter's final level: fanfare at the banner, then the
+        // flag screen types in and the next chapter's flag unlocks. Replays skip all of it.
+        const ceremony = !!id && levelIdx === LEVELS - 1 && !isLevelComplete(id, levelIdx);
+        startSolo({ ...soloLevelConfig(chapterIdx, levelIdx, id), ceremony },
+            { chapterId: id, name: chapterScreen.chapter?.name, levelIdx, ceremony });
+    },
     () => showScreen('solo')
 );
 
@@ -418,6 +424,7 @@ function showScreen(name, opts = {}) {
         // On the genuine first load into the menu, type the HUD in after the
         // main-menu intro (instead of showing it immediately).
         if (firstPaint && name === 'main') { hudIntroPending = true; hudIntroStart = null; }
+        opts.onComplete?.();
         return;
     }
 
@@ -436,6 +443,7 @@ function showScreen(name, opts = {}) {
             uiManager.blocked = false;
             uiManager.lastTime = performance.now();
         }
+        opts.onComplete?.();   // caller hook — e.g. the chapter-unlock ceremony starts here
     };
 
     if (!incoming || typeof incoming.getTypeables !== 'function') {
@@ -1038,13 +1046,22 @@ window.dev = {
 };
 
 function endSolo(won) {
-    // A win is recorded permanently (progress.js) — level gating reads this once GATED flips on.
+    // A win is recorded permanently (progress.js) — level gating reads it.
     if (won && soloIdent?.chapterId != null) completeLevel(soloIdent.chapterId, soloIdent.levelIdx);
+    const ceremony = won && soloIdent?.ceremony;
+    const clearedChapterId = soloIdent?.chapterId;
     soloIdent = null;
     soloGame = null;
     currentMode = null;
     gameScreen.solo = false;
-    showScreen('chapter');   // back to the chapter's level page
+    if (ceremony) {
+        // Chapter cleared for the first time: return to the FLAG screen instead of the level
+        // page; once its type-in lands, the next chapter's flag plays its unlock reveal.
+        soloScreen.beginUnlock(clearedChapterId);
+        showScreen('solo', { onComplete: () => soloScreen.startUnlock() });
+    } else {
+        showScreen('chapter');   // back to the chapter's level page
+    }
 }
 
 function createMode(modeId, data) {
