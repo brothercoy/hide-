@@ -57,10 +57,20 @@ export class ChapterScreen {
                 () => this.onSelectLevel(this.chapterIdx, i),
                 {
                     blocksInput: true, disabled: !open,
-                    // The checkmark: a short falling stroke into a long rising one —
-                    //     /
-                    //   \/
-                    labelArt: done ? ['  /', '\\/ '] : null,
+                    // The checkmark: \/ dip with a long CONNECTED riser — each stroke placed so
+                    // its ink starts exactly where the previous stroke's ink ends
+                    // (dx 0.875 cell, dy 0.625 row per step):    /
+                    //                                           /
+                    //                                         \/
+                    labelArt: done ? {
+                        rows: 3,
+                        marks: [
+                            { ch: '\\', x: 0, y: 2 },
+                            { ch: '/', x: 0.875, y: 2 },
+                            { ch: '/', x: 1.75, y: 1.375 },
+                            { ch: '/', x: 2.625, y: 0.75 },
+                        ],
+                    } : null,
                 }));
         }
         this.ui.buttons.push(makeButton('BACK', this.canvas.width / 2, L.backY, () => this.onBack(), { blocksInput: true }));

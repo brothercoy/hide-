@@ -237,6 +237,28 @@ export function updateButtonZ(btn, dt, elapsed, pressedButton, mouseIsDown, mous
     }
 }
 
+// Lay out a button's labelArt into absolute glyph placements, centered in the label row.
+// GRID form: an array of strings, one art-cell per character. PLACEMENT form:
+// { rows, marks: [{ ch, x, y }] } — x in art-cell WIDTHS, y in art-row HEIGHTS, fractional,
+// so diagonal strokes can join ink-to-ink (a VGA stroke's ink spans ~0.875 of its cell across
+// and ~0.625 of it down, so grid placement alone leaves gaps in a multi-cell diagonal).
+function labelArtChars(btn, FONT_SIZE, st, lh) {
+    const art = btn.labelArt;
+    const rowCount = Array.isArray(art) ? art.length : art.rows;
+    const artFS = FONT_SIZE / rowCount;
+    const acw = charWidth(artFS);
+    const marks = Array.isArray(art)
+        ? art.flatMap((r, ri) => [...r].map((ch, xi) => ({ ch, x: xi, y: ri })).filter(m => m.ch !== ' '))
+        : art.marks;
+    const minX = Math.min(...marks.map(m => m.x)), maxX = Math.max(...marks.map(m => m.x));
+    const minY = Math.min(...marks.map(m => m.y)), maxY = Math.max(...marks.map(m => m.y));
+    const w = (maxX - minX + 0.875) * acw;
+    const h = (maxY - minY + 1) * artFS;
+    const x0 = btn.x - w / 2 - minX * acw;
+    const y0 = st + lh + (lh - h) / 2 - minY * artFS;
+    return marks.map(m => ({ ch: m.ch, x: x0 + m.x * acw, y: y0 + m.y * artFS, fs: artFS }));
+}
+
 export function drawButton(ctx, btn, elapsed, FONT_SIZE) {
     if (!USE_VECTOR) {
         // bitmap plain buttons use ctx directly
@@ -308,18 +330,10 @@ export function drawButton(ctx, btn, elapsed, FONT_SIZE) {
         drawChar(ctx, topB[i], sl + i * cw, st, useFixed ? btn.z : getCharZWithReturn(btn, ci, elapsed), glowColor, FONT_SIZE, getCharRotWithReturn(btn, ci, elapsed));
     drawChar(ctx, ls, sl, st + lh, useFixed ? btn.z : getCharZWithReturn(btn, ci++, elapsed), glowColor, FONT_SIZE, getCharRotWithReturn(btn, ci - 1, elapsed));
     if (btn.labelArt) {
-        // Multi-row ASCII art in the label slot (e.g. the level checkmark  '  /' over '\/').
-        // Rows draw at a reduced size so the art fills the standard single-row interior, through
-        // the same per-char z/rot/color pipeline as any label.
-        const rows = btn.labelArt;
-        const artFS = FONT_SIZE / rows.length;
-        const acw = charWidth(artFS);
-        const artW = Math.max(...rows.map(r => r.length)) * acw;
-        const ax0 = btn.x - artW / 2;
-        for (let r = 0; r < rows.length; r++)
-            for (let i = 0; i < rows[r].length; i++, ci++)
-                if (rows[r][i] !== ' ')
-                    drawChar(ctx, rows[r][i], ax0 + i * acw, st + lh + r * artFS, useFixed ? btn.z : getCharZWithReturn(btn, ci, elapsed), glowColor, artFS, getCharRotWithReturn(btn, ci, elapsed));
+        for (const m of labelArtChars(btn, FONT_SIZE, st, lh)) {
+            drawChar(ctx, m.ch, m.x, m.y, useFixed ? btn.z : getCharZWithReturn(btn, ci, elapsed), glowColor, m.fs, getCharRotWithReturn(btn, ci, elapsed));
+            ci++;
+        }
     } else {
         for (let i = 0; i < btn.label.length; i++, ci++)
             drawChar(ctx, btn.label[i], sl + cw + padX + i * cw, st + lh, useFixed ? btn.z : getCharZWithReturn(btn, ci, elapsed), glowColor, FONT_SIZE, getCharRotWithReturn(btn, ci, elapsed));
@@ -383,14 +397,7 @@ export function drawButtonRow(ctx, btn, rowIndex, n, FONT_SIZE) {
         if (btn.labelArt) {
             // Art appears whole once the reveal reaches the label slot (cost still = label length).
             if (drawn < n) {
-                const rows = btn.labelArt;
-                const artFS = FONT_SIZE / rows.length;
-                const acw = charWidth(artFS);
-                const artW = Math.max(...rows.map(r => r.length)) * acw;
-                const ax0 = btn.x - artW / 2;
-                for (let r = 0; r < rows.length; r++)
-                    for (let i = 0; i < rows[r].length; i++)
-                        if (rows[r][i] !== ' ') drawChar(ctx, rows[r][i], ax0 + i * acw, st + lh + r * artFS, z, color, artFS);
+                for (const m of labelArtChars(btn, FONT_SIZE, st, lh)) drawChar(ctx, m.ch, m.x, m.y, z, color, m.fs);
                 drawn += btn.label.length;
             }
         } else {
