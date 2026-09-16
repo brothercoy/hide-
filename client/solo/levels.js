@@ -23,9 +23,9 @@ export const LEVEL_TARGETS = {
     // level full camouflage, so only the twin needs pinning.
     'c2:11': { target: 'η', twin: 'μ' },
     // RUSSIA: З moved from level 5 up to 9; the levels between shift back one to fill the gap.
-    'c3:4': 'т',    // level 5 (was 6's puzzle)
-    'c3:5': 'И',    // level 6 (was 7's)
-    'c3:6': 'з',    // level 7 (was 8's)
-    'c3:7': { target: 'и', twin: 'й' },   // level 8 — find the plain и among breve-topped й's (was 9)
-    'c3:8': 'З',    // level 9 — З at pair depth: hiding among Э's
+    'c3:4': 'З',    // level 5 — З in the loose Э/э mix
+    'c3:5': 'И',    // level 6
+    'c3:6': 'з',    // level 7
+    'c3:7': { target: 'и', twin: 'й' },   // level 8 — find the plain и among breve-topped й's
+    'c3:8': 'т',    // level 9 — т at pair depth: hiding among г's
 };
