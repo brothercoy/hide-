@@ -57,10 +57,52 @@ function buildConflicts(groups) {
     return m;
 }
 
+// ---- RUSSIA (chapter c3) ------------------------------------------------------------------------
+// 43 glyphs; excluded as outline-identical to ASCII or the Greek pool: А=A В=B Е=E К=K М=M Н=H
+// О=O Р=P С=C Т=T Х=X, Г=Γ П=Π Ф=Φ, а е о р с у х. (Л, У, З all survived — their VGA outlines
+// genuinely differ from Λ, Y, 3.)
+const CYRILLIC_GLYPHS = 'БДЖЗИЙЛУЦЧШЩЪЫЬЭЮЯбвгджзийклмнптфцчшщъыьэюя';
+
+const CYRILLIC_TIERS = [
+    // ---- Tier 0: broad families ----
+    [
+        ['Ш', 'Щ', 'ш', 'щ', 'Ц', 'ц'],                         // combs (multi-stem + tails)
+        ['И', 'Й', 'и', 'й', 'п', 'н', 'Л', 'л', 'Д', 'д', 'м'],// stems / gates / legs
+        ['Ъ', 'Ы', 'Ь', 'ъ', 'ы', 'ь', 'Б', 'б', 'в'],          // signs — bowls on stems
+        ['З', 'з', 'Э', 'э'],                                   // з/э curves
+        ['Ж', 'ж', 'к', 'У', 'Ч', 'ч'],                         // spiky / crossed
+        ['Ю', 'ю', 'ф'],                                        // round with attachments
+        ['Я', 'я'],                                             // mirrored R
+        ['г', 'т'],                                             // small bars
+    ],
+    // ---- Tier 1: subgroups ----
+    [
+        ['Ш', 'Щ', 'ш', 'щ'], ['Ц', 'ц', 'щ'],
+        ['И', 'Й', 'и', 'й'], ['п', 'н', 'м'], ['Л', 'л', 'Д', 'д'], ['м', 'л'],
+        ['Ъ', 'Ы', 'Ь', 'ъ', 'ы', 'ь'], ['Б', 'в', 'Ь', 'б'],
+        ['З', 'з', 'Э', 'э'],
+        ['Ж', 'ж', 'к'], ['У', 'Ч', 'ч'],
+        ['Ю', 'ю'], ['Я', 'я'], ['г', 'т'],
+    ],
+    // ---- Tier 2: pairs (the final-level "two options") ----
+    [
+        ['Ш', 'Щ'], ['ш', 'щ'], ['Ц', 'ц'],
+        ['И', 'Й'], ['и', 'й'], ['п', 'н'], ['Л', 'л'], ['Д', 'д'],
+        ['Ы', 'Ь'], ['ъ', 'ь'], ['Б', 'Ь'],
+        ['З', 'Э'], ['з', 'э'],
+        ['Ж', 'ж'], ['Ч', 'ч'], ['Ю', 'ю'], ['Я', 'я'],
+    ],
+];
+
 export const CHARSETS = {
     c2: {
         glyphs: GREEK_GLYPHS,
         conflicts: buildConflicts(GREEK_CONFLICT_GROUPS),
         confusion: makeConfusion(GREEK_TIERS),
+    },
+    c3: {
+        glyphs: CYRILLIC_GLYPHS,
+        conflicts: buildConflicts([]),   // none yet — playtesting decides
+        confusion: makeConfusion(CYRILLIC_TIERS),
     },
 };
