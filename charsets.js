@@ -132,6 +132,39 @@ const HEBREW_TIERS = [
     ],
 ];
 
+// ---- JAPAN (chapter c4) -------------------------------------------------------------------------
+// HALF-WIDTH katakana (JIS X 0201) — the narrow terminal-era forms whose proportions match the
+// VGA cell, rendered from the fusion-pixel-ja companion font. 46 base kana + the 9 small forms
+// (size pairs, same trick as Cyrillic's case pairs). Voiced forms deliberately excluded.
+const KANA_GLYPHS = 'ｦｧｨｩｪｫｬｭｮｯｱｲｳｴｵｶｷｸｹｺｻｼｽｾｿﾀﾁﾂﾃﾄﾅﾆﾇﾈﾉﾊﾋﾌﾍﾎﾏﾐﾑﾒﾓﾔﾕﾖﾗﾘﾙﾚﾛﾜﾝ';
+
+const KANA_TIERS = [
+    // ---- Tier 0: broad families ----
+    [
+        ['ﾉ', 'ﾒ', 'ｿ', 'ﾝ', 'ｼ', 'ﾂ', 'ﾐ', 'ｯ', 'ﾍ'],                 // diagonal strokes
+        ['ｦ', 'ｵ', 'ｫ', 'ｶ', 'ｷ', 'ｻ', 'ｾ', 'ﾁ', 'ﾃ', 'ﾄ', 'ﾅ', 'ﾈ', 'ﾎ', 'ﾋ', 'ﾓ'],       // crossed stems
+        ['ｳ', 'ﾜ', 'ｸ', 'ｹ', 'ﾀ', 'ﾌ', 'ﾗ', 'ｩ', 'ｽ', 'ﾇ'],            // claws / hooks
+        ['ｺ', 'ﾕ', 'ﾖ', 'ﾛ', 'ｴ', 'ﾆ', 'ｭ', 'ｮ', 'ｪ'],                 // boxes / brackets
+        ['ｱ', 'ｲ', 'ｧ', 'ｨ', 'ﾔ', 'ｬ', 'ﾏ', 'ﾑ'],                      // angular open shapes
+        ['ﾊ', 'ﾘ', 'ﾙ', 'ﾚ'],                                          // twin strokes
+    ],
+    // ---- Tier 1: subgroups ----
+    [
+        ['ｼ', 'ﾂ', 'ｯ', 'ﾐ'], ['ｿ', 'ﾝ'], ['ﾉ', 'ﾒ', 'ﾍ'], ['ﾁ', 'ﾃ'],
+        ['ｸ', 'ﾀ', 'ｹ'], ['ｳ', 'ﾜ', 'ｩ'], ['ﾌ', 'ﾗ'], ['ｽ', 'ﾇ'],
+        ['ﾅ', 'ｵ', 'ｫ'], ['ﾈ', 'ﾎ'], ['ｻ', 'ｷ'], ['ｾ', 'ﾓ', 'ﾋ'], ['ｶ', 'ｦ'], ['ﾄ', 'ｲ'],
+        ['ｺ', 'ﾕ', 'ｭ'], ['ﾖ', 'ｮ', 'ｴ', 'ｪ'], ['ﾛ', 'ｺ'], ['ﾆ', 'ｴ'],
+        ['ｱ', 'ｧ', 'ﾏ', 'ﾑ'], ['ﾔ', 'ｬ'],
+        ['ﾘ', 'ﾙ', 'ﾚ'],
+    ],
+    // ---- Tier 2: pairs — the kana classics (ｼ/ﾂ and ｿ/ﾝ are famous) + size pairs ----
+    [
+        ['ｼ', 'ﾂ'], ['ｿ', 'ﾝ'], ['ﾁ', 'ﾃ'], ['ｸ', 'ﾀ'], ['ｳ', 'ﾜ'], ['ﾌ', 'ﾗ'], ['ｽ', 'ﾇ'],
+        ['ﾅ', 'ｵ'], ['ﾈ', 'ﾎ'], ['ｻ', 'ｷ'], ['ｾ', 'ﾓ'], ['ﾒ', 'ﾉ'], ['ﾙ', 'ﾚ'],
+        ['ﾂ', 'ｯ'], ['ﾔ', 'ｬ'], ['ﾕ', 'ｭ'], ['ﾖ', 'ｮ'], ['ｱ', 'ｧ'],
+    ],
+];
+
 export const CHARSETS = {
     c2: {
         glyphs: GREEK_GLYPHS,
@@ -142,6 +175,11 @@ export const CHARSETS = {
         glyphs: CYRILLIC_GLYPHS,
         conflicts: buildConflicts([]),   // none yet — playtesting decides
         confusion: makeConfusion(CYRILLIC_TIERS),
+    },
+    c4: {
+        glyphs: KANA_GLYPHS,
+        conflicts: buildConflicts([]),   // none yet — playtesting decides
+        confusion: makeConfusion(KANA_TIERS),
     },
     c5: {
         glyphs: HEBREW_GLYPHS,
