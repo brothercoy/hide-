@@ -60,18 +60,23 @@ export class SoloGame {
         this._doneAt = 0;
         this._ended = false;
 
-        // Fields the shared tap/draw path in game.js + GameScreen read off the "mode" — all inert
-        // for solo (no rounds-over / matches / winner), so those overlays never trigger.
+        // Fields the shared tap/draw path in game.js + GameScreen read off the "mode" — inert
+        // for solo (no matches / winner), so those overlays never trigger. showRoundOver is a
+        // GETTER below: true once the level ends, which blocks the tap path (no selection
+        // press/confirm sounds on a target you can no longer select).
         this.currentMatch = 1;
         this.totalMatches = 1;
         this.totalRounds = 0;
         this.winnerId = null;
-        this.showRoundOver = false;
         this.showMatchOver = false;
         this.showRoundResult = false;
     }
 
     get countdownActive() { return this.phase === 'countdown'; }
+
+    // True once the level has ended (won OR lost) — game.js's tap gate reads this, so taps on
+    // the field during the COMPLETE!/TIMES UP! result play no selection sounds and do nothing.
+    get showRoundOver() { return this.phase === 'done'; }
 
     // Local tick — no server. Runs the countdown, then the round's physics + timer, then holds the
     // result before ending. dtMs is unused (we use wall-clock deltas, like the server's tick).
