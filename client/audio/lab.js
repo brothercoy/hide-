@@ -116,26 +116,44 @@ function defaultSong(name) {
     };
 }
 
-let songs = null, songIdx = 0;
+let songs = null, songIdx = 0, committedSnap = null;
 try {
     const s = JSON.parse(localStorage.getItem(SONGS_KEY) || 'null');
-    if (s?.songs?.length) { songs = s.songs; songIdx = Math.min(s.songIdx || 0, s.songs.length - 1); }
+    if (s?.songs?.length) {
+        songs = s.songs;
+        songIdx = Math.min(s.songIdx || 0, s.songs.length - 1);
+        committedSnap = s.snap || null;   // committed songs as they were at save time
+    }
 } catch { /* corrupt save — start fresh */ }
 if (!songs) songs = [defaultSong('THEME')];
 songs.forEach(normalizeSong);   // upgrade songs written before per-channel chains
-// COMMITTED songs (songs.js) the autosave doesn't know yet appear in the tracker — a song added
-// straight to songs.js (e.g. a hand-drafted anthem jingle) is editable here and survives the
-// next export instead of being silently dropped.
-for (const key of Object.keys(COMMITTED_SONGS)) {
-    const c = COMMITTED_SONGS[key];
-    if (!songs.some(s => s.name === c.name)) songs.push(normalizeSong(JSON.parse(JSON.stringify(c))));
+// COMMITTED-song sync (mirrors the patch bank's stale-save rule): a song added straight to
+// songs.js appears in the tracker; and when a committed song CHANGED since this autosave was
+// made (e.g. a correction committed to a hand-drafted anthem), the committed version displaces
+// the stale saved copy. In-progress lab edits survive as long as the committed version hasn't
+// changed underneath them.
+{
+    const snap = committedSnap || {};
+    for (const key of Object.keys(COMMITTED_SONGS)) {
+        const c = COMMITTED_SONGS[key];
+        const cStr = JSON.stringify(c);
+        const i = songs.findIndex(s => s.name === c.name);
+        if (i < 0) songs.push(normalizeSong(JSON.parse(cStr)));
+        else if (snap[c.name] !== cStr && JSON.stringify(songs[i]) !== cStr) {
+            songs[i] = normalizeSong(JSON.parse(cStr));   // committed changed since the save — it wins
+        }
+    }
 }
+// What the committed songs look like RIGHT NOW — stored with every save so the next load can
+// tell "user edited this" apart from "a newer committed version landed".
+const committedNow = Object.fromEntries(
+    Object.keys(COMMITTED_SONGS).map(k => [COMMITTED_SONGS[k].name, JSON.stringify(COMMITTED_SONGS[k])]));
 
 let editPat = 0, octave = 4;
 let chainSel = [0, 0, 0];       // selected slot within each channel's chain
 let cur = { row: 0, ch: 0 };
 const player = createPlayer(k => bank[k]);   // plays the EDITED bank — lab tweaks are heard live
-function touchSongs() { localStorage.setItem(SONGS_KEY, JSON.stringify({ songs, songIdx })); }
+function touchSongs() { localStorage.setItem(SONGS_KEY, JSON.stringify({ songs, songIdx, snap: committedNow })); }
 
 function exportSongs() {
     const json = JSON.stringify({ songs }, null, 2);
