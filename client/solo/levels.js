@@ -22,5 +22,10 @@ export const LEVEL_TARGETS = {
     // GREECE level 12 — η hiding in a pure sea of μ's. Ladder position already makes the final
     // level full camouflage, so only the twin needs pinning.
     'c2:11': { target: 'η', twin: 'μ' },
-    'c3:8': { target: 'и', twin: 'й' },   // RUSSIA level 9 — swapped from the seeded roll: find the
-};                                        //   plain и among breve-topped й's
+    // RUSSIA: З moved from level 5 up to 9; the levels between shift back one to fill the gap.
+    'c3:4': 'т',    // level 5 (was 6's puzzle)
+    'c3:5': 'И',    // level 6 (was 7's)
+    'c3:6': 'з',    // level 7 (was 8's)
+    'c3:7': { target: 'и', twin: 'й' },   // level 8 — find the plain и among breve-topped й's (was 9)
+    'c3:8': 'З',    // level 9 — З at pair depth: hiding among Э's
+};
