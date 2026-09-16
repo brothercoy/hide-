@@ -70,3 +70,17 @@ export function devCompleteAll() {
 export function devReset() {
     setPref(KEY, {});
 }
+
+// Everything beaten UP TO the given chapter's level 12: all prior chapters fully complete,
+// this chapter complete through level 11 — its finale open, ready to test the clear ceremony.
+// `chapter`: a flag id ('c3') or a 1-based chapter number (3).
+export function devUpTo(chapter) {
+    const idx = typeof chapter === 'number'
+        ? chapter - 1
+        : FLAGS.findIndex(f => f.id === chapter);
+    if (idx < 0 || idx >= FLAGS.length) return;
+    const p = {};
+    for (let i = 0; i < idx; i++) p[FLAGS[i].id] = Array(LEVELS).fill(true);
+    p[FLAGS[idx].id] = Array(LEVELS - 1).fill(true);
+    setPref(KEY, p);
+}

@@ -7,7 +7,7 @@ import { SettingsScreen } from './screens/SettingsScreen.js';
 import { SettingsOverlay } from './screens/SettingsOverlay.js';
 import { QuickJoinOverlay } from './screens/QuickJoinOverlay.js';
 import { SoloGame } from './solo/SoloGame.js';
-import { completeLevel, isLevelComplete, LEVELS, devCompleteAll, devReset } from './solo/progress.js';
+import { completeLevel, isLevelComplete, LEVELS, devCompleteAll, devReset, devUpTo } from './solo/progress.js';
 import { LEVEL_TARGETS } from './solo/levels.js';
 import { CHARSETS } from '../charsets.js';
 import { SoloScreen } from './screens/SoloScreen.js';
@@ -1043,6 +1043,9 @@ function startSolo(level = { mode: 'redacted', settings: { charCount: 45, speedS
 window.dev = {
     completeAll() { devCompleteAll(); location.reload(); },
     reset() { devReset(); location.reload(); },
+    // dev.upTo(3) or dev.upTo('c3'): prior chapters done, that chapter done through level 11 —
+    // its finale open, ready to test the chapter-clear ceremony.
+    upTo(chapter) { devUpTo(chapter); location.reload(); },
 };
 
 function endSolo(won) {

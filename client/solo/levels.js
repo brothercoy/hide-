@@ -10,7 +10,8 @@
 export const LEVEL_TARGETS = {
     'c1:1': '@',    // USA level 2
     'c1:5': '$',    // USA level 6
-    'c1:8': '!',    // USA level 9
+    'c1:7': '!',    // USA level 8 (swapped with 9 — the planted ! moved up a slot)
+    'c1:8': 'b',    // USA level 9 (level 8's old seeded target, pinned)
     'c1:10': '!',   // USA level 11
     'c1:11': 'M',   // USA level 12 — M in a sea of W's
     'c2:0': 'γ',    // GREECE level 1 — normal noise level, γ (the ribbon twist) as the target
