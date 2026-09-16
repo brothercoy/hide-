@@ -32,7 +32,8 @@ export const LEVEL_TARGETS = {
     // levels 5 and 9 swapped puzzles: ﾛ drops to 5 (loose ｺ mix), ｱ rises to 9 (its ｧ size-pair
     // tightens into a proper sea at that depth).
     'c4:4': 'ﾛ',
-    'c4:8': 'ｱ',
+    'c4:8': 'ﾒ',    // level 9 — ﾒ among ﾉ at pair depth (swapped with 12)
+    'c4:11': 'ｱ',   // level 12 — ｱ in a pure sea of small ｧ (the size pair as the finale)
     // ISRAEL: the seed dealt duplicate targets (3/12 ט, 5/7 צ, 8/11 כ); the LOWER level of each
     // pair gets an unused target from the same visual family, keeping its field feel.
     'c5:2': 'ס',    // level 3 — samekh keeps the boxes-family field (was ט, 12's finale target)
