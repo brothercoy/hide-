@@ -12,7 +12,7 @@
 // With GATED false: every designed chapter (one whose flag has art) is open, and all its levels are.
 import { getPref, setPref } from '../prefs.js';
 
-export const GATED = false;         // flip to enforce progression
+export const GATED = true;          // progression enforced (flip off to open everything for dev)
 export const LEVELS = 12;           // levels per chapter
 
 const KEY = 'campaign.progress';    // { [chapterId]: [true,…] } — per-level completion, by flag id

@@ -1,12 +1,12 @@
 // A chapter's level page — reached by selecting a flag on the SOLO screen. Shows the chapter title
-// (the flag's country) and a grid of numbered LEVEL buttons; selecting one launches that solo level.
-// BACK returns to the flag grid. Locked levels (progress.js gating — inert until GATED flips on)
-// draw as disabled buttons: dim, unclickable, no hover.
+// (the flag's country) and a grid of LEVEL buttons; selecting one launches that solo level.
+// BACK returns to the flag grid. Progression (progress.js, GATED): a locked level draws as a dim
+// unclickable '?', a reachable one shows its number, a completed one a ✓ (replayable).
 import { makeButton, drawButton, buttonRows } from '../ui/Button.js';
 import { textRow } from '../ui/Transition.js';
 import { theme } from '../ui/colors.js';
 import { bandTop } from '../ui/viewport.js';
-import { LEVELS, isLevelUnlocked } from '../solo/progress.js';
+import { LEVELS, isLevelUnlocked, isLevelComplete } from '../solo/progress.js';
 
 const TITLE_SIZE = 160;      // chapter (country) title
 const TITLE_Y = 50;
@@ -48,9 +48,14 @@ export class ChapterScreen {
         this.ui.clear();
         const L = this._layout();
         for (let i = 0; i < LEVELS; i++) {
-            this.ui.buttons.push(makeButton(String(i + 1), L.levelPos[i].x, L.levelPos[i].y,
+            // Level button states: '?' dim while locked (previous level not beaten), its number
+            // once reachable, a checkmark once completed (still clickable — replays allowed).
+            const done = isLevelComplete(this.chapter?.id, i);
+            const open = isLevelUnlocked(this.chapter?.id, i);
+            const label = done ? '✓' : (open ? String(i + 1) : '?');
+            this.ui.buttons.push(makeButton(label, L.levelPos[i].x, L.levelPos[i].y,
                 () => this.onSelectLevel(this.chapterIdx, i),
-                { blocksInput: true, disabled: !isLevelUnlocked(this.chapter?.id, i) }));
+                { blocksInput: true, disabled: !open }));
         }
         this.ui.buttons.push(makeButton('BACK', this.canvas.width / 2, L.backY, () => this.onBack(), { blocksInput: true }));
     }
