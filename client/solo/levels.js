@@ -28,4 +28,9 @@ export const LEVEL_TARGETS = {
     'c3:6': 'з',    // level 7
     'c3:7': { target: 'и', twin: 'й' },   // level 8 — find the plain и among breve-topped й's
     'c3:8': 'т',    // level 9 — т at pair depth: hiding among г's
+    // ISRAEL: the seed dealt duplicate targets (3/12 ט, 5/7 צ, 8/11 כ); the LOWER level of each
+    // pair gets an unused target from the same visual family, keeping its field feel.
+    'c5:2': 'ס',    // level 3 — samekh keeps the boxes-family field (was ט, 12's finale target)
+    'c5:4': 'ד',    // level 5 — dalet among resh/final-kaf corners (was צ, duplicating 7)
+    'c5:7': 'נ',    // level 8 — nun keeps the bent-bottom field (was כ, duplicating 11)
 };
