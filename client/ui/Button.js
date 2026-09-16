@@ -142,6 +142,8 @@ export function makeButton(label, x, y, onClick, options = {}) {
         fireOnRelease: options.fireOnRelease || false, // fire onClick instantly on release (glow plays after)
         noGlow: options.noGlow || false, // skip the release glow phase (press/return anims only)
         corner: options.corner || '+',   // border corner / hover-fill glyph
+        labelArt: options.labelArt || null,   // multi-row ASCII art drawn IN PLACE of the label
+                                              // (rows of equal-ish width; label still sizes the button)
         z: Z_FLOAT_MIN + (Math.random() * (Z_FLOAT_MAX - Z_FLOAT_MIN)),
         releasePhase: null,
         charPhases: null,
@@ -305,8 +307,23 @@ export function drawButton(ctx, btn, elapsed, FONT_SIZE) {
     for (let i = 0; i < topB.length; i++, ci++)
         drawChar(ctx, topB[i], sl + i * cw, st, useFixed ? btn.z : getCharZWithReturn(btn, ci, elapsed), glowColor, FONT_SIZE, getCharRotWithReturn(btn, ci, elapsed));
     drawChar(ctx, ls, sl, st + lh, useFixed ? btn.z : getCharZWithReturn(btn, ci++, elapsed), glowColor, FONT_SIZE, getCharRotWithReturn(btn, ci - 1, elapsed));
-    for (let i = 0; i < btn.label.length; i++, ci++)
-        drawChar(ctx, btn.label[i], sl + cw + padX + i * cw, st + lh, useFixed ? btn.z : getCharZWithReturn(btn, ci, elapsed), glowColor, FONT_SIZE, getCharRotWithReturn(btn, ci, elapsed));
+    if (btn.labelArt) {
+        // Multi-row ASCII art in the label slot (e.g. the level checkmark  '  /' over '\/').
+        // Rows draw at a reduced size so the art fills the standard single-row interior, through
+        // the same per-char z/rot/color pipeline as any label.
+        const rows = btn.labelArt;
+        const artFS = FONT_SIZE / rows.length;
+        const acw = charWidth(artFS);
+        const artW = Math.max(...rows.map(r => r.length)) * acw;
+        const ax0 = btn.x - artW / 2;
+        for (let r = 0; r < rows.length; r++)
+            for (let i = 0; i < rows[r].length; i++, ci++)
+                if (rows[r][i] !== ' ')
+                    drawChar(ctx, rows[r][i], ax0 + i * acw, st + lh + r * artFS, useFixed ? btn.z : getCharZWithReturn(btn, ci, elapsed), glowColor, artFS, getCharRotWithReturn(btn, ci, elapsed));
+    } else {
+        for (let i = 0; i < btn.label.length; i++, ci++)
+            drawChar(ctx, btn.label[i], sl + cw + padX + i * cw, st + lh, useFixed ? btn.z : getCharZWithReturn(btn, ci, elapsed), glowColor, FONT_SIZE, getCharRotWithReturn(btn, ci, elapsed));
+    }
     drawChar(ctx, rs, sl + borderWidth - cw, st + lh, useFixed ? btn.z : getCharZWithReturn(btn, ci++, elapsed), glowColor, FONT_SIZE, getCharRotWithReturn(btn, ci - 1, elapsed));
     for (let i = 0; i < botB.length; i++, ci++)
         drawChar(ctx, botB[i], sl + i * cw, st + lh * 2, useFixed ? btn.z : getCharZWithReturn(btn, ci, elapsed), glowColor, FONT_SIZE, getCharRotWithReturn(btn, ci, elapsed));
@@ -363,8 +380,23 @@ export function drawButtonRow(ctx, btn, rowIndex, n, FONT_SIZE) {
         const rs = btn._isPressed ? '{' : '|';
         let drawn = 0;
         if (drawn < n) { drawChar(ctx, ls, sl, st + lh, z, color, FONT_SIZE); drawn++; }
-        for (let i = 0; i < btn.label.length && drawn < n; i++, drawn++)
-            drawChar(ctx, btn.label[i], sl + cw + padX + i * cw, st + lh, z, color, FONT_SIZE);
+        if (btn.labelArt) {
+            // Art appears whole once the reveal reaches the label slot (cost still = label length).
+            if (drawn < n) {
+                const rows = btn.labelArt;
+                const artFS = FONT_SIZE / rows.length;
+                const acw = charWidth(artFS);
+                const artW = Math.max(...rows.map(r => r.length)) * acw;
+                const ax0 = btn.x - artW / 2;
+                for (let r = 0; r < rows.length; r++)
+                    for (let i = 0; i < rows[r].length; i++)
+                        if (rows[r][i] !== ' ') drawChar(ctx, rows[r][i], ax0 + i * acw, st + lh + r * artFS, z, color, artFS);
+                drawn += btn.label.length;
+            }
+        } else {
+            for (let i = 0; i < btn.label.length && drawn < n; i++, drawn++)
+                drawChar(ctx, btn.label[i], sl + cw + padX + i * cw, st + lh, z, color, FONT_SIZE);
+        }
         if (drawn < n) { drawChar(ctx, rs, sl + borderWidth - cw, st + lh, z, color, FONT_SIZE); drawn++; }
     } else {
         const plus = btn.corner || '+';

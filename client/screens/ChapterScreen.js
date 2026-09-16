@@ -49,13 +49,19 @@ export class ChapterScreen {
         const L = this._layout();
         for (let i = 0; i < LEVELS; i++) {
             // Level button states: '?' dim while locked (previous level not beaten), its number
-            // once reachable, a checkmark once completed (still clickable — replays allowed).
+            // once reachable, an ASCII-art checkmark once completed (still clickable — replays).
             const done = isLevelComplete(this.chapter?.id, i);
             const open = isLevelUnlocked(this.chapter?.id, i);
-            const label = done ? '_/' : (open ? String(i + 1) : '?');   // '_/' = ASCII checkmark
-            this.ui.buttons.push(makeButton(label, L.levelPos[i].x, L.levelPos[i].y,
+            this.ui.buttons.push(makeButton(done ? '  ' : (open ? String(i + 1) : '?'),
+                L.levelPos[i].x, L.levelPos[i].y,
                 () => this.onSelectLevel(this.chapterIdx, i),
-                { blocksInput: true, disabled: !open }));
+                {
+                    blocksInput: true, disabled: !open,
+                    // The checkmark: a short falling stroke into a long rising one —
+                    //     /
+                    //   \/
+                    labelArt: done ? ['  /', '\\/ '] : null,
+                }));
         }
         this.ui.buttons.push(makeButton('BACK', this.canvas.width / 2, L.backY, () => this.onBack(), { blocksInput: true }));
     }
