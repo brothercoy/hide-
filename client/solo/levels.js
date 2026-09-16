@@ -15,8 +15,8 @@ export const LEVEL_TARGETS = {
     'c1:4': 'G',    // level 5 (shifted up)
     'c1:5': '!',    // level 6
     'c1:7': '!',    // level 8
-    'c1:8': 'b',    // level 9
-    'c1:10': 'n',   // level 11 (swapped down from old 6's slot)
+    'c1:8': 'n',    // level 9 (swapped with 11)
+    'c1:10': 'b',   // level 11
     'c1:11': 'M',   // level 12 — M in a sea of W's
     'c2:0': 'γ',    // GREECE level 1 — normal noise level, γ (the ribbon twist) as the target
     'c2:1': 'β',    // GREECE level 2 — an unused glyph (seeded roll was μ, reserved as 12's sea)
