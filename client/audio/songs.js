@@ -61,6 +61,209 @@ export const SONGS = {
         },
         ],
     },
+    // GREECE — Hymn to Liberty ending (C major): E C5 | B B A A G G | F A A G E | F D → C.
+    // Pitches verified against two independent sources (bitmidi melody track in F, 8notes voice
+    // arrangement in C — identical transposed). Rhythm approximated; tune in the tracker.
+    "ANTHEM_GREECE": {
+        name: 'ANTHEM_GREECE', bpm: 150,
+        instruments: ['FANFARE', 'BASS'],
+        chains: [[0], [0], [0]],
+        patterns: [
+        {
+            len: 40,
+            ch: [
+                /* LEAD */ [
+                    64, h, 72, h,
+                    71, h, 71, h,
+                    69, h, 69, h,
+                    67, h, 67, h,
+                    65, h, 69, h,
+                    69, h, 67, h,
+                    64, h, 65, h,
+                    62, h,
+                    60, h, h, h,
+                    h, h, h, h, h, h,
+                ],
+                /* BASS */ [
+                    48, h, h, h,
+                    h, h, h, h,
+                    h, h, h, h,
+                    h, h, h, h,
+                    43, h, h, h,
+                    h, h, h, h,
+                    h, h, h, h,
+                    h, h,
+                    48, h, h, h,
+                    h, h, h, h, h, h,
+                ],
+                /* DRUM */ [
+                    n, n, n, n, n, n, n, n, n, n,
+                    n, n, n, n, n, n, n, n, n, n,
+                    n, n, n, n, n, n, n, n, n, n,
+                    n, n, n, n, n, n, n, n, n, n,
+                ],
+            ],
+        },
+        ],
+    },
+    // RUSSIA — state anthem chorus ending (C major): A A C5 B A G | C C G A B → C5.
+    // Melody track identical in two independent MIDI transcriptions.
+    "ANTHEM_RUSSIA": {
+        name: 'ANTHEM_RUSSIA', bpm: 130,
+        instruments: ['FANFARE', 'BASS'],
+        chains: [[0], [0], [0]],
+        patterns: [
+        {
+            len: 36,
+            ch: [
+                /* LEAD */ [
+                    69, h, 69, h,
+                    72, h, 71, h,
+                    69, h, 67, h,
+                    60, h, 60, h,
+                    67, h, 69, h,
+                    71, h,
+                    72, h, h, h,
+                    h, h, h, h, h, h, h, h, h, h,
+                ],
+                /* BASS */ [
+                    45, h, h, h,
+                    h, h, h, h,
+                    h, h, h, h,
+                    48, h, h, h,
+                    h, h, h, h,
+                    h, h,
+                    36, h, h, h,
+                    h, h, h, h, h, h, h, h, h, h,
+                ],
+                /* DRUM */ [
+                    n, n, n, n, n, n, n, n, n, n, n, n,
+                    n, n, n, n, n, n, n, n, n, n, n, n,
+                    n, n, n, n, n, n, n, n, n, n, n, n,
+                ],
+            ],
+        },
+        ],
+    },
+    // JAPAN — Kimigayo ending (D dorian): A C5 D5— | C5 D5 A G | A G E → D—.
+    // Verified against the MIT ABC archive AND a Commons MIDI (identical). Traditionally
+    // near-monophonic, so no bass line.
+    "ANTHEM_JAPAN": {
+        name: 'ANTHEM_JAPAN', bpm: 100,
+        instruments: ['FANFARE', 'BASS'],
+        chains: [[0], [0], [0]],
+        patterns: [
+        {
+            len: 36,
+            ch: [
+                /* LEAD */ [
+                    69, h, 72, h,
+                    74, h, h, h, h, h,
+                    72, h, 74, h,
+                    69, h, 67, h,
+                    69, h, 67, h,
+                    64, h,
+                    62, h, h, h,
+                    h, h, h, h, h, h, h, h,
+                ],
+                /* BASS */ [
+                    n, n, n, n, n, n, n, n, n, n, n, n,
+                    n, n, n, n, n, n, n, n, n, n, n, n,
+                    n, n, n, n, n, n, n, n, n, n, n, n,
+                ],
+                /* DRUM */ [
+                    n, n, n, n, n, n, n, n, n, n, n, n,
+                    n, n, n, n, n, n, n, n, n, n, n, n,
+                    n, n, n, n, n, n, n, n, n, n, n, n,
+                ],
+            ],
+        },
+        ],
+    },
+    // ISRAEL — Hatikvah ending (D minor): G G G E | F F F F | E D E F | → D—.
+    // Verified against Wikipedia's embedded LilyPond score AND two Commons MIDIs.
+    "ANTHEM_ISRAEL": {
+        name: 'ANTHEM_ISRAEL', bpm: 120,
+        instruments: ['FANFARE', 'BASS'],
+        chains: [[0], [0], [0]],
+        patterns: [
+        {
+            len: 36,
+            ch: [
+                /* LEAD */ [
+                    67, h, 67, h,
+                    67, h, 64, h,
+                    65, h, 65, h,
+                    65, h, 65, h,
+                    64, h, 62, h,
+                    64, h, 65, h,
+                    62, h, h, h,
+                    h, h, h, h, h, h, h, h,
+                ],
+                /* BASS */ [
+                    50, h, h, h,
+                    h, h, h, h,
+                    43, h, h, h,
+                    h, h, h, h,
+                    45, h, h, h,
+                    h, h, h, h,
+                    38, h, h, h,
+                    h, h, h, h, h, h, h, h,
+                ],
+                /* DRUM */ [
+                    n, n, n, n, n, n, n, n, n, n, n, n,
+                    n, n, n, n, n, n, n, n, n, n, n, n,
+                    n, n, n, n, n, n, n, n, n, n, n, n,
+                ],
+            ],
+        },
+        ],
+    },
+    // CHINA — March of the Volunteers ending (G major): B. G D5 D5 D5 | B G | then the rising
+    // "qian jin!" D4→G4 three times into the final held G. From Wikipedia's embedded LilyPond
+    // score of the official notation.
+    "ANTHEM_CHINA": {
+        name: 'ANTHEM_CHINA', bpm: 140,
+        instruments: ['FANFARE', 'BASS'],
+        chains: [[0], [0], [0]],
+        patterns: [
+        {
+            len: 40,
+            ch: [
+                /* LEAD */ [
+                    71, h, h, 67,
+                    74, h, 74, h,
+                    74, h,
+                    71, h, 67, h,
+                    62, h, 67, h,
+                    62, h, 67, h,
+                    62, h, 67, h,
+                    67, h, h, h,
+                    h, h, h, h,
+                    h, h, h, h, h, h,
+                ],
+                /* BASS */ [
+                    43, h, h, h,
+                    h, h, h, h,
+                    h, h,
+                    h, h, h, h,
+                    38, h, h, h,
+                    h, h, h, h,
+                    h, h, h, h,
+                    43, h, h, h,
+                    h, h, h, h,
+                    h, h, h, h, h, h,
+                ],
+                /* DRUM */ [
+                    n, n, n, n, n, n, n, n, n, n,
+                    n, n, n, n, n, n, n, n, n, n,
+                    n, n, n, n, n, n, n, n, n, n,
+                    n, n, n, n, n, n, n, n, n, n,
+                ],
+            ],
+        },
+        ],
+    },
     "THEME": {
         name: 'THEME', bpm: 120,
         instruments: ['LEAD', 'BASS'],

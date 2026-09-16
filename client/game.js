@@ -323,7 +323,14 @@ const settingsScreen = new SettingsScreen(canvas, ctx, uiManager,
 // Per-chapter anthem jingles (tracker songs in songs.js) — played once over the CHAPTER
 // COMPLETE! banner on a chapter's first clear. Chapters without one fall back to the
 // CHAPTER_CLEAR patch until their anthem is composed.
-const ANTHEMS = { c1: 'ANTHEM_USA' };
+const ANTHEMS = {
+    c1: 'ANTHEM_USA',
+    c2: 'ANTHEM_GREECE',
+    c3: 'ANTHEM_RUSSIA',
+    c4: 'ANTHEM_JAPAN',
+    c5: 'ANTHEM_ISRAEL',
+    c6: 'ANTHEM_CHINA',
+};
 
 // Chapter level page (defined before soloScreen so the flag click can target it). onSelectLevel
 // launches that solo level; BACK returns to the flag grid.
