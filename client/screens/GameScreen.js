@@ -371,6 +371,10 @@ export class GameScreen {
 
     hitTest(clickX, clickY, chars, posA, posB, t, countdownActive) {
         if (countdownActive) return null;
+        // A find must be a click INSIDE the play field — the target's hit circle (its radius +
+        // the tap pad) can poke past the frame when it hugs a wall, and without this a click in
+        // the empty background just outside the box could ring the found sound.
+        if (!this.isInPlayField(clickX, clickY)) return null;
         const n = Math.min(chars.length, (posA.length / 3) | 0, (posB.length / 3) | 0);
         for (let i = 0; i < n; i++) {
             const c = chars[i];

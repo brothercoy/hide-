@@ -130,10 +130,11 @@ export class SoloGame {
     win() { if (this.phase === 'round') this._finish(true); }
 
     // Reuse GameScreen's own hit-test against the live positions (no interpolation — solo is local, so
-    // what's drawn IS the current position: posA === posB, t = 0).
+    // what's drawn IS the current position: posA === posB, t = 0). Hits only exist while the round
+    // is LIVE — countdown and the result banner can never ring the found sound.
     hitTest(gameScreen, clickX, clickY) {
         const pos = sim.charPositions(this.chars);
-        return gameScreen.hitTest(clickX, clickY, this.chars, pos, pos, 0, this.phase === 'countdown');
+        return gameScreen.hitTest(clickX, clickY, this.chars, pos, pos, 0, this.phase !== 'round');
     }
 
     draw(gameScreen) {

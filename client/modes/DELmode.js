@@ -230,7 +230,12 @@ export class DELMode {
         // Hit-test against the SAME interpolated positions the player sees, not the latest
         // server ones (which are INTERP_DELAY_MS ahead) — tap where you see it.
         const { a, b, t } = this._lastInterp || this._interp();
-        return gameScreen.hitTest(clickX, clickY, this.chars, a, b, t, this.countdownActive);
+        // Block unless the round is genuinely LIVE — countdown, round/match-over beats and the
+        // winner screen must never ring the found sound (defense in depth alongside game.js's
+        // tap gate: the two can never drift apart and open a window).
+        const roundNotLive = this.countdownActive || this.showRoundOver || this.showRoundResult
+            || this.showMatchOver || !!this.winnerId;
+        return gameScreen.hitTest(clickX, clickY, this.chars, a, b, t, roundNotLive);
     }
 
     reset() {
