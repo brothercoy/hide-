@@ -28,14 +28,20 @@ export const LEVEL_TARGETS = {
     'c3:6': 'з',    // level 7
     'c3:7': { target: 'и', twin: 'й' },   // level 8 — find the plain и among breve-topped й's
     'c3:8': 'т',    // level 9 — т at pair depth: hiding among г's
-    // JAPAN: the seed dealt ｬ as the target of both 5 and 7 (dedup gave 5 the unused ｱ), then
-    // levels 5 and 9 swapped puzzles: ﾛ drops to 5 (loose ｺ mix), ｱ rises to 9 (its ｧ size-pair
-    // tightens into a proper sea at that depth).
-    'c4:4': 'ﾛ',
-    'c4:8': 'ﾒ',    // level 9 — ﾒ among ﾉ at pair depth (swapped with 12)
-    'c4:9': 'ﾙ',    // level 10 — ﾙ among ﾚ (swapped with 11)
-    'c4:10': 'ｿ',   // level 11 — the ｿ/ﾝ classic, one step deeper
-    'c4:11': 'ｱ',   // level 12 — ｱ in a pure sea of small ｧ (the size pair as the finale)
+    // JAPAN: fully authored ordering after several reshuffles — each target inherits its slot's
+    // ladder depth (decoy families tighten as the level climbs).
+    'c4:0': 'ﾛ',
+    'c4:1': 'ﾆ',
+    'c4:2': 'ﾊ',
+    'c4:3': 'ﾍ',
+    'c4:4': 'ｦ',
+    'c4:5': 'ﾄ',
+    'c4:6': 'ﾒ',    // ﾉ/ﾍ mix
+    'c4:7': 'ﾙ',    // ﾘ/ﾚ mix
+    'c4:8': 'ｬ',    // small ｬ among full-size ﾔ
+    'c4:9': 'ﾇ',    // ｽ sea
+    'c4:10': 'ｿ',   // the ｿ/ﾝ classic
+    'c4:11': 'ｱ',   // finale — ｱ in a pure sea of small ｧ
     // ISRAEL: the seed dealt duplicate targets (3/12 ט, 5/7 צ, 8/11 כ); the LOWER level of each
     // pair gets an unused target from the same visual family, keeping its field feel.
     'c5:2': 'ס',    // level 3 — samekh keeps the boxes-family field (was ט, 12's finale target)
