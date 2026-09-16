@@ -63,12 +63,12 @@ export class ChapterScreen {
                     //                                           /
                     //                                         \/
                     labelArt: done ? {
-                        rows: 3,
+                        rows: 2,   // rows sets the stroke size (artFS = font/rows) — 2 = big strokes
                         marks: [
                             { ch: '\\', x: 0, y: 2 },
                             { ch: '/', x: 0.875, y: 2 },
-                            { ch: '/', x: 1.75, y: 1.375 },
-                            { ch: '/', x: 2.625, y: 0.75 },
+                            { ch: '/', x: 1.9, y: 1.375 },
+                            { ch: '/', x: 2.775, y: 0.75 },
                         ],
                     } : null,
                 }));
