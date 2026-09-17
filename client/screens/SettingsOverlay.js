@@ -67,11 +67,15 @@ export class SettingsOverlay {
 
         // Build components once (positions set each frame in _layout). All wired exactly like the
         // settings SCREEN: theme options switch the theme live + persist; sliders persist volume.
+        // The overlay builds its controls once, so an unearned reward theme is marked `hidden`
+        // (re-checked on open) rather than skipped — every path below ignores hidden buttons, so
+        // it is completely absent and unclickable until it's earned.
         this.themeButtons = THEME_OPTIONS.map(opt => {
             const b = makeBracketButton(opt.label.toUpperCase(), 0, 0, () => this._selectTheme(opt.id),
-                { active: this.selectedTheme === opt.id, disabled: themeLocked(opt.id) });
+                { active: this.selectedTheme === opt.id });
             b.themeId = opt.id;
             b.themeRow = opt.row || 0;
+            b.hidden = themeLocked(opt.id);
             return b;
         });
         this.sliders = VOLUME_PREFS.map(v =>
@@ -97,7 +101,7 @@ export class SettingsOverlay {
         this.selectedTheme = getPref(PREF_THEME, 'green');
         this.themeButtons.forEach(b => {
             b.active = (b.themeId === this.selectedTheme);
-            b.disabled = themeLocked(b.themeId);   // may have been earned since this was last open
+            b.hidden = themeLocked(b.themeId);   // may have been earned since this was last open
         });
         this.sliders.forEach((s, i) => { s.value = getPref(VOLUME_PREFS[i].key, VOLUME_PREFS[i].default); });
         this.humBtn.active = humEnabled();
@@ -144,7 +148,7 @@ export class SettingsOverlay {
         // Then buttons: MAIN MENU (normal, press→glow), the theme options and the hum
         // toggle (plain brackets, fire-on-release).
         for (const btn of [this.mainMenuBtn, ...this.themeButtons, this.humBtn]) {
-            if (!btn.disabled && this._hit(btn.rect, mx, my)) {
+            if (!btn.disabled && !btn.hidden && this._hit(btn.rect, mx, my)) {
                 this._pressed = btn;
                 this._mouseDown = true;
                 sfx('BTN_PRESS');
@@ -179,7 +183,7 @@ export class SettingsOverlay {
 
         this._elapsed = elapsed;   // for the hum toggle's post-flip hover pause
         // Bracket controls: hover drives the flash (drawBracketButton reads _over).
-        for (const b of [...this.themeButtons, this.humBtn]) b._over = this._hit(b.rect, mx, my);
+        for (const b of [...this.themeButtons, this.humBtn]) b._over = !b.hidden && this._hit(b.rect, mx, my);
 
         // MAIN MENU: hover fill/lift + press/glow lifecycle.
         const btn = this.mainMenuBtn;
@@ -267,7 +271,7 @@ export class SettingsOverlay {
         ctx.fillText(this._themeUnderline(), L.cx, L.underlineY);
 
         // Components (static styling this pass).
-        this.themeButtons.forEach(b => drawBracketButton(ctx, b, elapsed, FONT_SIZE));
+        this.themeButtons.forEach(b => { if (!b.hidden) drawBracketButton(ctx, b, elapsed, FONT_SIZE); });
         this.sliders.forEach(s => drawSlider(ctx, s, elapsed, FONT_SIZE));
         drawBracketButton(ctx, this.humBtn, elapsed, FONT_SIZE);
         drawButton(ctx, this.mainMenuBtn, elapsed, FONT_SIZE);

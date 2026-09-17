@@ -125,14 +125,16 @@ export class SettingsScreen {
         const row0 = THEME_OPTIONS.filter(o => !o.row);
         const startX = cx - THEME_BTN_SPACING * (row0.length - 1) / 2;
         THEME_OPTIONS.forEach((opt) => {
+            // An unearned reward theme isn't built at all — no button means nothing to see and
+            // nothing to click, rather than a dim one hinting at it.
+            if (themeLocked(opt.id)) return;
             const i = row0.indexOf(opt);
             // Row 0 spreads across; a row-1 option sits centered (i.e. under the middle one).
             const x = opt.row ? cx : startX + i * THEME_BTN_SPACING;
             const y = opt.row ? btnY + THEME_ROW2_GAP : btnY;
-            const locked = themeLocked(opt.id);
             const btn = makeBracketButton(opt.label.toUpperCase(), x, y,
                 () => this._selectTheme(opt.id),
-                { active: this.selectedTheme === opt.id, disabled: locked });
+                { active: this.selectedTheme === opt.id });
             btn.themeId = opt.id;   // tag so _selectTheme / relayout can find them
             this.ui.buttons.push(btn);
         });
@@ -181,10 +183,14 @@ export class SettingsScreen {
         const cx = this.canvas.width / 2;
         const L = this._layout();
         const btnY = L.themeButtonY;
-        const n = THEME_OPTIONS.length;
-        const startX = cx - THEME_BTN_SPACING * (n - 1) / 2;
-        let ti = 0;
-        this.ui.buttons.forEach(b => { if (b.themeId) { b.x = startX + ti * THEME_BTN_SPACING; b.y = btnY; ti++; } });
+        const row0 = THEME_OPTIONS.filter(o => !o.row);
+        const startX = cx - THEME_BTN_SPACING * (row0.length - 1) / 2;
+        this.ui.buttons.forEach(b => {
+            if (!b.themeId) return;
+            const opt = THEME_OPTIONS.find(o => o.id === b.themeId);
+            b.x = opt?.row ? cx : startX + row0.indexOf(opt) * THEME_BTN_SPACING;
+            b.y = opt?.row ? btnY + THEME_ROW2_GAP : btnY;
+        });
         this.ui.sliders.forEach((s, i) => { if (L.sliderYs[i] != null) { s.x = cx; s.y = L.sliderYs[i]; } });
         const hum = this.ui.buttons.find(b => b.humToggle);
         if (hum) { hum.x = cx; hum.y = L.humY; }
