@@ -215,10 +215,10 @@ export class SoloScreen {
         const lockedCols = Math.floor(settled * 2);
         if (lockedCols > u.ticked) { feedTick(lockedCols - u.ticked, 1); u.ticked = lockedCols; }
 
-        // Wave has run off both edges: the flag is whole, and becomes a real button.
+        // Wave has run off both edges: the flag is whole, and becomes a real button. No BEL —
+        // that belongs to screen transitions; the reveal's own flourish is its punctuation.
         if (w >= travel) {
             u.done = true;
-            sfx('BEL');
             const i = u.idx;
             const btn = makeButton('', 0, 0, () => this.onSelectChapter(FLAGS[i], i), { blocksInput: true });
             this.flagButtons[i] = btn;
