@@ -175,38 +175,11 @@ export function playPatch(patch, when = 0, opts = {}) {
         bus: opts.bus,   // 'music' routes to the music bus; default is sfx
     };
     let total = 0;
-    const handles = [];
     for (const v of patch.voices) {
-        handles.push(buildVoice(v, t0, false, mods));
+        buildVoice(v, t0, false, mods);
         total = Math.max(total, (v.delay || 0) + (v.attack || 0) + sus + (v.decay || 0.1));
     }
-    // A note-off handle, for callers that own a MONOPHONIC voice (a tracker channel): cutting
-    // the ringing note when the next one starts is what stops a melody's tail from clashing
-    // with the note that follows it. Fades rather than hard-stops, or it clicks.
-    lastNoteOff = (at = 0, fade = 0.012) => {
-        if (!ctx) return;
-        const t = Math.max(ctx.currentTime, ctx.currentTime + at);
-        for (const h of handles) {
-            if (!h || !h.env) continue;
-            try {
-                h.env.gain.cancelScheduledValues(t);
-                h.env.gain.setValueAtTime(Math.max(EPS, h.env.gain.value), t);
-                h.env.gain.exponentialRampToValueAtTime(EPS, t + fade);
-                h.src.stop(t + fade + 0.005);
-                if (h.lfo) h.lfo.stop(t + fade + 0.005);
-            } catch { /* already stopped */ }
-        }
-    };
     return total;
-}
-
-// Note-off for the patch most recently started by playPatch — read it immediately after the
-// call (see MusicPlayer's per-channel monophony). Null until something has played.
-let lastNoteOff = null;
-export function takeNoteOff() {
-    const off = lastNoteOff;
-    lastNoteOff = null;
-    return off;
 }
 
 // Continuous sound (hum, ambience). Returns a handle: call .stop() to fade out.

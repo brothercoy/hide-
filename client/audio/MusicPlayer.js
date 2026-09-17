@@ -38,7 +38,7 @@
 // frequency, so a patch can be ear-tuned at any register and notes still land at
 // true pitch.
 
-import { playPatch, takeNoteOff, now } from './SoundEngine.js';
+import { playPatch, now } from './SoundEngine.js';
 
 export const DRUM_KEYS = ['KICK', 'CLACK', 'HAT', 'HAT_OPEN'];
 export const CHANNEL_NAMES = ['LEAD', 'BASS', 'DRUM'];
@@ -120,7 +120,6 @@ export function createPlayer(resolve) {
     let tempoTarget = 1, tempoRate = 0;
     let section = null;      // when set: playback confines to [section, end) — tension mode
     let pendingSection;      // undefined = no change queued; number|null applies at a boundary
-    let noteOff = [null, null, null];   // per-channel note-off — instrument channels are MONO
 
     // The musical switching quantum: one full pass of the song's drum chain.
     function quantum() {
@@ -158,19 +157,12 @@ export function createPlayer(resolve) {
                 if (!inst) continue;
                 // Held notes ring for their extra steps before the patch decay runs
                 const extra = (noteSteps(pattern, c, loc.row) - 1) * stepDur;
-                // MONOPHONIC CHANNEL, like any tracker: cut whatever this channel is still
-                // ringing as the new note starts. Without this a patch whose decay outlasts the
-                // step (most of them) leaves its tail sounding under the next note — and on a
-                // small interval the two beat against each other and the new note reads as
-                // out of tune rather than simply late.
-                if (noteOff[c]) noteOff[c](t - now());
                 playPatch(inst, t - now(), {
                     freqMul: instrumentFreqMul(inst, cell),
                     sustainFor: extra,
                     bus: 'music',
                     gainMul: pg,
                 });
-                noteOff[c] = takeNoteOff();
             }
         }
         posQueue.push({ t, chans });
@@ -270,9 +262,6 @@ export function createPlayer(resolve) {
         if (timer) { clearInterval(timer); timer = null; }
         posQueue = [];
         pending = null;
-        // Silence anything still ringing — otherwise a stopped song's last note hangs on, and
-        // (worse) a note scheduled ahead of `now` would still sound after the stop.
-        for (let c = 0; c < noteOff.length; c++) { if (noteOff[c]) noteOff[c](0, 0.03); noteOff[c] = null; }
     }
 
     function playing() { return timer !== null; }

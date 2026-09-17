@@ -5,7 +5,7 @@
 // press E / click EXPORT to copy the whole edited bank as JSON → paste it back
 // into client/audio/patches.js (or hand it to Claude).
 
-import { initAudio, audioReady, playPatch, takeNoteOff, startSustain, setMasterVolume, getMasterVolume, getAnalyser } from './SoundEngine.js';
+import { initAudio, audioReady, playPatch, startSustain, setMasterVolume, getMasterVolume, getAnalyser } from './SoundEngine.js';
 import { PATCHES } from './patches.js';
 import { createPlayer, instrumentFreqMul, normalizeSong, chainTotal, noteSteps, CHANNEL_NAMES, HOLD } from './MusicPlayer.js';
 import { SONGS as COMMITTED_SONGS } from './songs.js';
@@ -152,7 +152,6 @@ const committedNow = Object.fromEntries(
 let editPat = 0, octave = 4;
 let chainSel = [0, 0, 0];       // selected slot within each channel's chain
 let cur = { row: 0, ch: 0 };
-let previewOff = null;          // note-off for the last previewed note (previews are mono too)
 const player = createPlayer(k => bank[k]);   // plays the EDITED bank — lab tweaks are heard live
 function touchSongs() { localStorage.setItem(SONGS_KEY, JSON.stringify({ songs, songIdx, snap: committedNow })); }
 
@@ -999,12 +998,9 @@ function trackerKey(e) {
         const midi = (octave + 1) * 12 + NOTE_KEYS[k];
         pat.ch[cur.ch][cur.row] = midi;
         const inst = bank[song.instruments[cur.ch]];
-        // Preview at the length and mix level it will actually play at, holds included — and
-        // monophonically, like the channel itself, so typing a run doesn't stack ringing notes.
+        // Preview at the length and mix level it will actually play at, holds included
         const extra = (noteSteps(pat, cur.ch, cur.row) - 1) * (60 / song.bpm / 4);
-        if (previewOff) previewOff(0);
         playPatch(inst, 0, { freqMul: instrumentFreqMul(inst, midi), sustainFor: extra, gainMul: pat.gain ?? 1 });
-        previewOff = takeNoteOff();
         advanceCur(); touchSongs();
     }
 }
