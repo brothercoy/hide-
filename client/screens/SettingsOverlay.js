@@ -11,6 +11,7 @@ import { makeSlider, drawSlider } from '../ui/Slider.js';
 import { theme, bgAlpha, applyTheme } from '../ui/colors.js';
 import { getPref, setPref } from '../prefs.js';
 import { sfx, applyVolumePrefs, humEnabled, setHumEnabled } from '../audio/sfx.js';
+import { themeLocked } from '../solo/rewards.js';
 
 const PREF_THEME = 'theme';
 
@@ -34,10 +35,14 @@ const SLIDER_TO_BTN   = 95;  // last slider → MAIN MENU
 
 const THEME_BTN_SPACING = 180; // horizontal gap between theme options (matches lobby/settings)
 const THEME_UNDERLINE_W = 160; // px width of the ~~~~ rule under 'Theme'
+const THEME_ROW2_GAP = 56;     // first theme row's CENTER → the second row's CENTER
 const THEME_OPTIONS = [
     { id: 'green', label: 'Green' },
     { id: 'orange', label: 'Orange' },
     { id: 'white', label: 'White' },
+    // Second row, under ORANGE (the middle option, which is centered) — in the gap that was
+    // already there, so nothing else in the panel moves.
+    { id: 'rainbow', label: 'Rainbow', row: 1 },
 ];
 const VOLUME_PREFS = [
     { label: 'MASTER VOLUME', key: 'volume.master', default: 100 },
@@ -62,8 +67,9 @@ export class SettingsOverlay {
         // settings SCREEN: theme options switch the theme live + persist; sliders persist volume.
         this.themeButtons = THEME_OPTIONS.map(opt => {
             const b = makeBracketButton(opt.label.toUpperCase(), 0, 0, () => this._selectTheme(opt.id),
-                { active: this.selectedTheme === opt.id });
+                { active: this.selectedTheme === opt.id, disabled: themeLocked(opt.id) });
             b.themeId = opt.id;
+            b.themeRow = opt.row || 0;
             return b;
         });
         this.sliders = VOLUME_PREFS.map(v =>
@@ -87,7 +93,10 @@ export class SettingsOverlay {
     // versa) — both read/write the same prefs. Called on open.
     refresh() {
         this.selectedTheme = getPref(PREF_THEME, 'green');
-        this.themeButtons.forEach(b => { b.active = (b.themeId === this.selectedTheme); });
+        this.themeButtons.forEach(b => {
+            b.active = (b.themeId === this.selectedTheme);
+            b.disabled = themeLocked(b.themeId);   // may have been earned since this was last open
+        });
         this.sliders.forEach((s, i) => { s.value = getPref(VOLUME_PREFS[i].key, VOLUME_PREFS[i].default); });
         this.humBtn.active = humEnabled();
     }
@@ -200,9 +209,13 @@ export class SettingsOverlay {
         const humY = slider1Y + 3 * SLIDER_SPACING;
         const mainMenuY = humY + SLIDER_TO_BTN;
 
-        const n = this.themeButtons.length;
-        const startX = cx - THEME_BTN_SPACING * (n - 1) / 2;
-        this.themeButtons.forEach((b, i) => { b.x = startX + i * THEME_BTN_SPACING; b.y = themeBtnY; });
+        const row0 = this.themeButtons.filter(b => !b.themeRow);
+        const startX = cx - THEME_BTN_SPACING * (row0.length - 1) / 2;
+        this.themeButtons.forEach((b) => {
+            // Row 0 spreads across; a row-1 option sits centered — i.e. directly under the middle.
+            b.x = b.themeRow ? cx : startX + row0.indexOf(b) * THEME_BTN_SPACING;
+            b.y = b.themeRow ? themeBtnY + THEME_ROW2_GAP : themeBtnY;
+        });
         this.sliders.forEach((s, i) => { s.x = cx; s.y = slider1Y + i * SLIDER_SPACING; });
         this.humBtn.x = cx; this.humBtn.y = humY;
         this.mainMenuBtn.x = cx; this.mainMenuBtn.y = mainMenuY;

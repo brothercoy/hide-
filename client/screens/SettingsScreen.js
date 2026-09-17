@@ -6,6 +6,7 @@ import { theme, applyTheme } from '../ui/colors.js';
 import { vScale, bandTop } from '../ui/viewport.js';
 import { getPref, setPref } from '../prefs.js';
 import { applyVolumePrefs, humEnabled, setHumEnabled } from '../audio/sfx.js';
+import { themeLocked } from '../solo/rewards.js';
 
 // Preference keys + their defaults (persisted per-browser via prefs.js/localStorage).
 const PREF_THEME = 'theme';
@@ -33,10 +34,14 @@ const THEME_BTN_SPACING = 180;  // horizontal gap between options (matches lobby
 // (text baselines don't map to visible edges 1:1). Tune if the margins look uneven.
 const TITLE_CAP_FRAC = 0.78;   // caps height as a fraction of TITLE_SIZE → title's ink bottom
 const BTN_HALF_H = 1.25;       // BACK button half-height in FONT_SIZE units (button box ≈ 2.5×font)
+const THEME_ROW2_GAP = 56;      // first theme row's CENTER → the second row's CENTER
 const THEME_OPTIONS = [
     { id: 'green', label: 'Green' },
     { id: 'orange', label: 'Orange' },
     { id: 'white', label: 'White' },
+    // Second row, sitting under ORANGE (the middle option, which is screen-centered). Placed in
+    // the gap that was already there, so nothing else on the screen moves.
+    { id: 'rainbow', label: 'Rainbow', row: 1 },
 ];
 
 export class SettingsScreen {
@@ -115,12 +120,17 @@ export class SettingsScreen {
         // setting — the selected option is `active` (held inner, no hover), the rest rest outward
         // and are clickable. NOT a toggle: there's always exactly one selected.
         const btnY = L.themeButtonY;
-        const n = THEME_OPTIONS.length;
-        const startX = cx - THEME_BTN_SPACING * (n - 1) / 2;
-        THEME_OPTIONS.forEach((opt, i) => {
-            const btn = makeBracketButton(opt.label.toUpperCase(), startX + i * THEME_BTN_SPACING, btnY,
+        const row0 = THEME_OPTIONS.filter(o => !o.row);
+        const startX = cx - THEME_BTN_SPACING * (row0.length - 1) / 2;
+        THEME_OPTIONS.forEach((opt) => {
+            const i = row0.indexOf(opt);
+            // Row 0 spreads across; a row-1 option sits centered (i.e. under the middle one).
+            const x = opt.row ? cx : startX + i * THEME_BTN_SPACING;
+            const y = opt.row ? btnY + THEME_ROW2_GAP : btnY;
+            const locked = themeLocked(opt.id);
+            const btn = makeBracketButton(opt.label.toUpperCase(), x, y,
                 () => this._selectTheme(opt.id),
-                { active: this.selectedTheme === opt.id });
+                { active: this.selectedTheme === opt.id, disabled: locked });
             btn.themeId = opt.id;   // tag so _selectTheme / relayout can find them
             this.ui.buttons.push(btn);
         });

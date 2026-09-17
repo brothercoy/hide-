@@ -17,7 +17,7 @@ import { LobbyScreen } from './screens/LobbyScreen.js';
 import { GameScreen } from './screens/GameScreen.js';
 import { makeButton, drawButton, drawButtonPartial, buttonCharCount, zToAlpha } from './ui/Button.js';
 import { makeBracketButton, drawBracketButton, bracketButtonRows } from './ui/BracketButton.js';
-import { theme, bgAlpha, glow, applyTheme, THEMES, dim } from './ui/colors.js';
+import { theme, bgAlpha, glow, applyTheme, tickTheme, THEMES, dim } from './ui/colors.js';
 import { initFont } from './ui/Font.js';
 import { setBaseHeight, setBandHeight, bandTop } from './ui/viewport.js';
 import { CRTEffect } from './CRTShader.js';
@@ -1788,6 +1788,10 @@ function draw() {
     const now = performance.now();
     const dt = now - (lastDrawTime || now);
     lastDrawTime = now;
+
+    // The rainbow theme walks its hue here — a no-op for the fixed palettes. Must run BEFORE
+    // anything draws, so every shade this frame comes from the same colour.
+    tickTheme(now);
 
     // Advance an already-running transition and expose its offset BEFORE the UI
     // update, so hit-testing is offset-aware this frame.

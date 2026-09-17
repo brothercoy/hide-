@@ -17,7 +17,15 @@ export const THEMES = {
     white:  { fg: '#a6abb3', glowHi: '#ffffff' },  // cool blue-grey — pushed toward grey for the cold
                                                    // CRT phosphor look; well below pure white so it
                                                    // isn't blinding and the click-glow reads on press
+    // The campaign reward: not a fixed colour but a slow walk around the hue wheel. `cycle` makes
+    // tickTheme() rewrite fg/glowHi every frame — and since every shade, the glow and the CRT
+    // phosphor tint are derived from theme.fg at call time, the WHOLE game drifts through the
+    // spectrum with it. fg/glowHi here are just the starting point.
+    rainbow: { fg: '#ff4d4d', glowHi: '#ffd6d6', cycle: true },
 };
+
+const RAINBOW_PERIOD_MS = 14000;   // one full trip around the wheel
+let cycling = false;
 
 // Switch the active palette in place. Mutates `theme` (not reassigns) so every module that imported
 // the object sees the change; helpers read it at call time, so the swap is immediate and global.
@@ -25,6 +33,26 @@ export function applyTheme(id) {
     const t = THEMES[id] || THEMES.green;
     theme.fg = t.fg;
     theme.glowHi = t.glowHi;
+    cycling = !!t.cycle;
+}
+
+function hslHex(h, s, l) {
+    const a = s * Math.min(l, 1 - l);
+    const f = (n) => {
+        const k = (n + h / 30) % 12;
+        const v = l - a * Math.max(-1, Math.min(k - 3, 9 - k, 1));
+        return Math.round(255 * v).toString(16).padStart(2, '0');
+    };
+    return `#${f(0)}${f(8)}${f(4)}`;
+}
+
+// Called once per frame from the game loop. A no-op for the fixed palettes; for `rainbow` it walks
+// the hue so the entire UI drifts through the spectrum together.
+export function tickTheme(nowMs = performance.now()) {
+    if (!cycling) return;
+    const h = (nowMs / RAINBOW_PERIOD_MS * 360) % 360;
+    theme.fg = hslHex(h, 1, 0.6);        // saturated, bright enough to read on black
+    theme.glowHi = hslHex(h, 1, 0.86);   // the click-glow's bright end, same hue
 }
 
 function rgbOf(hex) {
