@@ -696,9 +696,14 @@ const GO_BTN_SPACING  = 120;    // vertical gap between the stacked vote-button 
 // A full-screen "YOU WIN!" over the faded flag board. It starts only once the screen transition
 // has fully landed, and holds input blocked for its whole run so it can't be clicked through or
 // interrupted by opening another chapter.
-const WIN_SCRIM = 0.82;       // how far the board behind it dims
-const WIN_FADE_MS = 450;      // fade OUT at the end (the arrival is instant — it's a "ta-da")
-const WIN_HOLD_MS = 3000;     // how long "YOU WIN!" stands before it releases
+const WIN_SCRIM = 0.82;       // how far the board behind it dims — instantly, on arrival
+const WIN_TEXT = 'YOU WIN!';
+const WIN_CURSOR_MS = 500;    // blink half-period (same as the multiplayer winner screen)
+const WIN_PRE_MS = 700;       // the cursor sits blinking alone before anything types
+const WIN_TYPE_MS = 105;      // per character of "YOU WIN!"
+const WIN_TYPE_END = WIN_PRE_MS + WIN_TEXT.length * WIN_TYPE_MS;   // fanfare + confetti fire here
+const WIN_HOLD_MS = 3000;     // how long the finished screen stands after the celebration
+const WIN_FADE_MS = 450;      // then it fades away
 const WIN_FONT = 150;
 // Confetti: every printable ASCII glyph that ISN'T a letter or a digit.
 const CONFETTI_CHARS = Array.from({ length: 126 - 33 + 1 }, (_, i) => String.fromCharCode(33 + i))
@@ -708,7 +713,7 @@ const CONFETTI_GRAVITY = 1250;    // px/s²
 let campaignWin = null;           // { start, bits } once the ceremony is running
 
 function beginCampaignWin() {
-    campaignWin = { start: null, bits: [] };
+    campaignWin = { start: null, bits: [], celebAt: null, ticked: 0 };
     // Blocked from THIS moment, not from when the screen lands — the flag screen's type-in
     // leaves input live, so without this a click could open a chapter mid-transition and the
     // win screen would come up over the wrong screen.
@@ -741,50 +746,80 @@ function spawnConfetti() {
 function startCampaignWin() {
     if (!campaignWin || campaignWin.start != null) return;
     campaignWin.start = performance.now();
-    campaignWin.bits = spawnConfetti();
     uiManager.blocked = true;      // uninterruptible for its whole duration
-    duckMusic(0.18, 0.25);         // pull the music down so the fanfare owns the room
-    sfx('TADA');
+    duckMusic(0.18, 0.25);         // pull the music down for the whole screen
 }
 function updateCampaignWin() {
     if (!campaignWin || campaignWin.start == null) return;
-    if (performance.now() - campaignWin.start >= WIN_HOLD_MS + WIN_FADE_MS) {
+    const t = performance.now() - campaignWin.start;
+    // The celebration lands ON the last character, not before it.
+    if (campaignWin.celebAt == null && t >= WIN_TYPE_END) {
+        campaignWin.celebAt = performance.now();
+        campaignWin.bits = spawnConfetti();
+        sfx('TADA');
+    }
+    if (t >= WIN_TYPE_END + WIN_HOLD_MS + WIN_FADE_MS) {
         campaignWin = null;
         uiManager.blocked = false;
         uiManager.lastTime = performance.now();
-        duckMusic(1, 0.9);         // …and let it swell back as the screen clears
+        duckMusic(1, 0.9);         // …and let the music swell back as the screen clears
     }
 }
 function drawCampaignWin() {
     if (!campaignWin || campaignWin.start == null) return;
-    const t = (performance.now() - campaignWin.start) / 1000;
-    const ms = t * 1000;
-    // Arrives INSTANTLY with the ta-da, holds, then fades away.
-    const k = ms < WIN_HOLD_MS ? 1 : Math.max(0, 1 - (ms - WIN_HOLD_MS) / WIN_FADE_MS);
+    const ms = performance.now() - campaignWin.start;
+    // The dim snaps on; only the exit fades.
+    const k = ms < WIN_TYPE_END + WIN_HOLD_MS
+        ? 1
+        : Math.max(0, 1 - (ms - WIN_TYPE_END - WIN_HOLD_MS) / WIN_FADE_MS);
 
     ctx.fillStyle = bgAlpha(k * WIN_SCRIM);
     ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+    const cx = canvas.width / 2, cy = canvas.height / 2;
+    const revealed = ms < WIN_PRE_MS
+        ? 0
+        : Math.min(WIN_TEXT.length, Math.floor((ms - WIN_PRE_MS) / WIN_TYPE_MS));
+    const shown = WIN_TEXT.slice(0, revealed);
 
     ctx.globalAlpha = k;
     ctx.fillStyle = theme.fg;
     ctx.font = `${WIN_FONT}px "IBMVGA"`;
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
-    ctx.fillText('YOU WIN!', canvas.width / 2, canvas.height / 2);
+    ctx.fillText(shown, cx, cy);
 
-    // Confetti over the title — each bit on its own ballistic arc, tumbling as it flies.
-    for (const b of campaignWin.bits) {
-        const bt = t - b.delay;
-        if (bt <= 0) continue;
-        const x = b.x + b.vx * bt;
-        const y = b.y + b.vy * bt + 0.5 * CONFETTI_GRAVITY * bt * bt;
-        if (y > canvas.height + 80 || x < -120 || x > canvas.width + 120) continue;
-        ctx.save();
-        ctx.translate(x, y);
-        ctx.rotate(b.rot + b.vrot * bt);
-        ctx.font = `${b.size}px "IBMVGA"`;
-        ctx.fillText(b.ch, 0, 0);
-        ctx.restore();
+    // Blinking block cursor just past the revealed text — same proportions as the winner
+    // screen's. Only the TEXT is centered, so the line doesn't jitter as the cursor blinks.
+    if (Math.floor(ms / WIN_CURSOR_MS) % 2 === 0) {
+        const curX = cx + ctx.measureText(shown).width / 2 + 2;
+        const cw = ctx.measureText('M').width;
+        const chH = WIN_FONT - 4;
+        ctx.fillRect(curX, cy - chH / 2, cw - 2, chH);
+    }
+    // Keystrokes tick like every other typed feed in the game.
+    if (revealed > campaignWin.ticked) {
+        feedTick(revealed - campaignWin.ticked, 1);
+        campaignWin.ticked = revealed;
+    }
+
+    // Confetti over the title — each bit on its own ballistic arc, tumbling as it flies. Timed
+    // from the celebration, which fires as the last character lands.
+    if (campaignWin.celebAt != null) {
+        const t = (performance.now() - campaignWin.celebAt) / 1000;
+        for (const b of campaignWin.bits) {
+            const bt = t - b.delay;
+            if (bt <= 0) continue;
+            const x = b.x + b.vx * bt;
+            const y = b.y + b.vy * bt + 0.5 * CONFETTI_GRAVITY * bt * bt;
+            if (y > canvas.height + 80 || x < -120 || x > canvas.width + 120) continue;
+            ctx.save();
+            ctx.translate(x, y);
+            ctx.rotate(b.rot + b.vrot * bt);
+            ctx.font = `${b.size}px "IBMVGA"`;
+            ctx.fillText(b.ch, 0, 0);
+            ctx.restore();
+        }
     }
     ctx.globalAlpha = 1;
 }
