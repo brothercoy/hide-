@@ -696,15 +696,21 @@ const GO_BTN_SPACING  = 120;    // vertical gap between the stacked vote-button 
 // A full-screen "YOU WIN!" over the faded flag board. It starts only once the screen transition
 // has fully landed, and holds input blocked for its whole run so it can't be clicked through or
 // interrupted by opening another chapter.
-const WIN_SCRIM = 0.82;       // how far the board behind it dims — instantly, on arrival
+const WIN_SCRIM = 0.82;       // how far the board behind it dims
 const WIN_TEXT = 'YOU WIN!';
+const WIN_SUB_TEXT = 'NEW THEME UNLOCKED';
 const WIN_CURSOR_MS = 500;    // blink half-period (same as the multiplayer winner screen)
+const WIN_FADE_MS = 450;      // the dim + content fade IN, and out again at the end
 const WIN_PRE_MS = 700;       // the cursor sits blinking alone before anything types
 const WIN_TYPE_MS = 105;      // per character of "YOU WIN!"
-const WIN_TYPE_END = WIN_PRE_MS + WIN_TEXT.length * WIN_TYPE_MS;   // fanfare + confetti fire here
-const WIN_HOLD_MS = 3000;     // how long the finished screen stands after the celebration
-const WIN_FADE_MS = 450;      // then it fades away
+const WIN_TITLE_END = WIN_PRE_MS + WIN_TEXT.length * WIN_TYPE_MS;   // fanfare + confetti fire here
+const WIN_SUB_PAUSE_MS = 750; // beat after the celebration before the subtitle types
+const WIN_SUB_TYPE_MS = 55;   // per character of the subtitle (quicker — it's the smaller line)
+const WIN_SUB_START = WIN_TITLE_END + WIN_SUB_PAUSE_MS;
+const WIN_SUB_END = WIN_SUB_START + WIN_SUB_TEXT.length * WIN_SUB_TYPE_MS;
+const WIN_HOLD_MS = 2200;     // how long the finished screen stands before fading
 const WIN_FONT = 150;
+const WIN_SUB_FONT = 54;
 // Confetti: every printable ASCII glyph that ISN'T a letter or a digit.
 const CONFETTI_CHARS = Array.from({ length: 126 - 33 + 1 }, (_, i) => String.fromCharCode(33 + i))
     .filter(c => !/[A-Za-z0-9]/.test(c)).join('');
@@ -752,13 +758,13 @@ function startCampaignWin() {
 function updateCampaignWin() {
     if (!campaignWin || campaignWin.start == null) return;
     const t = performance.now() - campaignWin.start;
-    // The celebration lands ON the last character, not before it.
-    if (campaignWin.celebAt == null && t >= WIN_TYPE_END) {
+    // The celebration lands ON the last character of the title, not before it.
+    if (campaignWin.celebAt == null && t >= WIN_TITLE_END) {
         campaignWin.celebAt = performance.now();
         campaignWin.bits = spawnConfetti();
         sfx('TADA');
     }
-    if (t >= WIN_TYPE_END + WIN_HOLD_MS + WIN_FADE_MS) {
+    if (t >= WIN_SUB_END + WIN_HOLD_MS + WIN_FADE_MS) {
         campaignWin = null;
         uiManager.blocked = false;
         uiManager.lastTime = performance.now();
@@ -768,39 +774,54 @@ function updateCampaignWin() {
 function drawCampaignWin() {
     if (!campaignWin || campaignWin.start == null) return;
     const ms = performance.now() - campaignWin.start;
-    // The dim snaps on; only the exit fades.
-    const k = ms < WIN_TYPE_END + WIN_HOLD_MS
-        ? 1
-        : Math.max(0, 1 - (ms - WIN_TYPE_END - WIN_HOLD_MS) / WIN_FADE_MS);
+    // Fades in, holds, fades out — gradual at both ends now that it's a typed reveal.
+    const outAt = WIN_SUB_END + WIN_HOLD_MS;
+    const k = ms < WIN_FADE_MS ? ms / WIN_FADE_MS
+        : ms < outAt ? 1
+            : Math.max(0, 1 - (ms - outAt) / WIN_FADE_MS);
 
     ctx.fillStyle = bgAlpha(k * WIN_SCRIM);
     ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-    const cx = canvas.width / 2, cy = canvas.height / 2;
-    const revealed = ms < WIN_PRE_MS
-        ? 0
+    const cx = canvas.width / 2;
+    const titleY = canvas.height / 2 - 55;
+    const subY = canvas.height / 2 + 85;
+    const nTitle = ms < WIN_PRE_MS ? 0
         : Math.min(WIN_TEXT.length, Math.floor((ms - WIN_PRE_MS) / WIN_TYPE_MS));
-    const shown = WIN_TEXT.slice(0, revealed);
+    const nSub = ms < WIN_SUB_START ? 0
+        : Math.min(WIN_SUB_TEXT.length, Math.floor((ms - WIN_SUB_START) / WIN_SUB_TYPE_MS));
+    const title = WIN_TEXT.slice(0, nTitle);
+    const sub = WIN_SUB_TEXT.slice(0, nSub);
 
     ctx.globalAlpha = k;
     ctx.fillStyle = theme.fg;
-    ctx.font = `${WIN_FONT}px "IBMVGA"`;
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
-    ctx.fillText(shown, cx, cy);
+    ctx.font = `${WIN_FONT}px "IBMVGA"`;
+    ctx.fillText(title, cx, titleY);
+    if (nSub > 0 || ms >= WIN_SUB_START) {
+        ctx.font = `${WIN_SUB_FONT}px "IBMVGA"`;
+        ctx.fillText(sub, cx, subY);
+    }
 
-    // Blinking block cursor just past the revealed text — same proportions as the winner
-    // screen's. Only the TEXT is centered, so the line doesn't jitter as the cursor blinks.
+    // Blinking block cursor just past the line being typed — it drops to the subtitle when that
+    // line starts. Same proportions as the winner screen's. Only the TEXT is centered, so the
+    // line doesn't jitter as the cursor blinks.
     if (Math.floor(ms / WIN_CURSOR_MS) % 2 === 0) {
-        const curX = cx + ctx.measureText(shown).width / 2 + 2;
+        const onSub = ms >= WIN_SUB_START;
+        const size = onSub ? WIN_SUB_FONT : WIN_FONT;
+        ctx.font = `${size}px "IBMVGA"`;
+        const line = onSub ? sub : title;
+        const curX = cx + ctx.measureText(line).width / 2 + 2;
         const cw = ctx.measureText('M').width;
-        const chH = WIN_FONT - 4;
-        ctx.fillRect(curX, cy - chH / 2, cw - 2, chH);
+        const chH = size - 4;
+        ctx.fillRect(curX, (onSub ? subY : titleY) - chH / 2, cw - 2, chH);
     }
     // Keystrokes tick like every other typed feed in the game.
-    if (revealed > campaignWin.ticked) {
-        feedTick(revealed - campaignWin.ticked, 1);
-        campaignWin.ticked = revealed;
+    const typed = nTitle + nSub;
+    if (typed > campaignWin.ticked) {
+        feedTick(typed - campaignWin.ticked, 1);
+        campaignWin.ticked = typed;
     }
 
     // Confetti over the title — each bit on its own ballistic arc, tumbling as it flies. Timed
