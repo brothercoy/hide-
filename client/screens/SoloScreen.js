@@ -144,6 +144,9 @@ export class SoloScreen {
             return;
         }
 
+        // The flourish rings once, exactly as the static erupts.
+        if (!u.flurried) { u.flurried = true; sfx('CHAPTER_REVEAL'); }
+
         // Wave front distance from center, in columns. It travels past the edge by the band +
         // fade widths so the outermost columns get to finish settling.
         const travel = half + BAND + FADE;

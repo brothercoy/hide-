@@ -115,6 +115,33 @@ export const PATCHES = {
             { wave: 'square', freq: 2637, freqEnd: null, delay: 0.95, attack: 0.005, decay: 0.22, gain: 0.014, filter: { type: 'bandpass', cutoff: 2600, q: 8 } },
         ],
     },
+    CHAPTER_REVEAL: {
+        name: 'CHAPTER_REVEAL', desc: 'Snappy harp-like flourish as a chapter unlocks — a fast pentatonic run up, plucked triangles with square harmonics and noise chirps so it reads as a terminal, not an orchestra',
+        vary: { freq: 0.015, gain: 0.1 },
+        voices: [
+            // The pluck that opens it — a chirp of noise, like a head hitting the platter
+            { wave: 'noise', freq: 440, freqEnd: null, delay: 0, attack: 0.001, decay: 0.03, gain: 0.07, filter: { type: 'bandpass', cutoff: 3200, q: 3 } },
+            // Ascending C-pentatonic run (C5→C7), ~32ms apart: rings overlap like a glissando
+            { wave: 'triangle', freq: 523, freqEnd: null, delay: 0, attack: 0.002, decay: 0.34, gain: 0.075, filter: null },
+            { wave: 'triangle', freq: 587, freqEnd: null, delay: 0.032, attack: 0.002, decay: 0.34, gain: 0.072, filter: null },
+            { wave: 'triangle', freq: 659, freqEnd: null, delay: 0.064, attack: 0.002, decay: 0.34, gain: 0.069, filter: null },
+            { wave: 'triangle', freq: 784, freqEnd: null, delay: 0.096, attack: 0.002, decay: 0.32, gain: 0.065, filter: null },
+            { wave: 'triangle', freq: 880, freqEnd: null, delay: 0.128, attack: 0.002, decay: 0.32, gain: 0.061, filter: null },
+            { wave: 'triangle', freq: 1046, freqEnd: null, delay: 0.16, attack: 0.002, decay: 0.3, gain: 0.057, filter: null },
+            { wave: 'triangle', freq: 1175, freqEnd: null, delay: 0.192, attack: 0.002, decay: 0.3, gain: 0.053, filter: null },
+            { wave: 'triangle', freq: 1319, freqEnd: null, delay: 0.224, attack: 0.002, decay: 0.28, gain: 0.049, filter: null },
+            { wave: 'triangle', freq: 1568, freqEnd: null, delay: 0.256, attack: 0.002, decay: 0.28, gain: 0.045, filter: null },
+            { wave: 'triangle', freq: 1760, freqEnd: null, delay: 0.288, attack: 0.002, decay: 0.3, gain: 0.042, filter: null },
+            { wave: 'triangle', freq: 2093, freqEnd: null, delay: 0.32, attack: 0.002, decay: 0.75, gain: 0.05, filter: null },   // the landing, left ringing
+            // Square harmonics dusted over the run — the digital glint on the strings
+            { wave: 'square', freq: 1046, freqEnd: null, delay: 0, attack: 0.003, decay: 0.1, gain: 0.012, filter: { type: 'bandpass', cutoff: 1050, q: 8 } },
+            { wave: 'square', freq: 1760, freqEnd: null, delay: 0.128, attack: 0.003, decay: 0.1, gain: 0.01, filter: { type: 'bandpass', cutoff: 1800, q: 8 } },
+            { wave: 'square', freq: 2637, freqEnd: null, delay: 0.256, attack: 0.003, decay: 0.12, gain: 0.009, filter: { type: 'bandpass', cutoff: 2650, q: 8 } },
+            { wave: 'square', freq: 4186, freqEnd: null, delay: 0.32, attack: 0.004, decay: 0.3, gain: 0.008, filter: { type: 'bandpass', cutoff: 4200, q: 8 } },
+            // A last airy chirp as the top note lands
+            { wave: 'noise', freq: 440, freqEnd: null, delay: 0.32, attack: 0.001, decay: 0.05, gain: 0.03, filter: { type: 'bandpass', cutoff: 9000, q: 4 } },
+        ],
+    },
     FANFARE: {
         name: 'FANFARE', desc: 'Anthem-jingle lead — the CHAPTER_CLEAR triangle voice as a tracker instrument (authored at C5)',
         voices: [
