@@ -51,7 +51,16 @@ export function applyVolumePrefs() {
     if (!audioReady()) return;
     setMasterVolume((getPref('volume.master', 100) / 100) * 0.8);   // 0.8 = headroom
     setSfxVolume(getPref('volume.sfx', 100) / 100);
-    setMusicVolume(getPref('volume.music', 100) / 100);
+    setMusicVolume((getPref('volume.music', 100) / 100) * musicDuck);
+}
+
+// Temporarily pull the music down so a one-off moment can own the room (the campaign-win
+// fanfare), then let it back up. A MULTIPLIER on top of the player's own music setting, never a
+// replacement — dragging the slider while ducked still behaves, and restoring can't overwrite it.
+let musicDuck = 1;
+export function duckMusic(mul = 0.25, ramp = 0.35) {
+    musicDuck = Math.max(0, Math.min(1, mul));
+    if (audioReady()) setMusicVolume((getPref('volume.music', 100) / 100) * musicDuck, ramp);
 }
 
 export function sfx(name, opts = {}) {

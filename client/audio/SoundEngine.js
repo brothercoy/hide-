@@ -64,7 +64,19 @@ export function now() { return ctx ? ctx.currentTime : 0; }
 export function setMasterVolume(v) { if (master) master.gain.value = v; }
 export function getMasterVolume() { return master ? master.gain.value : 0.8; }
 export function setSfxVolume(v) { if (sfxBus) sfxBus.gain.value = v; }
-export function setMusicVolume(v) { if (musicBus) musicBus.gain.value = v; }
+// `ramp` (seconds) glides instead of jumping — used to duck the music under a big moment and
+// bring it back without an audible step.
+export function setMusicVolume(v, ramp = 0) {
+    if (!musicBus) return;
+    if (ramp > 0 && ctx) {
+        const t = ctx.currentTime;
+        musicBus.gain.cancelScheduledValues(t);
+        musicBus.gain.setValueAtTime(musicBus.gain.value, t);
+        musicBus.gain.linearRampToValueAtTime(v, t + ramp);
+    } else {
+        musicBus.gain.value = v;
+    }
+}
 export function getAnalyser() { return analyser; }
 
 // ── Voice scheduling ─────────────────────────────────────────────────────────

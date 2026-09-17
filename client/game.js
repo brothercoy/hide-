@@ -27,7 +27,7 @@ import { FrequencyMode } from './modes/FrequencyMode.js';
 import { drawRotateGate } from './ui/RotateGate.js';
 import { GAME_INTRO_MS } from '../timings.js';   // shared: the server holds the first countdown this long
 import { getPref, setPref } from './prefs.js';
-import { unlockAudio, sfx, feedTick, tickBurst } from './audio/sfx.js';
+import { unlockAudio, sfx, feedTick, tickBurst, duckMusic } from './audio/sfx.js';
 import { setMusic, syncMusic, setMusicTension } from './audio/music.js';
 
 // Apply the saved theme before anything paints (default green). `theme` is read live everywhere —
@@ -703,7 +703,7 @@ const WIN_FONT = 150;
 // Confetti: every printable ASCII glyph that ISN'T a letter or a digit.
 const CONFETTI_CHARS = Array.from({ length: 126 - 33 + 1 }, (_, i) => String.fromCharCode(33 + i))
     .filter(c => !/[A-Za-z0-9]/.test(c)).join('');
-const CONFETTI_PER_SIDE = 55;
+const CONFETTI_PER_SIDE = 95;
 const CONFETTI_GRAVITY = 1250;    // px/s²
 let campaignWin = null;           // { start, bits } once the ceremony is running
 
@@ -720,16 +720,18 @@ function spawnConfetti() {
     const bits = [];
     const R = (a, b) => a + Math.random() * (b - a);
     for (const side of [-1, 1]) {                       // -1 = from the left, +1 = from the right
-        const x0 = side < 0 ? -20 : canvas.width + 20;
         for (let i = 0; i < CONFETTI_PER_SIDE; i++) {
+            // Launch points scatter along the corner rather than all leaving one spot, and the
+            // velocity fan is wide — a tight range makes every bit trace the same arc.
+            const x0 = side < 0 ? R(-70, 90) : canvas.width - R(-70, 90);
             bits.push({
-                x: x0, y: canvas.height + R(0, 60),
-                vx: -side * R(320, 1150),               // inward, across the screen
-                vy: -R(1150, 1850),                     // up
-                rot: R(0, Math.PI * 2), vrot: R(-7, 7),
-                size: R(18, 40),
+                x: x0, y: canvas.height + R(0, 90),
+                vx: -side * R(200, 1500),               // inward, across the screen
+                vy: -R(900, 2050),                      // up
+                rot: R(0, Math.PI * 2), vrot: R(-8, 8),
+                size: R(16, 44),
                 ch: CONFETTI_CHARS[(Math.random() * CONFETTI_CHARS.length) | 0],
-                delay: R(0, 0.5),                       // staggered, so it keeps coming
+                delay: R(0, 0.7),                       // staggered, so it keeps coming
             });
         }
     }
@@ -741,6 +743,7 @@ function startCampaignWin() {
     campaignWin.start = performance.now();
     campaignWin.bits = spawnConfetti();
     uiManager.blocked = true;      // uninterruptible for its whole duration
+    duckMusic(0.18, 0.25);         // pull the music down so the fanfare owns the room
     sfx('TADA');
 }
 function updateCampaignWin() {
@@ -749,6 +752,7 @@ function updateCampaignWin() {
         campaignWin = null;
         uiManager.blocked = false;
         uiManager.lastTime = performance.now();
+        duckMusic(1, 0.9);         // …and let it swell back as the screen clears
     }
 }
 function drawCampaignWin() {

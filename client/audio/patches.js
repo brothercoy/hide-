@@ -120,18 +120,20 @@ export const PATCHES = {
         vary: { freq: 0.008, gain: 0.08 },
         voices: [
             // "ta" — the short pickup, G4
-            { wave: 'noise', freq: 440, freqEnd: null, delay: 0, attack: 0.001, decay: 0.035, gain: 0.05, filter: { type: 'bandpass', cutoff: 3000, q: 2 } },
-            { wave: 'sawtooth', freq: 392, freqEnd: null, delay: 0, attack: 0.012, decay: 0.15, gain: 0.1, filter: { type: 'lowpass', cutoff: 1600, cutoffEnd: 3600, q: 1.2 } },
-            { wave: 'square', freq: 784, freqEnd: null, delay: 0, attack: 0.012, decay: 0.13, gain: 0.022, filter: { type: 'lowpass', cutoff: 4000, q: 1 } },
-            // "daaa" — the landing chord, C major, held and ringing
-            { wave: 'noise', freq: 440, freqEnd: null, delay: 0.17, attack: 0.001, decay: 0.045, gain: 0.055, filter: { type: 'bandpass', cutoff: 3400, q: 2 } },
-            { wave: 'sawtooth', freq: 523, freqEnd: null, delay: 0.17, attack: 0.02, decay: 1.15, gain: 0.105, filter: { type: 'lowpass', cutoff: 1800, cutoffEnd: 4200, q: 1.2 } },
-            { wave: 'sawtooth', freq: 659, freqEnd: null, delay: 0.175, attack: 0.022, decay: 1.1, gain: 0.075, filter: { type: 'lowpass', cutoff: 2000, cutoffEnd: 4400, q: 1.2 } },
-            { wave: 'sawtooth', freq: 784, freqEnd: null, delay: 0.18, attack: 0.022, decay: 1.2, gain: 0.07, filter: { type: 'lowpass', cutoff: 2200, cutoffEnd: 4800, q: 1.2 } },
-            { wave: 'sawtooth', freq: 1046, freqEnd: null, delay: 0.185, attack: 0.025, decay: 1.05, gain: 0.04, filter: { type: 'lowpass', cutoff: 3000, cutoffEnd: 6000, q: 1 } },
-            { wave: 'square', freq: 1568, freqEnd: null, delay: 0.19, attack: 0.03, decay: 0.8, gain: 0.014, filter: { type: 'bandpass', cutoff: 1600, q: 4 } },
-            // low body under the chord, so it lands with weight
-            { wave: 'triangle', freq: 131, freqEnd: null, delay: 0.17, attack: 0.02, decay: 1.1, gain: 0.085, filter: null },
+            { wave: 'noise', freq: 440, freqEnd: null, delay: 0, attack: 0.001, decay: 0.04, gain: 0.08, filter: { type: 'bandpass', cutoff: 3000, q: 2 } },
+            { wave: 'sawtooth', freq: 392, freqEnd: null, delay: 0, attack: 0.012, decay: 0.16, gain: 0.15, filter: { type: 'lowpass', cutoff: 1600, cutoffEnd: 3600, q: 1.2 } },
+            { wave: 'sawtooth', freq: 196, freqEnd: null, delay: 0, attack: 0.012, decay: 0.16, gain: 0.08, filter: { type: 'lowpass', cutoff: 1800, q: 1 } },
+            { wave: 'square', freq: 784, freqEnd: null, delay: 0, attack: 0.012, decay: 0.14, gain: 0.034, filter: { type: 'lowpass', cutoff: 4000, q: 1 } },
+            // "daaa" — the landing chord, C major, held long and ringing out
+            { wave: 'noise', freq: 440, freqEnd: null, delay: 0.17, attack: 0.001, decay: 0.05, gain: 0.09, filter: { type: 'bandpass', cutoff: 3400, q: 2 } },
+            { wave: 'sawtooth', freq: 523, freqEnd: null, delay: 0.17, attack: 0.02, decay: 2.2, gain: 0.165, filter: { type: 'lowpass', cutoff: 1800, cutoffEnd: 4200, q: 1.2 } },
+            { wave: 'sawtooth', freq: 659, freqEnd: null, delay: 0.175, attack: 0.022, decay: 2.1, gain: 0.12, filter: { type: 'lowpass', cutoff: 2000, cutoffEnd: 4400, q: 1.2 } },
+            { wave: 'sawtooth', freq: 784, freqEnd: null, delay: 0.18, attack: 0.022, decay: 2.3, gain: 0.115, filter: { type: 'lowpass', cutoff: 2200, cutoffEnd: 4800, q: 1.2 } },
+            { wave: 'sawtooth', freq: 1046, freqEnd: null, delay: 0.185, attack: 0.025, decay: 2, gain: 0.07, filter: { type: 'lowpass', cutoff: 3000, cutoffEnd: 6000, q: 1 } },
+            { wave: 'square', freq: 1568, freqEnd: null, delay: 0.19, attack: 0.03, decay: 1.6, gain: 0.024, filter: { type: 'bandpass', cutoff: 1600, q: 4 } },
+            // low body under the chord, so it lands with weight and keeps the room full
+            { wave: 'triangle', freq: 131, freqEnd: null, delay: 0.17, attack: 0.02, decay: 2.3, gain: 0.14, filter: null },
+            { wave: 'triangle', freq: 65, freqEnd: null, delay: 0.17, attack: 0.03, decay: 2.3, gain: 0.1, filter: null },
         ],
     },
     CHAPTER_REVEAL: {
