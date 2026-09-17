@@ -25,12 +25,12 @@ export class SoloScreen {
     }
 
     // Arm the unlock ceremony for the chapter AFTER `afterChapterId` — call BEFORE showScreen('solo').
-    // The flag types in still-locked ('?'), then startUnlock() (fired when the screen transition
-    // lands) types its art in with teletype ticks, pops its overlays, and rings the BEL.
+    // The flag types in still-locked ('?'); startUnlock() (fired once the screen transition has
+    // fully landed) then runs the reveal wave — see _drawUnlockAnim.
     beginUnlock(afterChapterId) {
         const idx = FLAGS.findIndex(f => f.id === afterChapterId) + 1;
         this.unlock = (idx > 0 && idx < FLAGS.length && FLAGS[idx].art)
-            ? { idx, start: null, lastN: 0, lastM: 0, done: false, consumed: false }
+            ? { idx, start: null, ticked: 0, done: false, consumed: false, tick: -1, scr: null }
             : null;
     }
 
@@ -83,44 +83,118 @@ export class SoloScreen {
         return { placed, lh, cw };
     }
 
-    // The unlock ceremony frame: bright borders, the art TYPING in char-by-char with teletype
-    // ticks, then overlays popping one by one, then the BEL — and only then the flag becomes a
-    // button. Runs inside draw() once startUnlock() has fired.
+    // The flag's finished interior (art + overlays), CLIPPED to a horizontal slice — the reveal
+    // wave draws the settled region with one clip and each crossfading column with its own.
+    _drawInteriorSlice(flag, x, top, cw, lh, left, right, alpha) {
+        if (right <= left || alpha <= 0) return;
+        const ctx = this.ctx;
+        ctx.save();
+        ctx.beginPath();
+        ctx.rect(left, top, right - left, FLAG_H * lh);
+        ctx.clip();
+        ctx.globalAlpha = alpha;
+        ctx.fillStyle = theme.fg;
+        ctx.font = `${FLAG_FONT}px "IBMVGA"`;
+        ctx.textAlign = 'left';
+        ctx.textBaseline = 'top';
+        const full = flagRows(flag, true, 0, false);
+        for (let r = 1; r < FLAG_H - 1; r++) ctx.fillText(full[r], x, top + r * lh);
+        if (flag.overlays?.length) this._drawOverlays(flag, x, top, cw, lh, { alpha, color: theme.fg });
+        ctx.restore();
+        ctx.globalAlpha = 1;
+    }
+
+    // The unlock reveal: the box sits locked for a beat after the screen lands, then a column of
+    // SCRAMBLING glyphs erupts at the interior's center and rolls outward in both directions.
+    // Behind the wave front the static crossfades into the flag's real glyphs, so the country
+    // forms out of the noise from the middle out. Runs inside draw() once startUnlock() fired.
     _drawUnlockAnim(flag, x, top, cw, lh) {
         const ctx = this.ctx;
         const u = this.unlock;
-        const CHAR_MS = 12;     // art reveal speed (per interior character)
-        const OV_MS = 130;      // per overlay pop
+        const PRE_MS = 300;      // beat after the screen lands, before the static erupts
+        const WAVE_MS = 1150;    // center → past the edges
+        const BAND = 1.6;        // columns of pure scramble at the wave front
+        const FADE = 1.3;        // columns of scramble→glyph crossfade behind it
+        const SWAP_MS = 55;      // scramble re-roll rate (the flicker)
         const INNER_W = FLAG_W - 2, INNER_H = FLAG_H - 2;
-        const totalArt = INNER_W * INNER_H;
-        const elapsed = performance.now() - u.start;
-        const n = Math.min(totalArt, Math.floor(elapsed / CHAR_MS));
-        if (n > u.lastN) { feedTick(n - u.lastN, 2); u.lastN = n; }
 
+        const t = performance.now() - u.start;
+        const ix0 = x + cw;               // interior's left edge (past the border column)
+        const iy0 = top + lh;             // interior's top row
+        const half = INNER_W / 2;
+        const centerX = ix0 + half * cw;
+
+        // The opening beat: still locked, exactly as it looked before.
+        if (t < PRE_MS) {
+            const st = this._flagState(false, null);
+            ctx.font = `${FLAG_FONT}px "IBMVGA"`;
+            ctx.textAlign = 'left';
+            ctx.textBaseline = 'top';
+            ctx.globalAlpha = st.alpha;
+            ctx.fillStyle = st.color;
+            flagRows(flag, false, 0, false).forEach((r, ri) => ctx.fillText(r, x, top + ri * lh));
+            ctx.globalAlpha = 1;
+            return;
+        }
+
+        // Wave front distance from center, in columns. It travels past the edge by the band +
+        // fade widths so the outermost columns get to finish settling.
+        const travel = half + BAND + FADE;
+        const w = Math.min(travel, (t - PRE_MS) / WAVE_MS * travel);
+
+        // Borders: the box itself is already on screen and just brightens — only the interior
+        // transforms, so the frame is drawn whole and bright underneath the wave.
         ctx.font = `${FLAG_FONT}px "IBMVGA"`;
         ctx.textAlign = 'left';
         ctx.textBaseline = 'top';
         ctx.globalAlpha = 1;
         ctx.fillStyle = theme.fg;
         const full = flagRows(flag, true, 0, false);
-        ctx.fillText(full[0], x, top);                                  // top border
-        ctx.fillText(full[FLAG_H - 1], x, top + (FLAG_H - 1) * lh);     // bottom border
-        for (let r = 0; r < INNER_H; r++) {
-            const vis = Math.max(0, Math.min(INNER_W, n - r * INNER_W));
-            const row = '|' + full[r + 1].slice(1, 1 + vis) + (vis === INNER_W ? '|' : '');
-            ctx.fillText(row, x, top + (r + 1) * lh);
+        ctx.fillText(full[0], x, top);
+        ctx.fillText(full[FLAG_H - 1], x, top + (FLAG_H - 1) * lh);
+        for (let r = 1; r < FLAG_H - 1; r++) {
+            ctx.fillText(full[r][0], x, top + r * lh);
+            ctx.fillText(full[r][FLAG_W - 1], x + (FLAG_W - 1) * cw, top + r * lh);
         }
 
-        const ovCount = flag.overlays?.length || 0;
-        let m = 0;
-        if (n >= totalArt) {
-            m = Math.min(ovCount, Math.floor((elapsed - totalArt * CHAR_MS) / OV_MS));
-            if (m > u.lastM) { feedTick(m - u.lastM, 1); u.lastM = m; }
-            if (m > 0) this._drawOverlays(flag, x, top, cw, lh, { alpha: 1, color: theme.fg }, m);
+        // Settled core: everything more than BAND+FADE behind the front is simply the flag.
+        const settled = Math.max(0, Math.min(half, w - BAND - FADE));
+        this._drawInteriorSlice(flag, x, top, cw, lh,
+            centerX - settled * cw, centerX + settled * cw, 1);
+
+        // Re-roll the scramble on its own clock so the static flickers independent of frame rate.
+        const tick = Math.floor(t / SWAP_MS);
+        if (u.tick !== tick) {
+            u.tick = tick;
+            u.scr = Array.from({ length: INNER_W * INNER_H },
+                () => String.fromCharCode(33 + ((Math.random() * 94) | 0)));
         }
 
-        // Ceremony complete: BEL, and the flag becomes a real button.
-        if (n >= totalArt && m >= ovCount) {
+        // Per-column: crossfade the real glyphs in behind the front, static on top of the front.
+        ctx.textAlign = 'left';
+        ctx.textBaseline = 'top';
+        for (let c = 0; c < INNER_W; c++) {
+            const dist = Math.abs(c + 0.5 - half);
+            const age = w - dist;                     // how far the wave has passed this column
+            if (age < 0 || age >= BAND + FADE) continue;
+            const k = age < BAND ? 0 : (age - BAND) / FADE;   // 0 = pure static, 1 = pure glyph
+            if (k > 0) {
+                this._drawInteriorSlice(flag, x, top, cw, lh,
+                    ix0 + c * cw, ix0 + (c + 1) * cw, k);
+            }
+            ctx.globalAlpha = 1 - k;
+            ctx.fillStyle = theme.fg;
+            ctx.font = `${FLAG_FONT}px "IBMVGA"`;
+            for (let r = 0; r < INNER_H; r++) ctx.fillText(u.scr[r * INNER_W + c], ix0 + c * cw, iy0 + r * lh);
+        }
+        ctx.globalAlpha = 1;
+
+        // A tick per column as it locks in — quiet enough to sit under the anthem.
+        const lockedCols = Math.floor(settled * 2);
+        if (lockedCols > u.ticked) { feedTick(lockedCols - u.ticked, 1); u.ticked = lockedCols; }
+
+        // Wave has run off both edges: the flag is whole, and becomes a real button.
+        if (w >= travel) {
             u.done = true;
             sfx('BEL');
             const i = u.idx;
