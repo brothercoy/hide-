@@ -116,6 +116,11 @@ export class SoloScreen {
         const BAND = 1.6;        // columns of pure scramble at the wave front
         const FADE = 1.3;        // columns of scramble→glyph crossfade behind it
         const SWAP_MS = 55;      // scramble re-roll rate (the flicker)
+        // The static is NOT on the 5-row character grid: the flags themselves are drawn as
+        // free-positioned overlay lines (5–11 per flag, typically ~0.4 cells apart), so the
+        // scramble matches that density — filling the interior top to bottom, empty regions
+        // included — instead of looking sparse beside the art it turns into.
+        const SCR_ROWS = 12;
         const INNER_W = FLAG_W - 2, INNER_H = FLAG_H - 2;
 
         const t = performance.now() - u.start;
@@ -166,9 +171,13 @@ export class SoloScreen {
         const tick = Math.floor(t / SWAP_MS);
         if (u.tick !== tick) {
             u.tick = tick;
-            u.scr = Array.from({ length: INNER_W * INNER_H },
+            u.scr = Array.from({ length: INNER_W * SCR_ROWS },
                 () => String.fromCharCode(33 + ((Math.random() * 94) | 0)));
         }
+        // Scramble row baselines, spread so the glyph INK (which sits 0.125–0.75 of a cell below
+        // its draw y) stays inside the interior instead of spilling onto the frame.
+        const scrTop = iy0 - 0.125 * lh, scrBot = iy0 + (INNER_H - 0.75) * lh;
+        const scrStep = (scrBot - scrTop) / (SCR_ROWS - 1);
 
         // Per-column: crossfade the real glyphs in behind the front, static on top of the front.
         ctx.textAlign = 'left';
@@ -185,7 +194,7 @@ export class SoloScreen {
             ctx.globalAlpha = 1 - k;
             ctx.fillStyle = theme.fg;
             ctx.font = `${FLAG_FONT}px "IBMVGA"`;
-            for (let r = 0; r < INNER_H; r++) ctx.fillText(u.scr[r * INNER_W + c], ix0 + c * cw, iy0 + r * lh);
+            for (let r = 0; r < SCR_ROWS; r++) ctx.fillText(u.scr[r * INNER_W + c], ix0 + c * cw, scrTop + r * scrStep);
         }
         ctx.globalAlpha = 1;
 
