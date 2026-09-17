@@ -155,7 +155,54 @@ let cur = { row: 0, ch: 0 };
 const player = createPlayer(k => bank[k]);   // plays the EDITED bank — lab tweaks are heard live
 function touchSongs() { localStorage.setItem(SONGS_KEY, JSON.stringify({ songs, songIdx, snap: committedNow })); }
 
+// ── Snapshots: the safety net for experimenting ──────────────────────────────
+// Every tracker edit autosaves immediately, so without this there's no way back from a session
+// of messing around. A snapshot is a manual (or auto-on-export) copy of a song kept separately
+// from the autosave; SHIFT+R restores it. EXPORTING auto-snapshots, so "back to my original"
+// always means "back to what I last exported". With no snapshot, revert falls back to the
+// version committed in songs.js.
+const SNAP_KEY = 'soundlab_song_snaps_v1';
+let snaps = {};
+try { snaps = JSON.parse(localStorage.getItem(SNAP_KEY) || '{}') || {}; } catch { snaps = {}; }
+function writeSnaps() {
+    try { localStorage.setItem(SNAP_KEY, JSON.stringify(snaps)); } catch { /* quota/private mode */ }
+}
+function snapshotSong(song) {
+    snaps[song.name] = JSON.stringify(song);
+    writeSnaps();
+    flash(`SNAPSHOT SAVED — ${song.name}  (SHIFT+R RESTORES IT)`);
+}
+function snapshotAll() {
+    for (const s of songs) snaps[s.name] = JSON.stringify(s);
+    writeSnaps();
+}
+// What SHIFT+R would restore: the manual/export snapshot, else the committed version.
+function revertSource(song) {
+    if (snaps[song.name]) return { json: snaps[song.name], what: 'SNAPSHOT' };
+    const c = Object.values(COMMITTED_SONGS).find(x => x.name === song.name);
+    return c ? { json: JSON.stringify(c), what: 'COMMITTED VERSION' } : null;
+}
+let revertArmed = 0;
+function revertSong() {
+    const song = songs[songIdx];
+    const src = revertSource(song);
+    if (!src) { flash(`NO SNAPSHOT FOR ${song.name} — SHIFT+S TAKES ONE`, 2600); return; }
+    if (src.json === JSON.stringify(song)) { flash(`ALREADY MATCHES ITS ${src.what}`, 2200); return; }
+    if (performance.now() > revertArmed) {          // destructive — confirm with a second press
+        revertArmed = performance.now() + 3000;
+        flash(`DISCARD CHANGES TO ${song.name}, BACK TO ${src.what}? SHIFT+R AGAIN`, 3000);
+        return;
+    }
+    revertArmed = 0;
+    player.stop();
+    songs[songIdx] = normalizeSong(JSON.parse(src.json));
+    editPat = 0; cur.row = 0; cur.ch = 0; chainSel = [0, 0, 0];
+    touchSongs();
+    flash(`REVERTED ${songs[songIdx].name} TO ITS ${src.what}`);
+}
+
 function exportSongs() {
+    snapshotAll();   // the exported state IS the checkpoint — SHIFT+R always returns here
     const json = JSON.stringify({ songs }, null, 2);
     console.log(json);
     if (navigator.clipboard?.writeText) {
@@ -730,6 +777,16 @@ function drawTracker() {
         'F ............. TENSION SECTION AT SLOT (*):',
         '                a round\'s final seconds play',
         '                only [here, end), sped up',
+        'SHIFT+S ....... SNAPSHOT THIS SONG',
+        'SHIFT+R ....... REVERT IT TO THE SNAPSHOT',
+        '                (press twice to confirm)',
+        '',
+        'SAFE TO EXPERIMENT: edits autosave instantly,',
+        'but EXPORTING also takes a snapshot — so',
+        'SHIFT+R always walks back to what you last',
+        'exported. SHIFT+S checkpoints mid-session.',
+        'Never snapshotted? Revert falls back to the',
+        'version committed in songs.js.',
         '',
         'GAIN = this pattern\'s mix level: every',
         'note it triggers is scaled by it (tame a',
@@ -907,6 +964,13 @@ function trackerKey(e) {
         else song.tensionStep = s;
         flash(song.tensionStep != null ? `TENSION SECTION @ STEP ${s} — FINAL-SECONDS LOOP` : 'TENSION SECTION CLEARED');
         touchSongs();
+        return;
+    }
+    // SHIFT+S / SHIFT+R — snapshot & revert. Checked BEFORE note entry, since s and r are both
+    // piano keys (they'd otherwise type a note instead).
+    if (e.shiftKey && (e.key === 'S' || e.key === 'R')) {
+        e.preventDefault();
+        if (e.key === 'S') snapshotSong(song); else revertSong();
         return;
     }
     if (e.ctrlKey || e.metaKey || e.altKey) return;
