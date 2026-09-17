@@ -421,9 +421,9 @@ export const SONGS = {
         instruments: ['FANFARE', 'BASS'],
         chains: [[0], [0], [0]],
         patterns: [
-        // pattern 0 — 51 steps
+        // pattern 0 — 49 steps
         {
-            len: 51,
+            len: 49,
             ch: [
                 /* LEAD */ [
                     67, h, 67, h,
@@ -438,7 +438,7 @@ export const SONGS = {
                     h, h, 72, h,
                     h, h, h, h,
                     h, h, h, h,
-                    h, h, h,
+                    h,
                 ],
                 /* BASS */ [
                     48, h, h, h,
@@ -453,7 +453,7 @@ export const SONGS = {
                     h, h, 36, h,
                     h, h, h, h,
                     h, h, h, h,
-                    h, h, h,
+                    h,
                 ],
                 /* DRUM */ [
                     n, n, n, n,
@@ -468,7 +468,7 @@ export const SONGS = {
                     n, n, n, n,
                     n, n, n, n,
                     n, n, n, n,
-                    n, n, n,
+                    n,
                 ],
             ],
         },
