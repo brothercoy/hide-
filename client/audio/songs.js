@@ -746,7 +746,7 @@ export const SONGS = {
         },
         // pattern 1 — 12 steps
         {
-            len: 12, gain: 0.25,
+            len: 12, gain: 0.3,
             ch: [
                 /* LEAD */ [
                     n, n, n, n,
@@ -759,15 +759,15 @@ export const SONGS = {
                     n, n, n, n,
                 ],
                 /* DRUM */ [
-                    'KICK', n, n, n,
-                    n, n, 'KICK', n,
+                    'KICK', n, 'CLACK', n,
+                    'CLACK', n, 'KICK', n,
                     n, n, n, n,
                 ],
             ],
         },
         // pattern 2 — 12 steps
         {
-            len: 12, gain: 0.35,
+            len: 12, gain: 0.42,
             ch: [
                 /* LEAD */ [
                     n, n, n, n,
@@ -780,15 +780,15 @@ export const SONGS = {
                     n, n, n, n,
                 ],
                 /* DRUM */ [
-                    'KICK', n, n, n,
-                    n, n, 'KICK', n,
+                    'KICK', n, 'CLACK', n,
+                    'CLACK', n, 'KICK', n,
                     n, n, n, n,
                 ],
             ],
         },
         // pattern 3 — 12 steps
         {
-            len: 12, gain: 0.5,
+            len: 12, gain: 0.55,
             ch: [
                 /* LEAD */ [
                     n, n, n, n,
@@ -801,15 +801,15 @@ export const SONGS = {
                     n, n, n, n,
                 ],
                 /* DRUM */ [
-                    'KICK', n, n, n,
-                    n, n, 'KICK', 'CLACK',
-                    'CLACK', 'CLACK', 'CLACK', 'KICK',
+                    'KICK', n, 'CLACK', n,
+                    'CLACK', n, 'KICK', n,
+                    n, n, 'KICK', n,
                 ],
             ],
         },
         // pattern 4 — 10 steps
         {
-            len: 10, gain: 0.6,
+            len: 10, gain: 0.62,
             ch: [
                 /* LEAD */ [
                     n, n, n, n,
