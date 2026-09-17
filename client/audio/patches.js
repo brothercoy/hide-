@@ -199,6 +199,16 @@ export const PATCHES = {
             { wave: 'noise', freq: 440, freqEnd: null, delay: 0, attack: 0.001, decay: 0.18, gain: 0.25, filter: { type: 'highpass', cutoff: 6500, q: 0.7 } },
         ],
     },
+    CRASH: {
+        name: 'CRASH', desc: 'Cymbal crash — strike, a long shimmering wash and a low body thump. For song-ending impacts, where HAT_OPEN is far too short',
+        vary: { freq: 0.02, gain: 0.06 },
+        voices: [
+            { wave: 'noise', freq: 440, freqEnd: null, delay: 0, attack: 0.001, decay: 0.07, gain: 0.5, filter: { type: 'highpass', cutoff: 3000, q: 0.7 } },    // the strike
+            { wave: 'noise', freq: 440, freqEnd: null, delay: 0, attack: 0.003, decay: 1.5, gain: 0.3, filter: { type: 'highpass', cutoff: 5200, q: 0.7 } },     // the wash
+            { wave: 'noise', freq: 440, freqEnd: null, delay: 0, attack: 0.001, decay: 0.75, gain: 0.16, filter: { type: 'bandpass', cutoff: 9500, q: 1.2 } },   // sizzle on top
+            { wave: 'sine', freq: 95, freqEnd: 58, delay: 0, attack: 0.002, decay: 0.26, gain: 0.26, filter: null },                                             // body — the weight behind it
+        ],
+    },
 
     // ── Tracker instruments (authored at A4 = 440 Hz; the tracker pitches them per note) ──
     LEAD: {

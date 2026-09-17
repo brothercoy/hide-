@@ -95,7 +95,7 @@ function flash(msg, ms = 2000) { flashMsg = msg; flashUntil = performance.now() 
 // Songs autosave to localStorage on every edit (unlike SFX patches, which use S).
 const SONGS_KEY = 'soundlab_songs_v1';
 let tab = 'sfx';                     // 'sfx' | 'tracker'
-const DRUM_SHORT = { KICK: 'KCK', CLACK: 'CLK', HAT: 'HAT', HAT_OPEN: 'OPN' };
+const DRUM_SHORT = { KICK: 'KCK', CLACK: 'CLK', HAT: 'HAT', HAT_OPEN: 'OPN', CRASH: 'CRS' };
 const NN = ['C-', 'C#', 'D-', 'D#', 'E-', 'F-', 'F#', 'G-', 'G#', 'A-', 'A#', 'B-'];
 const noteName = m => NN[m % 12] + (Math.floor(m / 12) - 1);
 // Two-row piano: Z..M = lower octave, Q..I = upper (FastTracker convention)
@@ -103,7 +103,7 @@ const NOTE_KEYS = {
     z: 0, s: 1, x: 2, d: 3, c: 4, v: 5, g: 6, b: 7, h: 8, n: 9, j: 10, m: 11, ',': 12,
     q: 12, 2: 13, w: 14, 3: 15, e: 16, r: 17, 5: 18, t: 19, 6: 20, y: 21, 7: 22, u: 23, i: 24,
 };
-const DRUM_ENTRY = { z: 'KICK', x: 'CLACK', c: 'HAT', v: 'HAT_OPEN', 1: 'KICK', 2: 'CLACK', 3: 'HAT', 4: 'HAT_OPEN' };
+const DRUM_ENTRY = { z: 'KICK', x: 'CLACK', c: 'HAT', v: 'HAT_OPEN', b: 'CRASH', 1: 'KICK', 2: 'CLACK', 3: 'HAT', 4: 'HAT_OPEN', 5: 'CRASH' };
 
 function newPattern(len) {
     return { len, ch: [Array(len).fill(null), Array(len).fill(null), Array(len).fill(null)] };
@@ -764,7 +764,7 @@ function drawTracker() {
         'Z-M / Q-I ..... NOTES (2 OCTAVES)',
         '[ ] ........... OCTAVE DOWN/UP',
         '- ............. HOLD (LENGTHEN NOTE ABOVE)',
-        'Z X C V ....... KCK CLK HAT OPN (DRUM COL)',
+        'Z X C V B ..... KCK CLK HAT OPN CRS (DRUM COL)',
         'DEL / . ....... CLEAR CELL',
         'ARROWS ........ MOVE CURSOR',
         'SPACE ......... PLAY/STOP SONG',

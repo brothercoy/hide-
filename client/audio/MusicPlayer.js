@@ -40,7 +40,7 @@
 
 import { playPatch, now } from './SoundEngine.js';
 
-export const DRUM_KEYS = ['KICK', 'CLACK', 'HAT', 'HAT_OPEN'];
+export const DRUM_KEYS = ['KICK', 'CLACK', 'HAT', 'HAT_OPEN', 'CRASH'];
 export const CHANNEL_NAMES = ['LEAD', 'BASS', 'DRUM'];
 export const HOLD = '~';
 
