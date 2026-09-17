@@ -27,7 +27,7 @@ import { FrequencyMode } from './modes/FrequencyMode.js';
 import { drawRotateGate } from './ui/RotateGate.js';
 import { GAME_INTRO_MS } from '../timings.js';   // shared: the server holds the first countdown this long
 import { getPref, setPref } from './prefs.js';
-import { unlockAudio, sfx, feedTick, tickBurst, duckMusic } from './audio/sfx.js';
+import { unlockAudio, sfx, feedTick, typeTick, tickBurst, duckMusic } from './audio/sfx.js';
 import { setMusic, syncMusic, setMusicTension } from './audio/music.js';
 
 // Apply the saved theme before anything paints (default green). `theme` is read live everywhere —
@@ -704,11 +704,18 @@ const WIN_FADE_MS = 450;      // the dim + content fade IN, and out again at the
 const WIN_PRE_MS = 700;       // the cursor sits blinking alone before anything types
 const WIN_TYPE_MS = 105;      // per character of "YOU WIN!"
 const WIN_TITLE_END = WIN_PRE_MS + WIN_TEXT.length * WIN_TYPE_MS;   // fanfare + confetti fire here
-const WIN_SUB_PAUSE_MS = 750; // beat after the celebration before the subtitle types
+// The cursor walks down to the subtitle in TWO keystrokes, like a terminal taking two returns:
+// first into the gap between the lines (shrinking to the smaller size as it goes), then onto the
+// subtitle line itself. Each drop ticks.
+const WIN_ENTER1_MS = 600;    // beat after the celebration, then the first drop
+const WIN_ENTER2_MS = 340;    // then the second
+const WIN_SUB_PAUSE_MS = 300; // and a beat sitting there before it starts typing
 const WIN_SUB_TYPE_MS = 55;   // per character of the subtitle (quicker — it's the smaller line)
-const WIN_SUB_START = WIN_TITLE_END + WIN_SUB_PAUSE_MS;
+const WIN_ENTER1_AT = WIN_TITLE_END + WIN_ENTER1_MS;
+const WIN_ENTER2_AT = WIN_ENTER1_AT + WIN_ENTER2_MS;
+const WIN_SUB_START = WIN_ENTER2_AT + WIN_SUB_PAUSE_MS;
 const WIN_SUB_END = WIN_SUB_START + WIN_SUB_TEXT.length * WIN_SUB_TYPE_MS;
-const WIN_HOLD_MS = 2200;     // how long the finished screen stands before fading
+const WIN_HOLD_MS = 1800;     // how long the finished screen stands before fading
 const WIN_FONT = 150;
 const WIN_SUB_FONT = 54;
 // Confetti: every printable ASCII glyph that ISN'T a letter or a digit.
@@ -719,7 +726,7 @@ const CONFETTI_GRAVITY = 1250;    // px/s²
 let campaignWin = null;           // { start, bits } once the ceremony is running
 
 function beginCampaignWin() {
-    campaignWin = { start: null, bits: [], celebAt: null, ticked: 0 };
+    campaignWin = { start: null, bits: [], celebAt: null, ticked: 0, enters: 0 };
     // Blocked from THIS moment, not from when the screen lands — the flag screen's type-in
     // leaves input live, so without this a click could open a chapter mid-transition and the
     // win screen would come up over the wrong screen.
@@ -764,6 +771,9 @@ function updateCampaignWin() {
         campaignWin.bits = spawnConfetti();
         sfx('TADA');
     }
+    // Each cursor drop is a keystroke, so each one ticks.
+    const entersDue = (t >= WIN_ENTER1_AT ? 1 : 0) + (t >= WIN_ENTER2_AT ? 1 : 0);
+    while (campaignWin.enters < entersDue) { campaignWin.enters++; typeTick(); }
     if (t >= WIN_SUB_END + WIN_HOLD_MS + WIN_FADE_MS) {
         campaignWin = null;
         uiManager.blocked = false;
@@ -804,18 +814,20 @@ function drawCampaignWin() {
         ctx.fillText(sub, cx, subY);
     }
 
-    // Blinking block cursor just past the line being typed — it drops to the subtitle when that
-    // line starts. Same proportions as the winner screen's. Only the TEXT is centered, so the
-    // line doesn't jitter as the cursor blinks.
+    // Blinking block cursor, walking down in two keystrokes: parked after the title, then into
+    // the gap between the lines (already at the smaller size), then onto the subtitle line where
+    // it types. Same proportions as the winner screen's. Only the TEXT is centered, so the line
+    // doesn't jitter as the cursor blinks.
     if (Math.floor(ms / WIN_CURSOR_MS) % 2 === 0) {
-        const onSub = ms >= WIN_SUB_START;
-        const size = onSub ? WIN_SUB_FONT : WIN_FONT;
+        const stage = ms >= WIN_ENTER2_AT ? 2 : ms >= WIN_ENTER1_AT ? 1 : 0;
+        const size = stage === 0 ? WIN_FONT : WIN_SUB_FONT;
+        const y = stage === 0 ? titleY : stage === 1 ? (titleY + subY) / 2 : subY;
+        const line = stage === 2 ? sub : stage === 1 ? '' : title;
         ctx.font = `${size}px "IBMVGA"`;
-        const line = onSub ? sub : title;
         const curX = cx + ctx.measureText(line).width / 2 + 2;
         const cw = ctx.measureText('M').width;
         const chH = size - 4;
-        ctx.fillRect(curX, (onSub ? subY : titleY) - chH / 2, cw - 2, chH);
+        ctx.fillRect(curX, y - chH / 2, cw - 2, chH);
     }
     // Keystrokes tick like every other typed feed in the game.
     const typed = nTitle + nSub;
