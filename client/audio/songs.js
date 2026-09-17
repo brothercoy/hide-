@@ -643,24 +643,25 @@ export const SONGS = {
         ],
     },
     "ANTHEM_ISRAEL": {
-        name: 'ANTHEM_ISRAEL', bpm: 120,
+        name: 'ANTHEM_ISRAEL', bpm: 133,
         instruments: ['FANFARE', 'BASS'],
         chains: [[0], [0], [0]],
         patterns: [
-        // pattern 0 — 36 steps
+        // pattern 0 — 37 steps
         {
-            len: 36,
+            len: 37,
             ch: [
                 /* LEAD */ [
-                    67, h, 67, h,
-                    67, h, 64, h,
-                    65, h, 65, h,
-                    65, h, 65, h,
+                    67, h, h, h,
+                    67, h, h, h,
+                    65, h, h, h,
+                    65, h, h, 65,
                     64, h, 62, h,
                     64, h, 65, h,
                     62, h, h, h,
                     h, h, h, h,
-                    h, h, h, h,
+                    h, n, n, n,
+                    n,
                 ],
                 /* BASS */ [
                     50, h, h, h,
@@ -670,8 +671,9 @@ export const SONGS = {
                     45, h, h, h,
                     h, h, h, h,
                     38, h, h, h,
-                    h, h, h, h,
-                    h, h, h, h,
+                    h, h, h, n,
+                    n, n, n, n,
+                    n,
                 ],
                 /* DRUM */ [
                     n, n, n, n,
@@ -683,6 +685,7 @@ export const SONGS = {
                     n, n, n, n,
                     n, n, n, n,
                     n, n, n, n,
+                    n,
                 ],
             ],
         },
