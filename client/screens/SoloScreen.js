@@ -116,11 +116,13 @@ export class SoloScreen {
         const BAND = 1.6;        // columns of pure scramble at the wave front
         const FADE = 1.3;        // columns of scramble→glyph crossfade behind it
         const SWAP_MS = 55;      // scramble re-roll rate (the flicker)
-        // The static is NOT on the 5-row character grid: the flags themselves are drawn as
-        // free-positioned overlay lines (5–11 per flag, typically ~0.4 cells apart), so the
-        // scramble matches that density — filling the interior top to bottom, empty regions
-        // included — instead of looking sparse beside the art it turns into.
-        const SCR_ROWS = 12;
+        // The static is NOT on the 5-row character grid: the flags are drawn as free-positioned
+        // overlay lines (5–11 per flag, typically ~0.4 cells apart) whose ink reaches BEYOND the
+        // nominal interior — they're drawn 'middle'-baselined, so a line at cell y inks from
+        // y−0.31 to y+0.25, putting Greece's top stripe above the interior top and Russia's
+        // bottom stripe below its floor. The scramble spans that true extent at the same density,
+        // filling it top to bottom with the empty regions included.
+        const SCR_GAP = 0.4;     // cells between scramble lines
         const INNER_W = FLAG_W - 2, INNER_H = FLAG_H - 2;
 
         const t = performance.now() - u.start;
@@ -168,16 +170,21 @@ export class SoloScreen {
             centerX - settled * cw, centerX + settled * cw, 1);
 
         // Re-roll the scramble on its own clock so the static flickers independent of frame rate.
+        // Scramble line heights, in the SAME coordinate space the overlays use (cells from the
+        // interior top, 'middle'-baselined) — from this flag's highest content to its lowest,
+        // always covering the full interior so empty bands scramble too.
+        if (!u.rows) {
+            const ys = (flag.overlays || []).map(o => o.y);
+            const lo = Math.min(0, ...ys), hi = Math.max(INNER_H, ...ys);
+            const n = Math.max(2, Math.round((hi - lo) / SCR_GAP) + 1);
+            u.rows = Array.from({ length: n }, (_, r) => lo + r * (hi - lo) / (n - 1));
+        }
         const tick = Math.floor(t / SWAP_MS);
         if (u.tick !== tick) {
             u.tick = tick;
-            u.scr = Array.from({ length: INNER_W * SCR_ROWS },
+            u.scr = Array.from({ length: INNER_W * u.rows.length },
                 () => String.fromCharCode(33 + ((Math.random() * 94) | 0)));
         }
-        // Scramble row baselines, spread so the glyph INK (which sits 0.125–0.75 of a cell below
-        // its draw y) stays inside the interior instead of spilling onto the frame.
-        const scrTop = iy0 - 0.125 * lh, scrBot = iy0 + (INNER_H - 0.75) * lh;
-        const scrStep = (scrBot - scrTop) / (SCR_ROWS - 1);
 
         // Per-column: crossfade the real glyphs in behind the front, static on top of the front.
         ctx.textAlign = 'left';
@@ -194,7 +201,10 @@ export class SoloScreen {
             ctx.globalAlpha = 1 - k;
             ctx.fillStyle = theme.fg;
             ctx.font = `${FLAG_FONT}px "IBMVGA"`;
-            for (let r = 0; r < SCR_ROWS; r++) ctx.fillText(u.scr[r * INNER_W + c], ix0 + c * cw, scrTop + r * scrStep);
+            ctx.textBaseline = 'middle';   // same baseline as the overlay lines it replaces
+            for (let r = 0; r < u.rows.length; r++)
+                ctx.fillText(u.scr[r * INNER_W + c], ix0 + c * cw, iy0 + u.rows[r] * lh);
+            ctx.textBaseline = 'top';
         }
         ctx.globalAlpha = 1;
 
