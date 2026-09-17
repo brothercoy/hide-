@@ -9,6 +9,7 @@ import { QuickJoinOverlay } from './screens/QuickJoinOverlay.js';
 import { SoloGame } from './solo/SoloGame.js';
 import { completeLevel, isLevelComplete, LEVELS, devCompleteAll, devReset, devUpTo } from './solo/progress.js';
 import { LEVEL_TARGETS } from './solo/levels.js';
+import { FLAGS } from './solo/flags.js';
 import { CHARSETS } from '../charsets.js';
 import { SoloScreen } from './screens/SoloScreen.js';
 import { ChapterScreen } from './screens/ChapterScreen.js';
@@ -691,6 +692,54 @@ const GO_TITLE_SIZE   = 140;    // winner-line font (much bigger than the in-box
 const GO_BTN_SIZE     = 42;     // vote-button font
 const GO_BTN_SPACING  = 120;    // vertical gap between the stacked vote-button centers
 
+// --- Campaign win: beating the LAST level of the LAST chapter ---------------------------------
+// A full-screen "YOU WIN!" over the faded flag board. It starts only once the screen transition
+// has fully landed, and holds input blocked for its whole run so it can't be clicked through or
+// interrupted by opening another chapter.
+const WIN_SCRIM = 0.82;       // how far the board behind it dims
+const WIN_FADE_MS = 450;      // scrim + title fade in (and out again at the end)
+const WIN_HOLD_MS = 3000;     // how long "YOU WIN!" stands before it releases
+const WIN_FONT = 150;
+let campaignWin = null;       // { start } once the ceremony is running
+
+function beginCampaignWin() {
+    campaignWin = { start: null };
+    // Blocked from THIS moment, not from when the screen lands — the flag screen's type-in
+    // leaves input live, so without this a click could open a chapter mid-transition and the
+    // win screen would come up over the wrong screen.
+    uiManager.blocked = true;
+}
+function startCampaignWin() {
+    if (!campaignWin || campaignWin.start != null) return;
+    campaignWin.start = performance.now();
+    uiManager.blocked = true;      // uninterruptible for its whole duration
+}
+function updateCampaignWin() {
+    if (!campaignWin || campaignWin.start == null) return;
+    if (performance.now() - campaignWin.start >= WIN_FADE_MS + WIN_HOLD_MS + WIN_FADE_MS) {
+        campaignWin = null;
+        uiManager.blocked = false;
+        uiManager.lastTime = performance.now();
+    }
+}
+function drawCampaignWin() {
+    if (!campaignWin || campaignWin.start == null) return;
+    const t = performance.now() - campaignWin.start;
+    // fade in → hold → fade out
+    const k = t < WIN_FADE_MS ? t / WIN_FADE_MS
+        : t < WIN_FADE_MS + WIN_HOLD_MS ? 1
+            : Math.max(0, 1 - (t - WIN_FADE_MS - WIN_HOLD_MS) / WIN_FADE_MS);
+    ctx.fillStyle = bgAlpha(k * WIN_SCRIM);
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.globalAlpha = k;
+    ctx.fillStyle = theme.fg;
+    ctx.font = `${WIN_FONT}px "IBMVGA"`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText('YOU WIN!', canvas.width / 2, canvas.height / 2);
+    ctx.globalAlpha = 1;
+}
+
 // Scripted game-over reveal timeline (ms from when the overlay appears).
 let gameOverStart = 0;
 let gameOverTicked = 0;   // audio: chars already tick'd during the winner reveal
@@ -1072,9 +1121,17 @@ function endSolo(won) {
     gameScreen.solo = false;
     if (ceremony) {
         // Chapter cleared for the first time: return to the FLAG screen instead of the level
-        // page; once its type-in lands, the next chapter's flag plays its unlock reveal.
+        // page; once its type-in lands, the next chapter's flag plays its unlock reveal — or,
+        // if that was the LAST level of the LAST chapter, the campaign-win screen.
+        const campaignDone = FLAGS.every(f => !f.art || isLevelComplete(f.id, LEVELS - 1));
         soloScreen.beginUnlock(clearedChapterId);
-        showScreen('solo', { onComplete: () => soloScreen.startUnlock() });
+        if (campaignDone) beginCampaignWin();
+        showScreen('solo', {
+            onComplete: () => {
+                soloScreen.startUnlock();
+                startCampaignWin();
+            },
+        });
     } else {
         showScreen('chapter');   // back to the chapter's level page
     }
@@ -1628,6 +1685,7 @@ function draw() {
     uiManager.update(now);
     updateHUD(dt);
     updateModal(dt);
+    updateCampaignWin();   // releases input when the win screen finishes
     if (soloGame) soloGame.update(dt);   // offline solo runs its own tick (no server)
     // The settings overlay drives its own buttons (uiManager is blocked behind it).
     if (settingsPanelOpen) settingsOverlay.update(dt, uiManager.mouseX, uiManager.mouseY, uiManager.elapsed);
@@ -1651,6 +1709,9 @@ function draw() {
     if (hudIntroPending) drawHUDIntro(); // hidden until the menu intro reveals, then types in
     if (hudIntroPending) drawModal();    // still typing — just the modal overlay (none here, but safe)
     else drawPersistentHUD();            // full interactive HUD (also draws the modal)
+
+    // Campaign win sits over EVERYTHING, HUD included — it owns the screen while it runs.
+    drawCampaignWin();
 }
 
 // --- Click Handler ---
@@ -1670,6 +1731,7 @@ document.addEventListener('visibilitychange', () => {
 
 canvas.addEventListener('mousedown', (e) => {
     if (gateActive) return;   // portrait rotate gate — ignore input
+    if (campaignWin) return;  // the win screen owns the screen (HUD icons bypass uiManager)
     // Modal OK: the press sound belongs on press-down (the action still fires on
     // click), and while held the brackets hold their pressed state.
     if (modalMessage) {
@@ -1711,6 +1773,7 @@ canvas.addEventListener('mousedown', (e) => {
 
 canvas.addEventListener('mouseup', (e) => {
     if (gateActive) return;   // portrait rotate gate — ignore input
+    if (campaignWin) return;
     modalOk.pressed = false;  // end the OK hold-preview (dismissal itself rides the click)
     const { x, y } = hudEventPos(e);
     if (quickJoinSearching) { quickJoinOverlay.onMouseUp(x, y); return; }
@@ -1721,6 +1784,7 @@ canvas.addEventListener('mouseup', (e) => {
 
 canvas.addEventListener('click', (e) => {
     if (gateActive) return;   // portrait rotate gate — ignore input
+    if (campaignWin) return;
     if (transition.isActive()) return; // ignore clicks mid-transition
 
     const rect = canvas.getBoundingClientRect();
