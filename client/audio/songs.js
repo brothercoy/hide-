@@ -746,7 +746,7 @@ export const SONGS = {
         },
         // pattern 1 — 12 steps
         {
-            len: 12, gain: 0.45,
+            len: 12, gain: 0.25,
             ch: [
                 /* LEAD */ [
                     n, n, n, n,
@@ -759,15 +759,15 @@ export const SONGS = {
                     n, n, n, n,
                 ],
                 /* DRUM */ [
-                    'KICK', n, 'HAT', n,
-                    'HAT', n, 'CLACK', n,
-                    'HAT', n, 'HAT', n,
+                    'KICK', n, n, n,
+                    n, n, 'KICK', n,
+                    n, n, n, n,
                 ],
             ],
         },
         // pattern 2 — 12 steps
         {
-            len: 12, gain: 0.7,
+            len: 12, gain: 0.35,
             ch: [
                 /* LEAD */ [
                     n, n, n, n,
@@ -780,15 +780,15 @@ export const SONGS = {
                     n, n, n, n,
                 ],
                 /* DRUM */ [
-                    'KICK', n, 'HAT', 'HAT',
-                    'HAT', n, 'CLACK', n,
-                    'HAT', 'HAT', 'HAT', 'KICK',
+                    'KICK', n, n, n,
+                    n, n, 'KICK', n,
+                    n, n, n, n,
                 ],
             ],
         },
         // pattern 3 — 12 steps
         {
-            len: 12,
+            len: 12, gain: 0.5,
             ch: [
                 /* LEAD */ [
                     n, n, n, n,
@@ -801,15 +801,15 @@ export const SONGS = {
                     n, n, n, n,
                 ],
                 /* DRUM */ [
-                    'KICK', 'HAT', 'CLACK', 'HAT',
-                    'CLACK', 'HAT', 'KICK', 'CLACK',
+                    'KICK', n, n, n,
+                    n, n, 'KICK', 'CLACK',
                     'CLACK', 'CLACK', 'CLACK', 'KICK',
                 ],
             ],
         },
         // pattern 4 — 10 steps
         {
-            len: 10,
+            len: 10, gain: 0.6,
             ch: [
                 /* LEAD */ [
                     n, n, n, n,
