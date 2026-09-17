@@ -34,7 +34,9 @@ const THEME_BTN_SPACING = 180;  // horizontal gap between options (matches lobby
 // (text baselines don't map to visible edges 1:1). Tune if the margins look uneven.
 const TITLE_CAP_FRAC = 0.78;   // caps height as a fraction of TITLE_SIZE → title's ink bottom
 const BTN_HALF_H = 1.25;       // BACK button half-height in FONT_SIZE units (button box ≈ 2.5×font)
-const THEME_ROW2_GAP = 56;      // first theme row's CENTER → the second row's CENTER
+// First theme row's CENTER → the second row's CENTER. Sits nearer ORANGE than the sliders; can't
+// go much below this or the two rows' hit rects (FONT_SIZE tall each) start to overlap.
+const THEME_ROW2_GAP = 40;
 const THEME_OPTIONS = [
     { id: 'green', label: 'Green' },
     { id: 'orange', label: 'Orange' },

@@ -35,7 +35,9 @@ const SLIDER_TO_BTN   = 95;  // last slider → MAIN MENU
 
 const THEME_BTN_SPACING = 180; // horizontal gap between theme options (matches lobby/settings)
 const THEME_UNDERLINE_W = 160; // px width of the ~~~~ rule under 'Theme'
-const THEME_ROW2_GAP = 56;     // first theme row's CENTER → the second row's CENTER
+// First theme row's CENTER → the second row's CENTER. Sits nearer ORANGE than the sliders; can't
+// go much below this or the two rows' hit rects (FONT_SIZE tall each) start to overlap.
+const THEME_ROW2_GAP = 40;
 const THEME_OPTIONS = [
     { id: 'green', label: 'Green' },
     { id: 'orange', label: 'Orange' },
