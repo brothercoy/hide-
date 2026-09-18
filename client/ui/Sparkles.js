@@ -46,7 +46,11 @@ export function spawnSparkles(rect) {
     }
 }
 
-export function drawSparkles(ctx, now = performance.now()) {
+// offsetY: the screen transition's current scroll offset. Buttons pressed mid-transition sit at
+// their SETTLED rect while being drawn shifted by this — and they keep scrolling after the press —
+// so the shift is applied here, per frame, and the sparkles ride along with the element. Zero
+// outside a transition.
+export function drawSparkles(ctx, now = performance.now(), offsetY = 0) {
     if (!bits.length) return;
     ctx.save();
     ctx.setTransform(1, 0, 0, 1, 0, 0);
@@ -65,7 +69,7 @@ export function drawSparkles(ctx, now = performance.now()) {
         ctx.globalAlpha = env;
         ctx.fillStyle = charColor(b.phase, now);
         ctx.font = `${Math.round(b.size * (0.45 + 0.55 * env))}px "IBMVGA"`;
-        ctx.fillText(b.ch, b.x + b.vx * s, b.y + b.vy * s);
+        ctx.fillText(b.ch, b.x + b.vx * s, b.y + b.vy * s + offsetY);
     }
     bits = keep;
     ctx.restore();

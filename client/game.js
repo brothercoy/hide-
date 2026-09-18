@@ -1823,7 +1823,9 @@ function draw() {
         // incoming screen. The HUD types in via the feed/tail, not pinned here.
         uiManager.offsetY = transition.currentOffsetY();
         transition.render(uiManager.elapsed, () => drawScreenInto(currentScreen));
-        drawSparkles(ctx);   // a burst finishes before a nav transition starts, but never clip one
+        // Input stays live while a screen types in, so a press can spawn sparkles mid-scroll —
+        // drawn at the transition's current offset so they sit on the element as it moves.
+        drawSparkles(ctx, performance.now(), uiManager.offsetY);
         return;
     }
 
@@ -1837,7 +1839,7 @@ function draw() {
     if (hudIntroPending) drawModal();    // still typing — just the modal overlay (none here, but safe)
     else drawPersistentHUD();            // full interactive HUD (also draws the modal)
 
-    drawSparkles(ctx);   // confirm sparkles (cosmic theme) over the screen and HUD
+    drawSparkles(ctx, performance.now(), uiManager.offsetY);   // confirm sparkles (cosmic theme); offset is 0 here
 
     // Campaign win sits over EVERYTHING, HUD included — it owns the screen while it runs.
     drawCampaignWin();
