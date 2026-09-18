@@ -1893,9 +1893,10 @@ canvas.addEventListener('mousedown', (e) => {
             // so the reward pair plays as one gesture regardless of hold length.
             sfx('BTN_PRESS');
             sfx('BTN_CONFIRM', { when: 0.12 });
-            // Sparkles around the found character (the click landed within its hit circle, so
-            // the click point is the character, near enough).
-            spawnSparkles({ x: cx + gameScreen.boxCenterX - 22, y: cy + canvas.height / 2 - 22, w: 44, h: 44 });
+            // Sparkles around the found character — at the glyph's own drawn position, not the
+            // click, which the hit pad and interpolation let land ahead of or behind it.
+            const r = hit.tr + 4;
+            spawnSparkles({ x: hit.tx + gameScreen.boxCenterX - r, y: hit.ty + canvas.height / 2 - r, w: 2 * r, h: 2 * r });
             if (soloGame) soloGame.win();        // solo: the client decides the hit (offline)
             else room.send('tap', { nx: hit.nx, ny: hit.ny, time: Date.now() });   // MP: server validates
         } else if (gameScreen.isInPlayField(cx, cy)) {

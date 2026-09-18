@@ -401,7 +401,13 @@ export class GameScreen {
             const m = this._getMetrics(c.char);
             const dist = Math.sqrt((clickX - px) ** 2 + (clickY - py) ** 2);
             if (dist < m.radius + (this.isMobile ? 40 : 20)) {
-                return this._toNormalized(clickX, clickY);
+                // nx/ny: the CLICK, normalised — what the server validates. tx/ty/tr: where the
+                // target actually IS on screen (box-centred px) and its radius, for anything that
+                // wants to land on the glyph itself rather than on the click, which the pad and
+                // interpolation let drift ahead of or behind it.
+                const hit = this._toNormalized(clickX, clickY);
+                hit.tx = px; hit.ty = py; hit.tr = m.radius;
+                return hit;
             }
         }
         return null;
