@@ -974,6 +974,9 @@ function showGameOverOverlay(winner) {
     winnerId = winner;
     gameOverStart = performance.now();   // kick off the scripted reveal
     gameOverTicked = 0;                  // reset the winner-typing tick counter
+    // Herald trumpets over the scrim fade — every mode ends through here, so DEL and ACK share it.
+    // The music was already cut for 'gameOver', so it rings into silence.
+    sfx('WINNER_FANFARE');
     setMusic(null);                      // the winner screen is silent, by design not by luck
     uiManager.clear();
     // Same interaction/look as the lobby's REDACTED/FREQUENCY mode buttons: fire on

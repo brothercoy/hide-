@@ -5,7 +5,7 @@ import { bandTop } from '../ui/viewport.js';
 import { textRow } from '../ui/Transition.js';
 import { GLOW_SPEED } from '../ui/Button.js';   // share the buttons'/specials' glow length
 import { MO_HOLD_MS, MO_TYPE_MS, MO_CURSOR_MS, RR_TITLE_MS, RR_TITLE_HOLD_MS, RR_COMPLETE_TYPE_MS, RR_COMPLETE_TEXT, RR_GAP_MS, rrRowMs, rrPlus, RR_ROW_MOVE_MS, RR_TYPE_MS, RR_PAUSE_MS } from '../../timings.js';   // shared so the server's holds derive from these
-import { sfx, typeTick } from '../audio/sfx.js';
+import { sfx, typeTick, feedTick } from '../audio/sfx.js';
 
 const TICK_RATE = 50;
 
@@ -932,6 +932,8 @@ export class GameScreen {
         const rows = [...(data.players || [])].sort((a, b) => (b.total || 0) - (a.total || 0));
         const N = rows.length;
         const t = startTime != null ? (Date.now() - startTime) : 1e9;
+        // Audio state for THIS scoreboard — reset when a new round's result comes up.
+        if (this._rrStart !== startTime) { this._rrStart = startTime; this._rrTicked = 0; this._rrSummed = false; }
         const TITLE_FONT = this.FRAME_SIZE, ROW_FONT = 36, ROW_H = 46, TITLE_GAP = 40;
         const SCORE_COL = 19, PLUS_GAP = 0;   // "name...score" field width (chars); +points butts right up to the score
         const rowsStart = RR_TITLE_MS + RR_GAP_MS;          // per-row stepping begins
@@ -1015,6 +1017,15 @@ export class GameScreen {
             }
         });
         ctx.globalAlpha = 1;
+
+        // This screen types like every other one, so it ticks like every other one: " COMPLETED"
+        // in the title and each row's "+points". Both intervals (90ms, 200ms) clear typeTick's
+        // 35ms gate, so no keystroke is swallowed.
+        let typedChars = nComplete;
+        for (let i = 0; i < N; i++) typedChars += shownPlus(i).length;
+        if (typedChars > this._rrTicked) { feedTick(typedChars - this._rrTicked, 1); this._rrTicked = typedChars; }
+        // …and the moment the "+points" clear and every score snaps to its new total, the sum lands.
+        if (!beforeUpdate && !this._rrSummed) { this._rrSummed = true; sfx('SCORE_SUM'); }
 
         // Cursor — the game's standard cw-2 × FONT-4 block, at the ROW font here. Vertically centered
         // in the VISIBLE gap between the title's ink and the first row, then on the active/last row just

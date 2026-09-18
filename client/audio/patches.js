@@ -115,6 +115,45 @@ export const PATCHES = {
             { wave: 'square', freq: 2637, freqEnd: null, delay: 0.95, attack: 0.005, decay: 0.22, gain: 0.014, filter: { type: 'bandpass', cutoff: 2600, q: 8 } },
         ],
     },
+    SCORE_SUM: {
+        name: 'SCORE_SUM', desc: 'The ACK scoreboard totalling up — an adding-machine clack, three digits rolling up, and the total locking in',
+        vary: { freq: 0.01, gain: 0.08 },
+        voices: [
+            { wave: 'noise', freq: 440, freqEnd: null, delay: 0, attack: 0.001, decay: 0.035, gain: 0.22, filter: { type: 'bandpass', cutoff: 2400, q: 1.6 } },   // the mechanism
+            { wave: 'sine', freq: 140, freqEnd: 95, delay: 0, attack: 0.002, decay: 0.13, gain: 0.16, filter: null },                                             // its thunk
+            // the digits rolling up
+            { wave: 'triangle', freq: 523, freqEnd: null, delay: 0.01, attack: 0.002, decay: 0.11, gain: 0.1, filter: null },
+            { wave: 'triangle', freq: 659, freqEnd: null, delay: 0.06, attack: 0.002, decay: 0.11, gain: 0.095, filter: null },
+            { wave: 'triangle', freq: 784, freqEnd: null, delay: 0.11, attack: 0.002, decay: 0.12, gain: 0.09, filter: null },
+            // the total landing
+            { wave: 'triangle', freq: 1046, freqEnd: null, delay: 0.17, attack: 0.003, decay: 0.42, gain: 0.11, filter: null },
+            { wave: 'square', freq: 2093, freqEnd: null, delay: 0.17, attack: 0.004, decay: 0.2, gain: 0.022, filter: { type: 'bandpass', cutoff: 2100, q: 7 } },
+            { wave: 'noise', freq: 440, freqEnd: null, delay: 0.17, attack: 0.001, decay: 0.03, gain: 0.05, filter: { type: 'bandpass', cutoff: 7000, q: 5 } },
+        ],
+    },
+    WINNER_FANFARE: {
+        name: 'WINNER_FANFARE', desc: 'Herald trumpets announcing a king — three crisp calls, a rising triad, then a held proclamation chord. Sawtooth brass with a lowpass sweeping up through each attack (the blat)',
+        vary: { freq: 0.006, gain: 0.06 },
+        voices: [
+            // "ta — ta — ta": the herald's call, three crisp notes on G
+            { wave: 'noise', freq: 440, freqEnd: null, delay: 0, attack: 0.001, decay: 0.03, gain: 0.06, filter: { type: 'bandpass', cutoff: 3000, q: 2 } },
+            { wave: 'sawtooth', freq: 392, freqEnd: null, delay: 0, attack: 0.01, decay: 0.15, gain: 0.14, filter: { type: 'lowpass', cutoff: 1500, cutoffEnd: 3400, q: 1.2 } },
+            { wave: 'sawtooth', freq: 392, freqEnd: null, delay: 0.18, attack: 0.01, decay: 0.15, gain: 0.14, filter: { type: 'lowpass', cutoff: 1500, cutoffEnd: 3400, q: 1.2 } },
+            { wave: 'sawtooth', freq: 392, freqEnd: null, delay: 0.36, attack: 0.01, decay: 0.15, gain: 0.14, filter: { type: 'lowpass', cutoff: 1500, cutoffEnd: 3400, q: 1.2 } },
+            // the rise — C, E, G climbing to the proclamation
+            { wave: 'sawtooth', freq: 523, freqEnd: null, delay: 0.54, attack: 0.012, decay: 0.17, gain: 0.14, filter: { type: 'lowpass', cutoff: 1700, cutoffEnd: 3800, q: 1.2 } },
+            { wave: 'sawtooth', freq: 659, freqEnd: null, delay: 0.7, attack: 0.012, decay: 0.17, gain: 0.135, filter: { type: 'lowpass', cutoff: 1900, cutoffEnd: 4200, q: 1.2 } },
+            { wave: 'sawtooth', freq: 784, freqEnd: null, delay: 0.86, attack: 0.012, decay: 0.22, gain: 0.13, filter: { type: 'lowpass', cutoff: 2100, cutoffEnd: 4600, q: 1.2 } },
+            // the proclamation — full C-major chord, held and ringing out
+            { wave: 'noise', freq: 440, freqEnd: null, delay: 1.08, attack: 0.001, decay: 0.05, gain: 0.07, filter: { type: 'bandpass', cutoff: 3400, q: 2 } },
+            { wave: 'sawtooth', freq: 1046, freqEnd: null, delay: 1.08, attack: 0.02, decay: 1.9, gain: 0.14, filter: { type: 'lowpass', cutoff: 2400, cutoffEnd: 5200, q: 1.2 } },
+            { wave: 'sawtooth', freq: 784, freqEnd: null, delay: 1.085, attack: 0.022, decay: 1.9, gain: 0.1, filter: { type: 'lowpass', cutoff: 2200, cutoffEnd: 4800, q: 1.2 } },
+            { wave: 'sawtooth', freq: 659, freqEnd: null, delay: 1.09, attack: 0.022, decay: 1.85, gain: 0.09, filter: { type: 'lowpass', cutoff: 2000, cutoffEnd: 4400, q: 1.2 } },
+            { wave: 'sawtooth', freq: 523, freqEnd: null, delay: 1.09, attack: 0.022, decay: 1.9, gain: 0.11, filter: { type: 'lowpass', cutoff: 1800, cutoffEnd: 4200, q: 1.2 } },
+            { wave: 'triangle', freq: 131, freqEnd: null, delay: 1.08, attack: 0.02, decay: 1.9, gain: 0.13, filter: null },   // the low body under it
+            { wave: 'square', freq: 2093, freqEnd: null, delay: 1.1, attack: 0.03, decay: 0.85, gain: 0.02, filter: { type: 'bandpass', cutoff: 2100, q: 6 } },
+        ],
+    },
     TADA: {
         name: 'TADA', desc: 'Trumpet ta-da — a short G pickup into a sustained C-major triad, sawtooth brass with a rising filter sweep for the blat and an air chirp on each attack',
         vary: { freq: 0.008, gain: 0.08 },
