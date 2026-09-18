@@ -8,6 +8,7 @@ import { SettingsOverlay } from './screens/SettingsOverlay.js';
 import { QuickJoinOverlay } from './screens/QuickJoinOverlay.js';
 import { SoloGame } from './solo/SoloGame.js';
 import { completeLevel, isLevelComplete, LEVELS, devCompleteAll, devReset, devUpTo } from './solo/progress.js';
+import { isSecretLevel } from './solo/rewards.js';
 import { LEVEL_TARGETS } from './solo/levels.js';
 import { FLAGS } from './solo/flags.js';
 import { hasLives, loseLife, syncClock, nextRefillText, devSetLives, MAX_LIVES } from './solo/lives.js';
@@ -356,7 +357,10 @@ const chapterScreen = new ChapterScreen(canvas, ctx, uiManager,
         const wasComplete = !!id && isLevelComplete(id, levelIdx);
         // So a replay is always allowed — only NEW ground needs a life to spend.
         if (!wasComplete && !hasLives()) { showModal(nextRefillText()); return; }
-        startSolo({ ...soloLevelConfig(chapterIdx, levelIdx, id), ceremony, anthem: ANTHEMS[id] },
+        // First clear of a level whose target is one of the main menu's secret characters: the
+        // level's win plays the unlock sound (quiet CHAPTER_CLEAR) and the character comes alive.
+        const secret = !!id && !wasComplete && isSecretLevel(id, levelIdx);
+        startSolo({ ...soloLevelConfig(chapterIdx, levelIdx, id), ceremony, anthem: ANTHEMS[id], secret },
             { chapterId: id, name: chapterScreen.chapter?.name, levelIdx, ceremony, wasComplete });
     },
     () => showScreen('solo')

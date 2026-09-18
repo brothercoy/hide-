@@ -15,6 +15,7 @@ import { setMusic, playJingle } from '../audio/music.js';
 
 const RESULT_MS = 1600;      // hold the COMPLETE / TIME UP banner before returning to the menu
 const RESULT_FONT = 104;
+const SECRET_GAIN = 0.3;     // the secret-unlock CHAPTER_CLEAR, kept low — a hint, not a ceremony
 
 export class SoloGame {
     // level: { mode: 'redacted', settings: { charCount, speedScale, roundTime, ... } }
@@ -32,6 +33,8 @@ export class SoloGame {
         // Replays stay quiet and show the plain banner.
         this.isFinal = !!level.ceremony;
         this.anthem = level.anthem || null;   // tracker song name (falls back to CHAPTER_CLEAR)
+        // First clear of a level that unlocks one of the main menu's secret characters.
+        this.secret = !!level.secret;
 
         // A campaign level is PREDETERMINED: the seed fixes the target, its twin and the field
         // composition identically for every player ("level 12" is one shared puzzle), while spawn
@@ -124,6 +127,9 @@ export class SoloGame {
         else if (this.isFinal) {
             if (!this.anthem || !playJingle(this.anthem)) sfx('CHAPTER_CLEAR');
         }
+        // A secret character unlocked — the old chapter-clear sound, quietly. A plain sfx, NOT a
+        // jingle: it rides over whatever music is going and never holds the screen music back.
+        else if (this.secret) sfx('CHAPTER_CLEAR', { gainMul: SECRET_GAIN });
     }
 
     // Tapped the target (game.js calls this when GameScreen.hitTest reports a hit) → level complete.

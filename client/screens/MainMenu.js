@@ -4,6 +4,7 @@ import { theme, glow } from '../ui/colors.js';
 import { vScale, bandTop } from '../ui/viewport.js';
 import { sfx, typeTick, feedTick } from '../audio/sfx.js';
 import { spawnSparkles } from '../ui/Sparkles.js';
+import { SECRET_CHARS, secretUnlocked } from '../solo/rewards.js';
 
 const FONT_SIZE = 50;         // button label font (SOLO / MULTIPLAYER / SETTINGS)
 const BTN_GAP = 8;           // vertical gap BETWEEN buttons (on top of each button's height)
@@ -19,8 +20,10 @@ const HIDE_Z = 1.0;
 const SPECIAL_SIZE = 50;
 const SPECIAL_SPACING = 280;
 const SPECIAL_Y = 260;
-const SPECIAL_Z = 2.1;          // resting depth — deep = faded (~55% opacity), they're easter eggs not UI
+const SPECIAL_Z = 2.1;          // resting depth while LOCKED — deep = faded (~45% opacity), a hint of a thing
+const SPECIAL_Z_UNLOCKED = 1.3; // resting depth once its USA level is beaten — the buttons' own depth (~85%)
 const SPECIAL_Z_PRESSED = 2.5;  // depth when held
+const SECRET_LOCKED_GAIN = 0.12; // the locked press's error, at the old easter-egg volume
 const SPECIAL_Z_GLOW    = 1.0;  // overshoot target on release — glow fires here, then returns to SPECIAL_Z
 const SPECIAL_PRESS_SPEED  = 0.005; // z units per ms while held
 const SPECIAL_RETURN_SPEED = 0.005; // z units per ms when returning
@@ -48,8 +51,11 @@ function makeSpecialChar(char) {
         z: SPECIAL_Z,
         introComplete: false,
         appeared: false, // has begun its entrance — clickable from this point
+        unlocked: false, // its USA level beaten (re-read on every enter) — presses, glows, rests bright
     };
 }
+// Where a special char settles: locked ones sit deep and faded, unlocked ones up at button depth.
+const restZ = (sc) => sc.unlocked ? SPECIAL_Z_UNLOCKED : SPECIAL_Z;
 
 // Returns the full ordered character sequence for a button, matching drawButton's draw order
 function getBtnChars(btn) {
@@ -77,7 +83,7 @@ export class MainMenu {
         this.introDone = false;
         this.introHasPlayed = false; // bespoke intro is once per page load — re-entries
                                      // (fullscreen re-fit, returning to Main) skip it
-        this.specialChars = ['@', '$', '©', '!', '!'].map(makeSpecialChar);
+        this.specialChars = SECRET_CHARS.map(s => makeSpecialChar(s.char));
         this._bindSpecialClick   = this._onCanvasClick.bind(this);
         this._bindSpecialRelease = this._onCanvasRelease.bind(this);
         this._bindSpecialMove    = this._onCanvasMove.bind(this);
@@ -131,11 +137,12 @@ export class MainMenu {
         this.releasedDuringIntro = new Set();
         this.ui.blocked = true;
 
-        this.specialChars.forEach(sc => {
+        this.specialChars.forEach((sc, i) => {
             sc.releasePhase = null;
             sc.glowT = 0;
             sc.rect = null;
-            sc.z = SPECIAL_Z;
+            sc.unlocked = secretUnlocked(i);   // progress may have changed since we were last here
+            sc.z = restZ(sc);
             sc.introComplete = this.typed; // typed: already settled; intro: animate in
             sc.appeared = this.typed;
         });
@@ -254,7 +261,7 @@ export class MainMenu {
         };
         const maxLen = Math.max(hideChars.length, sp.length);
         for (let i = 0; i < maxLen; i++) {
-            if (i < sp.length) pushGlyph(sp[i].char, spX0 + i * (spCharW + SPECIAL_SPACING), bt + SPECIAL_Y, SPECIAL_SIZE, SPECIAL_Z);
+            if (i < sp.length) pushGlyph(sp[i].char, spX0 + i * (spCharW + SPECIAL_SPACING), bt + SPECIAL_Y, SPECIAL_SIZE, restZ(sp[i]));
             if (i < hideChars.length) pushGlyph(hideChars[i], hideX0 + i * (hideCharW + HIDE_SPACING), bt + HIDE_Y, HIDE_SIZE, HIDE_Z);
         }
 
@@ -284,8 +291,10 @@ export class MainMenu {
             if (!sc.rect || (!sc.introComplete && !sc.appeared)) return;
             if (mx >= sc.rect.x && mx <= sc.rect.x + sc.rect.w &&
                 my >= sc.rect.y && my <= sc.rect.y + sc.rect.h) {
+                // Locked: not interactable — no press, no glow, just a quiet refusal.
+                if (!sc.unlocked) { sfx('ERROR', { gainMul: SECRET_LOCKED_GAIN }); return; }
                 this._pressedSpecialChar = sc;
-                sfx('BTN_PRESS', { gainMul: 0.12 });   // very quiet — a one-off toy, not a navigation
+                sfx('BTN_PRESS');   // earned — it presses like a button, at button volume
                 // Graduate from the intro to interactive — the press lifecycle
                 // takes over from the char's current z (no snap), like a button.
                 if (!sc.introComplete) sc.introComplete = true;
@@ -310,7 +319,7 @@ export class MainMenu {
             mx >= sc.rect.x && mx <= sc.rect.x + sc.rect.w &&
             my >= sc.rect.y && my <= sc.rect.y + sc.rect.h) {
             sc.releasePhase = 'releasing';
-            sfx('BTN_CONFIRM', { gainMul: 0.12 });   // the char glows — same pair, at easter-egg volume
+            sfx('BTN_CONFIRM');   // the char glows — the normal confirm (only unlocked chars get pressed)
             spawnSparkles(sc.rect);
         }
         // released off-char: z drifts back to SPECIAL_Z naturally in _updateSpecialChars
@@ -340,11 +349,11 @@ export class MainMenu {
                     sc.releasePhase = 'returning';
                 }
             } else if (sc.releasePhase === 'returning') {
-                sc.z = moveToward(sc.z, SPECIAL_Z, dt * SPECIAL_RETURN_SPEED);
-                if (sc.z === SPECIAL_Z) sc.releasePhase = null;
-            } else if (sc.z !== SPECIAL_Z) {
+                sc.z = moveToward(sc.z, restZ(sc), dt * SPECIAL_RETURN_SPEED);
+                if (sc.z === restZ(sc)) sc.releasePhase = null;
+            } else if (sc.z !== restZ(sc)) {
                 // released off-char — drift back
-                sc.z = moveToward(sc.z, SPECIAL_Z, dt * SPECIAL_RETURN_SPEED);
+                sc.z = moveToward(sc.z, restZ(sc), dt * SPECIAL_RETURN_SPEED);
             }
         });
     }
@@ -408,7 +417,7 @@ export class MainMenu {
                 if (introElapsed >= appearTime) {
                     sc.appeared = true;
                     sc.introComplete = true;
-                    sc.z = SPECIAL_Z;
+                    sc.z = restZ(sc);
                     typeTick();   // each special popping in types like a character
                     // The last special is the intro's final keystroke — ring the
                     // end-of-feed BEL, same as a completed screen transition.
