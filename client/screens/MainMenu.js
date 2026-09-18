@@ -20,7 +20,7 @@ const HIDE_Z = 1.0;
 const SPECIAL_SIZE = 50;
 const SPECIAL_SPACING = 280;
 const SPECIAL_Y = 260;
-const SPECIAL_Z = 2.1;          // resting depth while LOCKED — deep = faded (~45% opacity), a hint of a thing
+const SPECIAL_Z = 2.4;          // resting depth while LOCKED — deep = faded (~30% opacity), a hint of a thing
 const SPECIAL_Z_UNLOCKED = 1.3; // resting depth once its USA level is beaten — the buttons' own depth (~85%)
 const SPECIAL_Z_PRESSED = 2.5;  // depth when held
 const SECRET_LOCKED_GAIN = 0.12; // the locked press's error, at the old easter-egg volume
