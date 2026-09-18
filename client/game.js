@@ -1258,11 +1258,21 @@ function startSolo(level = { mode: 'redacted', settings: { charCount: 45, speedS
 if (import.meta.env.DEV) {
     window.dev = {
         completeAll() { devCompleteAll(); location.reload(); },
-        reset() { devReset(); location.reload(); },
-        upTo(chapter) { devUpTo(chapter); location.reload(); },
-        // Lives: set any count (default full) to test the hearts and the out-of-lives lockout.
+        // A brand-new player is BOTH: no progress and full lives. Resetting progress alone left a
+        // spent/locked-out lives state behind, which looked like the reset had done nothing.
+        reset() { devReset(); devSetLives(MAX_LIVES); location.reload(); },
+        upTo(chapter) { devUpTo(chapter); devSetLives(MAX_LIVES); location.reload(); },
+        // Lives on their own: any count (default full) for the hearts and the lockout.
         lives(n = MAX_LIVES) { devSetLives(n); location.reload(); },
+        // What the game currently thinks — quicker than digging through localStorage.
+        state() {
+            const p = getPref('campaign.progress', {});
+            console.log('lives:', getPref('campaign.lives', null));
+            console.log('progress:', Object.keys(p).length ? p : '(none — brand new)');
+            console.log('saveVersion:', getPref('campaign.saveVersion', null));
+        },
     };
+    console.log('dev tools ready: dev.reset() dev.completeAll() dev.upTo(n) dev.lives(n) dev.state()');
 }
 
 function endSolo(won) {
