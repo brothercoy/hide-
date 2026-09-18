@@ -10,7 +10,7 @@ import { SoloGame } from './solo/SoloGame.js';
 import { completeLevel, isLevelComplete, LEVELS, devCompleteAll, devReset, devUpTo } from './solo/progress.js';
 import { LEVEL_TARGETS } from './solo/levels.js';
 import { FLAGS } from './solo/flags.js';
-import { hasLives, loseLife, syncClock, devSetLives, MAX_LIVES } from './solo/lives.js';
+import { hasLives, loseLife, syncClock, nextRefillText, devSetLives, MAX_LIVES } from './solo/lives.js';
 import { CHARSETS } from '../charsets.js';
 import { SoloScreen } from './screens/SoloScreen.js';
 import { ChapterScreen } from './screens/ChapterScreen.js';
@@ -352,9 +352,10 @@ const chapterScreen = new ChapterScreen(canvas, ctx, uiManager,
         // the CHAPTER COMPLETE! banner, then the flag screen types in and the next chapter's
         // flag unlocks. Replays skip all of it.
         const ceremony = !!id && levelIdx === LEVELS - 1 && !isLevelComplete(id, levelIdx);
-        if (!hasLives()) return;                       // out of lives — nothing is playable today
         // Failing a level you've already beaten is free; only a fresh level costs a life.
         const wasComplete = !!id && isLevelComplete(id, levelIdx);
+        // So a replay is always allowed — only NEW ground needs a life to spend.
+        if (!wasComplete && !hasLives()) { showModal(nextRefillText()); return; }
         startSolo({ ...soloLevelConfig(chapterIdx, levelIdx, id), ceremony, anthem: ANTHEMS[id] },
             { chapterId: id, name: chapterScreen.chapter?.name, levelIdx, ceremony, wasComplete });
     },
@@ -1275,6 +1276,15 @@ if (import.meta.env.DEV) {
     console.log('dev tools ready: dev.reset() dev.completeAll() dev.upTo(n) dev.lives(n) dev.state()');
 }
 
+// Tear down a solo level and go home. The life (if any) has already been settled by the caller.
+function abandonSolo() {
+    soloGame = null;
+    soloIdent = null;
+    gameScreen.solo = false;
+    currentMode = null;
+    showScreen('main');
+}
+
 function endSolo(won) {
     // A win is recorded permanently (progress.js) — level gating reads it.
     if (won && soloIdent?.chapterId != null) completeLevel(soloIdent.chapterId, soloIdent.levelIdx);
@@ -1343,31 +1353,59 @@ const MODAL_OK_FLASH_IN = 600;   // ms the brackets stay snapped in
 const MODAL_OK_FLASH_OUT = 600;  // ms at rest between flashes
 
 const modalOk = { hover: 0, animT: 0, snap: 0, over: false, pressed: false, rect: null };
+// A second bracket control, for the two-button (YES / NO) variant. Same anatomy as modalOk.
+const modalNo = { animT: 0, snap: 0, over: false, pressed: false, rect: null };
+// Set for a confirm modal: { yes, no } callbacks. Null for a plain one-button message.
+let modalChoice = null;
+
+function resetModalButtons() {
+    for (const b of [modalOk, modalNo]) { b.animT = 0; b.snap = 0; b.over = false; b.pressed = false; b.rect = null; }
+}
 
 function showModal(message) {
     sfx('ERROR');
     modalMessage = message;
+    modalChoice = null;
     uiManager.blocked = true;
     uiManager.buttons.forEach(btn => btn.hoverProgress = 0);
-    modalOk.hover = 0; modalOk.animT = 0; modalOk.snap = 0; modalOk.rect = null;
+    resetModalButtons();
+}
+
+// A question with two answers. `onYes` runs on confirm; dismissing (NO) just closes it.
+function showConfirm(message, onYes, onNo) {
+    sfx('ERROR');
+    modalMessage = message;
+    modalChoice = { yes: onYes || (() => {}), no: onNo || (() => {}) };
+    uiManager.blocked = true;
+    uiManager.buttons.forEach(btn => btn.hoverProgress = 0);
+    resetModalButtons();
+}
+
+// Close the modal and hand input back.
+function dismissModal() {
+    modalMessage = null;
+    modalChoice = null;
+    uiManager.blocked = false;
+    uiManager.lastTime = performance.now();
 }
 
 // On hover, the OK brackets flash inward (a single snap that pulses in/out) —
 // quieter than the fullscreen button's snap-snap-revert.
 function updateModal(dt) {
-    if (!modalMessage) { modalOk.snap = 0; return; }
-    const r = modalOk.rect;
-    const over = r && uiManager.mouseX >= r.x && uiManager.mouseX <= r.x + r.w &&
-                 uiManager.mouseY >= r.y && uiManager.mouseY <= r.y + r.h;
-    modalOk.over = over;
-    if (over) {
-        modalOk.animT += dt;
-        const cycle = MODAL_OK_FLASH_IN + MODAL_OK_FLASH_OUT;
-        const t = modalOk.animT % cycle;
-        modalOk.snap = t < MODAL_OK_FLASH_IN ? 0 : MODAL_OK_SNAP_STEP;
-    } else {
-        modalOk.animT = 0;
-        modalOk.snap = 0;
+    if (!modalMessage) { modalOk.snap = 0; modalNo.snap = 0; return; }
+    for (const b of [modalOk, modalNo]) {
+        const r = b.rect;
+        const over = r && uiManager.mouseX >= r.x && uiManager.mouseX <= r.x + r.w &&
+                     uiManager.mouseY >= r.y && uiManager.mouseY <= r.y + r.h;
+        b.over = over;
+        if (over) {
+            b.animT += dt;
+            const cycle = MODAL_OK_FLASH_IN + MODAL_OK_FLASH_OUT;
+            b.snap = (b.animT % cycle) < MODAL_OK_FLASH_IN ? 0 : MODAL_OK_SNAP_STEP;
+        } else {
+            b.animT = 0;
+            b.snap = 0;
+        }
     }
 }
 
@@ -1386,7 +1424,9 @@ function drawModal() {
     const lh = MODAL_FONT;
     const cx = canvas.width / 2;
 
-    const innerChars = msg.length + MODAL_PAD_X * 2; // dashes between the corners
+    // A YES/NO pair is wider than the message on a short question, so the box has to fit both.
+    const btnChars = modalChoice ? Math.ceil((4 * (MODAL_OK_REST + cw) + 2 * cw) / cw) : 0;
+    const innerChars = Math.max(msg.length, btnChars) + MODAL_PAD_X * 2; // dashes between the corners
     const boxChars = innerChars + 2;                 // incl. '+' corners
     const boxLeft = cx - (boxChars * cw) / 2;
 
@@ -1404,21 +1444,31 @@ function drawModal() {
     ctx.textAlign = 'center';
     ctx.fillText(msg, cx, boxTop + 2 * lh);
 
-    // OK (row 4) — brackets face OUTWARD at rest ( { OK } ); on hover they swap
-    // to inward ( } OK { ) and flash tight→spread.
+    // Buttons (row 4) — brackets face OUTWARD at rest ( { OK } ); on hover they swap
+    // to inward ( } OK { ) and flash tight→spread. A confirm shows YES and NO side by side,
+    // a plain message a single centred OK.
     const okY = boxTop + 4 * lh;
+    const reach = MODAL_OK_REST + cw;
     // Held down: brackets hold the pressed state (inward, snapped tight, steady) —
     // same hold-preview as every bracket control.
-    const held = modalOk.pressed;
-    const gap = MODAL_OK_REST - (held ? MODAL_OK_SNAP_STEP : modalOk.snap);
-    ctx.fillText('OK', cx, okY);
-    ctx.fillText(held || modalOk.over ? '}' : '{', cx - gap, okY);
-    ctx.fillText(held || modalOk.over ? '{' : '}', cx + gap, okY);
-
-    // Hit rect uses the REST spread (widest extent) so hovering doesn't shrink it
-    // and flicker the hover state.
-    const reach = MODAL_OK_REST + cw;
-    modalOk.rect = { x: cx - reach, y: okY, w: reach * 2, h: lh };
+    const drawBtn = (label, bx, b) => {
+        const held = b.pressed;
+        const gap = MODAL_OK_REST - (held ? MODAL_OK_SNAP_STEP : b.snap);
+        ctx.fillText(label, bx, okY);
+        ctx.fillText(held || b.over ? '}' : '{', bx - gap, okY);
+        ctx.fillText(held || b.over ? '{' : '}', bx + gap, okY);
+        // Hit rect uses the REST spread (widest extent) so hovering doesn't shrink it
+        // and flicker the hover state.
+        b.rect = { x: bx - reach, y: okY, w: reach * 2, h: lh };
+    };
+    if (modalChoice) {
+        const half = reach + cw;
+        drawBtn('YES', cx - half, modalOk);
+        drawBtn('NO', cx + half, modalNo);
+    } else {
+        drawBtn('OK', cx, modalOk);
+        modalNo.rect = null;
+    }
     ctx.textAlign = 'left';
 }
 
@@ -1774,10 +1824,16 @@ function leaveToMainMenu() {
     if (currentScreen === 'main') return;
 
     if (soloGame) {   // offline solo — no room to leave; tear it down and go home
-        soloGame = null;
-        gameScreen.solo = false;
-        currentMode = null;
-        showScreen('main');
+        // Walking out of a level you haven't beaten forfeits it, exactly like running out of
+        // time — so it costs a life, and we ask first. Abandoning a REPLAY costs nothing.
+        if (soloIdent && !soloIdent.wasComplete) {
+            showConfirm('A LIFE WILL BE LOST. CONTINUE?', () => {
+                loseLife();
+                abandonSolo();
+            });
+            return;
+        }
+        abandonSolo();
         return;
     }
 
@@ -1911,11 +1967,9 @@ canvas.addEventListener('mousedown', (e) => {
     // click), and while held the brackets hold their pressed state.
     if (modalMessage) {
         const p = hudEventPos(e);
-        const r = getModalOkRect();
-        if (p.x >= r.x && p.x <= r.x + r.w && p.y >= r.y && p.y <= r.y + r.h) {
-            modalOk.pressed = true;
-            sfx('BTN_PRESS');
-        }
+        const inside = (r) => r && p.x >= r.x && p.x <= r.x + r.w && p.y >= r.y && p.y <= r.y + r.h;
+        if (inside(modalOk.rect)) { modalOk.pressed = true; sfx('BTN_PRESS'); }
+        else if (inside(modalNo.rect)) { modalNo.pressed = true; sfx('BTN_PRESS'); }
         return;
     }
     if (transition.isActive() || hudIntroPending) return;
@@ -1956,7 +2010,7 @@ canvas.addEventListener('mousedown', (e) => {
 canvas.addEventListener('mouseup', (e) => {
     if (gateActive) return;   // portrait rotate gate — ignore input
     if (campaignWin) return;
-    modalOk.pressed = false;  // end the OK hold-preview (dismissal itself rides the click)
+    modalOk.pressed = modalNo.pressed = false;  // end the hold-preview (the action rides the click)
     const { x, y } = hudEventPos(e);
     if (quickJoinSearching) { quickJoinOverlay.onMouseUp(x, y); return; }
     if (settingsPanelOpen) { settingsOverlay.onMouseUp(x, y); return; }
@@ -1980,11 +2034,11 @@ canvas.addEventListener('click', (e) => {
     }
 
     if (modalMessage) {
-        if (hits(getModalOkRect())) {
-            modalMessage = null;   // press sound already rang on mousedown
-            uiManager.blocked = false;
-            uiManager.lastTime = performance.now();
-        }
+        // Press sound already rang on mousedown. A confirm runs its branch AFTER closing, so the
+        // branch is free to open a screen transition (or another modal) on a clean slate.
+        const choice = modalChoice;
+        if (hits(getModalOkRect())) { dismissModal(); (choice ? choice.yes : () => {})(); }
+        else if (modalNo.rect && hits(modalNo.rect)) { dismissModal(); if (choice) choice.no(); }
         return;
     }
 

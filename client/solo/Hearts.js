@@ -4,6 +4,9 @@
 // A spent life stays in place as a DIM heart rather than disappearing, so the row never changes
 // width and "2 of 3" reads at a glance. The glyph is CP437's ♥ (the font has no hollow heart, and
 // the dim treatment is the same one locked levels and disabled buttons already use).
+//
+// They spend LEFT TO RIGHT: the leftmost heart dims first, so the remaining lives stay bunched at
+// the right-hand end.
 import { theme, dim } from '../ui/colors.js';
 import { bandTop } from '../ui/viewport.js';
 import { getLives, MAX_LIVES } from './lives.js';
@@ -33,8 +36,9 @@ export function drawHearts(ctx, canvas, n = MAX_LIVES) {
     ctx.textAlign = 'left';
     ctx.textBaseline = 'top';
     ctx.globalAlpha = 1;
+    const spent = MAX_LIVES - lives;   // the first `spent` hearts are the ones already used
     for (let i = 0; i < Math.min(n, MAX_LIVES); i++) {
-        ctx.fillStyle = i < lives ? theme.fg : dim(0.22);
+        ctx.fillStyle = i < spent ? dim(0.22) : theme.fg;
         ctx.fillText(HEART, g.left + i * g.step, g.y);
     }
 }
