@@ -17,7 +17,21 @@ export const LEVELS = 12;           // levels per chapter
 
 const KEY = 'campaign.progress';    // { [chapterId]: [true,…] } — per-level completion, by flag id
 
+// Bump to invalidate every existing save — the launch/reset lever. A browser whose stored version
+// doesn't match wipes its progress once, on first load, and starts the campaign clean. Anyone
+// visiting for the first time is unaffected (they have nothing stored).
+const SAVE_VERSION = 1;
+const VERSION_KEY = 'campaign.saveVersion';
+
+let _checked = false;
 function load() {
+    if (!_checked) {
+        _checked = true;
+        if (getPref(VERSION_KEY, 0) !== SAVE_VERSION) {
+            setPref(KEY, {});
+            setPref(VERSION_KEY, SAVE_VERSION);
+        }
+    }
     const p = getPref(KEY, {});
     return p && typeof p === 'object' ? p : {};
 }

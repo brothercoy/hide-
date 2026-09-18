@@ -1217,15 +1217,19 @@ function startSolo(level = { mode: 'redacted', settings: { charCount: 45, speedS
 }
 
 // Dev tools (browser console): `dev.completeAll()` marks every campaign level beaten;
-// `dev.reset()` wipes progress back to a brand-new start. Both reload so every screen
-// re-reads the state.
-window.dev = {
-    completeAll() { devCompleteAll(); location.reload(); },
-    reset() { devReset(); location.reload(); },
-    // dev.upTo(3) or dev.upTo('c3'): prior chapters done, that chapter done through level 11 —
-    // its finale open, ready to test the chapter-clear ceremony.
-    upTo(chapter) { devUpTo(chapter); location.reload(); },
-};
+// `dev.reset()` wipes progress back to a brand-new start; `dev.upTo(3)` / `dev.upTo('c3')`
+// completes everything through that chapter's level 11, leaving its finale open to test the
+// chapter-clear ceremony. All reload so every screen re-reads the state.
+//
+// DEV ONLY. `import.meta.env.DEV` is a literal `false` in a production build, so Rollup drops
+// this whole block — a deployed build has no `window.dev` to call at all.
+if (import.meta.env.DEV) {
+    window.dev = {
+        completeAll() { devCompleteAll(); location.reload(); },
+        reset() { devReset(); location.reload(); },
+        upTo(chapter) { devUpTo(chapter); location.reload(); },
+    };
+}
 
 function endSolo(won) {
     // A win is recorded permanently (progress.js) — level gating reads it.
