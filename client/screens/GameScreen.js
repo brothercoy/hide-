@@ -1,4 +1,4 @@
-import { theme, disconnectGlyph, isCycling, charColor, charGlow } from '../ui/colors.js';
+import { theme, disconnectGlyph, isCycling, charColor, charColorCoarse, charGlow } from '../ui/colors.js';
 import { RowReveal, drawRevealSegments } from '../ui/RowReveal.js';
 import { fontForChar } from '../ui/Font.js';
 import { bandTop } from '../ui/viewport.js';
@@ -1163,7 +1163,11 @@ export class GameScreen {
                 : winnerId ? goAlpha
                 : roundOverlay ? (this.solo && showRoundOver ? SOLO_TIMEUP_CHAR_DIM : ROUND_OVER_CHAR_DIM)
                 : 1;
-            const col = cycling ? charColor(this._charPhases[i], now) : theme.fg;
+            // Mid-glitch the glyphs are random, so the (glyph, colour) tile space explodes — take
+            // the coarse palette there, which reuses tiles the field already has baked.
+            const col = !cycling ? theme.fg
+                : glitching ? charColorCoarse(this._charPhases[i], now)
+                    : charColor(this._charPhases[i], now);
             const g = this._getGlyph(ch, col);
             ctx.drawImage(g.canvas, -g.w / 2, -g.h / 2);
             if (anim && anim.glow > 0) {                     // glow-colour overlay on the target

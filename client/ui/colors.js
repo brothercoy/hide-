@@ -114,6 +114,20 @@ function charStep(phase, nowMs) {
 export function charColor(phase, nowMs = performance.now()) { bakeSteps(); return _stepFg[charStep(phase, nowMs)]; }
 export function charGlow(phase, nowMs = performance.now()) { bakeSteps(); return _stepGlow[charStep(phase, nowMs)]; }
 
+// A COARSE colour for the miss-glitch. While the field scrambles, every character swaps to a
+// random glyph each frame — and the game's glyph tiles are cached per (glyph, colour), so the
+// full palette turns a chapter's alphabet into alphabet × CHAR_STEPS tiles to bake. China's 130
+// glyphs alone blew past the cache cap, which then flushed and re-baked everything: the lag.
+// Snapping to every COARSE_STRIDE'th step cuts that ~6× — and because these are the same entries
+// from the same table, the tiles are ones the field has already cached, not new ones. The shift
+// is at most half a stride of hue, in pastels, during a scramble: invisible.
+const COARSE_STRIDE = 6;   // 60 steps -> 10 colours
+export function charColorCoarse(phase, nowMs = performance.now()) {
+    bakeSteps();
+    const s = charStep(phase, nowMs);
+    return _stepFg[(Math.round(s / COARSE_STRIDE) * COARSE_STRIDE) % CHAR_STEPS];
+}
+
 function rgbOf(hex) {
     const n = parseInt(hex.slice(1), 16);
     return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
