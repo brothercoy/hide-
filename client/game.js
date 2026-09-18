@@ -1896,7 +1896,10 @@ canvas.addEventListener('mousedown', (e) => {
             // Sparkles around the found character — at the glyph's own drawn position, not the
             // click, which the hit pad and interpolation let land ahead of or behind it.
             const r = hit.tr + 4;
-            spawnSparkles({ x: hit.tx + gameScreen.boxCenterX - r, y: hit.ty + canvas.height / 2 - r, w: 2 * r, h: 2 * r });
+            // Anchored to the glyph's LIVE drawn position — it keeps moving after it's found, and
+            // the burst rides along with it rather than being left behind.
+            spawnSparkles({ x: hit.tx + gameScreen.boxCenterX - r, y: hit.ty + canvas.height / 2 - r, w: 2 * r, h: 2 * r },
+                () => gameScreen.targetPos());
             if (soloGame) soloGame.win();        // solo: the client decides the hit (offline)
             else room.send('tap', { nx: hit.nx, ny: hit.ny, time: Date.now() });   // MP: server validates
         } else if (gameScreen.isInPlayField(cx, cy)) {

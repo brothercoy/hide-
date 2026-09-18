@@ -23,10 +23,15 @@ let bits = [];
 const R = (a, b) => a + Math.random() * (b - a);
 
 // rect: { x, y, w, h } in canvas coords — the element the sparkles surround.
-export function spawnSparkles(rect) {
+// anchor (optional): () => { x, y } | null — the element's LIVE centre. A moving element (the
+// found target keeps drifting after it's found) passes one, and the burst rides with it: each
+// sparkle is stored as an offset from the anchor and re-based on it every frame. Buttons don't
+// move, so they pass nothing and the burst is static.
+export function spawnSparkles(rect, anchor = null) {
     if (!isCycling() || !rect) return;
     const now = performance.now();
     const cx = rect.x + rect.w / 2, cy = rect.y + rect.h / 2;
+    const a0 = anchor ? anchor() : null;               // where the anchor is right now
     for (let i = 0; i < COUNT; i++) {
         // A point on the border, chosen so all four sides get sparkles.
         const t = Math.random(), side = i % 4;
@@ -37,6 +42,8 @@ export function spawnSparkles(rect) {
         const delay = R(0, STAGGER) * LIFE_MS;
         bits.push({
             x, y, vx: Math.cos(ang) * speed, vy: Math.sin(ang) * speed - 8,
+            // Anchored: remember the offset from the anchor at spawn, and the anchor itself.
+            anchor: a0 ? anchor : null, ax: a0 ? x - a0.x : 0, ay: a0 ? y - a0.y : 0, last: a0,
             born: now + delay,
             life: LIFE_MS - delay,                         // every sparkle is gone when the glow ends
             ch: GLYPHS[(Math.random() * GLYPHS.length) | 0],
@@ -66,10 +73,17 @@ export function drawSparkles(ctx, now = performance.now(), offsetY = 0) {
         // The twinkle: faint and small → full → fades away.
         const env = k < RISE ? k / RISE : 1 - (k - RISE) / (1 - RISE);
         const s = age / 1000;
+        // Anchored sparkles re-base on the element's live position; if the anchor goes away
+        // (new round), they hold its last known spot.
+        let bx = b.x, by = b.y;
+        if (b.anchor) {
+            const p = b.anchor() || b.last;
+            if (p) { b.last = p; bx = p.x + b.ax; by = p.y + b.ay; }
+        }
         ctx.globalAlpha = env;
         ctx.fillStyle = charColor(b.phase, now);
         ctx.font = `${Math.round(b.size * (0.45 + 0.55 * env))}px "IBMVGA"`;
-        ctx.fillText(b.ch, b.x + b.vx * s, b.y + b.vy * s + offsetY);
+        ctx.fillText(b.ch, bx + b.vx * s, by + b.vy * s + offsetY);
     }
     bits = keep;
     ctx.restore();

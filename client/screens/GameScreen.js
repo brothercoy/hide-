@@ -270,6 +270,10 @@ export class GameScreen {
         return g;
     }
 
+    // The target's most recently DRAWN canvas position — it keeps moving after being found, so
+    // anything that wants to sit on it (the cosmic sparkles) reads this each frame.
+    targetPos() { return this._targetPos || null; }
+
     // Game-box width in cells — solo uses the wider phone-landscape box.
     get _boxCols() { return this.solo ? SOLO_BOX_COLS : BOX_COLS; }
 
@@ -1119,6 +1123,7 @@ export class GameScreen {
             const py = iy * phh + cy;
             const ch = glitching ? (this._glitchGlyphs[i] || chars[i].char) : chars[i].char;
             const anim = (chars[i].isTarget && targetAnim) ? targetAnim : null;
+            if (chars[i].isTarget) this._targetPos = { x: px, y: py };   // where it's drawn THIS frame
             const cos = Math.cos(rot), sin = Math.sin(rot);
             ctx.setTransform(cos, sin, -sin, cos, px, py);
             ctx.globalAlpha = anim ? anim.alpha
