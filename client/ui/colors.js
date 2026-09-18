@@ -21,9 +21,12 @@ export const THEMES = {
     // (see charColor below); theme.fg here is just the global fallback the UI still uses. The
     // background is pure black like every other theme. What differs is `ambient`: the fixed
     // themes' CRT haze and screen grain are their fg colour at low intensity, but this theme's
-    // fg is a moving rainbow — so the shader takes a fixed dark blue for those screen-wide terms
+    // fg is a moving rainbow — so the shader takes a fixed blue for those screen-wide terms
     // instead. Same mechanism, same intensity, just a chosen colour rather than the text's.
-    rainbow: { fg: '#f0b4c8', glowHi: '#fbe6ee', ambient: '#1e3a8a', cycle: true },
+    // NOTE the blue is FULL brightness, built like green (#00ff41: one channel at 255, a small
+    // secondary). The shader's 0.09 haze factor is what makes it dark on screen — handing it a
+    // hex that's already dark darkens it twice and the glow all but vanishes.
+    rainbow: { fg: '#f0b4c8', glowHi: '#fbe6ee', ambient: '#0055ff', cycle: true },
 };
 
 // PERFORMANCE: GameScreen bakes a canvas tile per glyph and throws the whole cache away whenever
