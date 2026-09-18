@@ -8,6 +8,7 @@ import { theme, disabledColor, glow } from '../ui/colors.js';
 import { FLAGS, FLAG_W, FLAG_H, flagRows } from '../solo/flags.js';
 import { isChapterUnlocked } from '../solo/progress.js';
 import { sfx, feedTick } from '../audio/sfx.js';
+import { heartsRow, drawHearts } from '../solo/Hearts.js';
 
 const FLAG_FONT = 44;        // flag glyph size
 const FLAG_COLS = 3;         // flags per row (grid wraps after this)
@@ -270,7 +271,7 @@ export class SoloScreen {
     getTypeables() {
         const { placed, lh, cw } = this._flagLayout();
         const font = `${FLAG_FONT}px "IBMVGA"`;
-        const rows = [];
+        const rows = [heartsRow(this.canvas, this.ctx)];   // topmost row — types in first
         for (const { flag, unlocked, x, top, btn } of placed) {
             for (let i = 0; i < FLAG_H; i++) {
                 const y = top + i * lh;
@@ -328,5 +329,6 @@ export class SoloScreen {
             if (unlocked && flag.overlays?.length) this._drawOverlays(flag, x, top, cw, lh, st);
         }
         ctx.globalAlpha = 1;
+        drawHearts(ctx, this.canvas);
     }
 }

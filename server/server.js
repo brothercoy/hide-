@@ -18,6 +18,14 @@ const clientDir = existsSync(join(distDir, 'index.html')) ? distDir : join(__dir
 
 const app = express();
 app.use(express.json());
+
+// The clock the solo lives system trusts. A player's device clock is theirs to change; this one
+// isn't, so "lives come back tomorrow" can't be skipped by setting the date forward. The client
+// pairs this with its own timezone offset to find ITS local midnight (see client/solo/lives.js).
+app.get('/time', (_req, res) => {
+    res.set('Cache-Control', 'no-store');   // never let a proxy or the browser serve a stale time
+    res.json({ now: Date.now() });
+});
 app.use('/colyseus', express.static(join(__dirname, '../node_modules/@colyseus/sdk/dist')));
 app.use(express.static(clientDir));
 

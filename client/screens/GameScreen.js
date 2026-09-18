@@ -6,6 +6,7 @@ import { textRow } from '../ui/Transition.js';
 import { GLOW_SPEED } from '../ui/Button.js';   // share the buttons'/specials' glow length
 import { MO_HOLD_MS, MO_TYPE_MS, MO_CURSOR_MS, RR_TITLE_MS, RR_TITLE_HOLD_MS, RR_COMPLETE_TYPE_MS, RR_COMPLETE_TEXT, RR_GAP_MS, rrRowMs, rrPlus, RR_ROW_MOVE_MS, RR_TYPE_MS, RR_PAUSE_MS } from '../../timings.js';   // shared so the server's holds derive from these
 import { sfx, typeTick, feedTick } from '../audio/sfx.js';
+import { heartsRow, drawHearts } from '../solo/Hearts.js';
 
 const TICK_RATE = 50;
 
@@ -453,6 +454,9 @@ export class GameScreen {
         // draw the shared frame (game box + player column, continuous top/bottom edges)
         this._drawFrame(ctx, cx, cy);
 
+        // Solo carries the campaign's lives in the same top-right spot as the menu screens.
+        if (this.solo) drawHearts(ctx, this.canvas);
+
         // Multiplayer chrome — room code (top-left) + the player/score list. Solo has neither.
         if (!this.solo) {
             ctx.fillStyle = theme.fg;
@@ -538,6 +542,8 @@ export class GameScreen {
         const row = (text, x, y, align) => textRow(text, x, y, font, align || 'left', 'top', theme.fg);
 
         const out = [];
+        // Solo: the lives sit above everything else, so they type in first — as on the menu screens.
+        if (this.solo) out.push(heartsRow(this.canvas, this.ctx));
         if (this.roomCode) out.push(row(this.roomCode, BOX_LEFT_MARGIN, bandTop(this.canvas) + ROOMCODE_TOP));
 
         for (let i = 0; i < BOX_ROWS; i++) {

@@ -7,6 +7,8 @@ import { textRow } from '../ui/Transition.js';
 import { theme } from '../ui/colors.js';
 import { bandTop } from '../ui/viewport.js';
 import { LEVELS, isLevelUnlocked, isLevelComplete } from '../solo/progress.js';
+import { hasLives, nextRefillText } from '../solo/lives.js';
+import { heartsRow, drawHearts } from '../solo/Hearts.js';
 
 const TITLE_SIZE = 160;      // chapter (country) title
 const TITLE_Y = 50;
@@ -16,6 +18,8 @@ const LEVEL_GAP_X = 250;     // between level-button centers
 const LEVEL_GAP_Y = 185;
 const GRID_TOP = 280;        // first level row top
 const BACK_GAP = 0;        // BACK below the grid (lower)
+const NOTE_FONT = 40;      // the out-of-lives note under BACK
+const NOTE_GAP = 110;      // its distance below BACK's center
 
 export class ChapterScreen {
     constructor(canvas, ctx, uiManager, onSelectLevel, onBack) {
@@ -52,10 +56,11 @@ export class ChapterScreen {
             // once reachable, a ✓ once completed (still clickable — replays allowed).
             const done = isLevelComplete(this.chapter?.id, i);
             const open = isLevelUnlocked(this.chapter?.id, i);
+            // Out of lives: nothing is playable until tomorrow, beaten levels included.
             this.ui.buttons.push(makeButton(done ? '✓' : (open ? String(i + 1) : '?'),
                 L.levelPos[i].x, L.levelPos[i].y,
                 () => this.onSelectLevel(this.chapterIdx, i),
-                { blocksInput: true, disabled: !open }));
+                { blocksInput: true, disabled: !open || !hasLives() }));
         }
         this.ui.buttons.push(makeButton('BACK', this.canvas.width / 2, L.backY, () => this.onBack(), { blocksInput: true }));
     }
@@ -72,9 +77,16 @@ export class ChapterScreen {
 
     getTypeables() {
         const cx = this.canvas.width / 2;
-        const rows = [textRow(this.chapter ? this.chapter.name : '', cx, bandTop(this.canvas) + TITLE_Y,
-            `${TITLE_SIZE}px "IBMVGA"`, 'center', 'top', null)];
+        const L = this._layout();
+        // Hearts first (topmost row in the feed), then the title, the grid, and the out-of-lives note.
+        const rows = [heartsRow(this.canvas, this.ctx),
+            textRow(this.chapter ? this.chapter.name : '', cx, bandTop(this.canvas) + TITLE_Y,
+                `${TITLE_SIZE}px "IBMVGA"`, 'center', 'top', null)];
         for (const b of this.ui.buttons) rows.push(...buttonRows(b, LEVEL_FONT));
+        if (!hasLives()) {
+            rows.push(textRow(nextRefillText(), cx, L.backY + NOTE_GAP,
+                `${NOTE_FONT}px "IBMVGA"`, 'center', 'middle', null));
+        }
         return rows;
     }
 
@@ -87,5 +99,13 @@ export class ChapterScreen {
         ctx.font = `${TITLE_SIZE}px "IBMVGA"`;
         ctx.fillText(this.chapter ? this.chapter.name : '', cx, bandTop(this.canvas) + TITLE_Y);
         this.ui.buttons.forEach(b => drawButton(ctx, b, this.ui.elapsed, LEVEL_FONT));
+        if (!hasLives()) {
+            ctx.fillStyle = theme.fg;
+            ctx.font = `${NOTE_FONT}px "IBMVGA"`;
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.fillText(nextRefillText(), cx, this._layout().backY + NOTE_GAP);
+        }
+        drawHearts(ctx, this.canvas);
     }
 }

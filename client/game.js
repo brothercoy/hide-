@@ -10,6 +10,7 @@ import { SoloGame } from './solo/SoloGame.js';
 import { completeLevel, isLevelComplete, LEVELS, devCompleteAll, devReset, devUpTo } from './solo/progress.js';
 import { LEVEL_TARGETS } from './solo/levels.js';
 import { FLAGS } from './solo/flags.js';
+import { hasLives, loseLife, syncClock, devSetLives, MAX_LIVES } from './solo/lives.js';
 import { CHARSETS } from '../charsets.js';
 import { SoloScreen } from './screens/SoloScreen.js';
 import { ChapterScreen } from './screens/ChapterScreen.js';
@@ -34,6 +35,9 @@ import { setMusic, syncMusic, setMusicTension } from './audio/music.js';
 // Apply the saved theme before anything paints (default green). `theme` is read live everywhere —
 // UI shades, the click glow, and the CRT phosphor tint — so this one call colours the whole game.
 applyTheme(getPref('theme', 'green'));
+// Ask the server what time it is, and refill the solo lives if the player's local day has turned.
+// Their own device clock is never consulted — setting the date forward buys nothing.
+syncClock();
 
 const colyseusClient = new Client(
     window.location.hostname === 'localhost'
@@ -348,8 +352,11 @@ const chapterScreen = new ChapterScreen(canvas, ctx, uiManager,
         // the CHAPTER COMPLETE! banner, then the flag screen types in and the next chapter's
         // flag unlocks. Replays skip all of it.
         const ceremony = !!id && levelIdx === LEVELS - 1 && !isLevelComplete(id, levelIdx);
+        if (!hasLives()) return;                       // out of lives — nothing is playable today
+        // Failing a level you've already beaten is free; only a fresh level costs a life.
+        const wasComplete = !!id && isLevelComplete(id, levelIdx);
         startSolo({ ...soloLevelConfig(chapterIdx, levelIdx, id), ceremony, anthem: ANTHEMS[id] },
-            { chapterId: id, name: chapterScreen.chapter?.name, levelIdx, ceremony });
+            { chapterId: id, name: chapterScreen.chapter?.name, levelIdx, ceremony, wasComplete });
     },
     () => showScreen('solo')
 );
@@ -1253,12 +1260,16 @@ if (import.meta.env.DEV) {
         completeAll() { devCompleteAll(); location.reload(); },
         reset() { devReset(); location.reload(); },
         upTo(chapter) { devUpTo(chapter); location.reload(); },
+        // Lives: set any count (default full) to test the hearts and the out-of-lives lockout.
+        lives(n = MAX_LIVES) { devSetLives(n); location.reload(); },
     };
 }
 
 function endSolo(won) {
     // A win is recorded permanently (progress.js) — level gating reads it.
     if (won && soloIdent?.chapterId != null) completeLevel(soloIdent.chapterId, soloIdent.levelIdx);
+    // Ran out of time on a level not yet beaten: that costs a life. Replays are free.
+    if (!won && soloIdent && !soloIdent.wasComplete) loseLife();
     const ceremony = won && soloIdent?.ceremony;
     const clearedChapterId = soloIdent?.chapterId;
     soloIdent = null;
