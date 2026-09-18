@@ -889,6 +889,8 @@ export class GameScreen {
     // centered on the game box so the line re-centers as it types. Timed off _matchOverStart.
     _drawMatchOver(ctx, cx, cy, data) {
         const t = (this._matchOverStart != null) ? (Date.now() - this._matchOverStart) : 1e9;
+        // Tick state — reset when a new match-over screen comes up.
+        if (this._moTickStart !== this._matchOverStart) { this._moTickStart = this._matchOverStart; this._moTicked = 0; }
 
         const prefix = `Match ${data.match}: `;
         const name = data.matchWinnerName || 'Nobody';   // winner name, 'Tie', or 'Nobody' (from server)
@@ -898,6 +900,8 @@ export class GameScreen {
         if (t < typeStart) shown = 0;
         else if (t < typeEnd) shown = Math.floor((t - typeStart) / MO_TYPE_MS);
         const text = prefix + name.slice(0, shown);
+        // The winner's name types like every other typed line, so it ticks like every other one.
+        if (shown > this._moTicked) { feedTick(shown - this._moTicked, 1); this._moTicked = shown; }
 
         // Centered on the box center; the whole line re-centers (drifts) as the name types in.
         ctx.font = `${this.FRAME_SIZE}px "IBMVGA"`;
@@ -933,7 +937,9 @@ export class GameScreen {
         const N = rows.length;
         const t = startTime != null ? (Date.now() - startTime) : 1e9;
         // Audio state for THIS scoreboard — reset when a new round's result comes up.
-        if (this._rrStart !== startTime) { this._rrStart = startTime; this._rrTicked = 0; this._rrSummed = false; }
+        if (this._rrStart !== startTime) {
+            this._rrStart = startTime; this._rrTicked = 0; this._rrSummed = false; this._rrSlot = undefined;
+        }
         const TITLE_FONT = this.FRAME_SIZE, ROW_FONT = 36, ROW_H = 46, TITLE_GAP = 40;
         const SCORE_COL = 19, PLUS_GAP = 0;   // "name...score" field width (chars); +points butts right up to the score
         const rowsStart = RR_TITLE_MS + RR_GAP_MS;          // per-row stepping begins
@@ -1024,6 +1030,16 @@ export class GameScreen {
         let typedChars = nComplete;
         for (let i = 0; i < N; i++) typedChars += shownPlus(i).length;
         if (typedChars > this._rrTicked) { feedTick(typedChars - this._rrTicked, 1); this._rrTicked = typedChars; }
+        // Every cursor MOVE ticks too, the way a terminal clicks on a carriage return: the drop from
+        // the title into the gap, down onto the first row, each step down the list, and the final hop
+        // to rest beside the new score.
+        let slot;
+        if (t < RR_TITLE_MS) slot = 0;                        // parked on the title
+        else if (t < rowsStart) slot = 1;                     // in the gap beneath it
+        else if (!beforeUpdate) slot = -1;                    // resting right of the new score
+        else { let i = 0; while (i < N - 1 && t >= rowStarts[i + 1]) i++; slot = 2 + i; }   // on row i
+        if (this._rrSlot !== undefined && slot !== this._rrSlot) typeTick();
+        this._rrSlot = slot;
         // …and the moment the "+points" clear and every score snaps to its new total, the sum lands.
         if (!beforeUpdate && !this._rrSummed) { this._rrSummed = true; sfx('SCORE_SUM'); }
 

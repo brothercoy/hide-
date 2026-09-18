@@ -67,6 +67,11 @@ let modalMessage = null;
 let settingsPanelOpen = false;
 let winnerId = null;
 let leaveDestination = 'main'; // where to land after leaving a room (BACK from lobby → 'play')
+// True from the moment we ask the server to remove us until the socket actually closes. The server
+// finishes handling the leave — which can END the game and BROADCAST gameOver — while our socket is
+// still open, so without this the departing player hears the winner fanfare and sees the winner
+// screen for a beat on their way out. Anyone still in the room (player OR spectator) is unaffected.
+let leavingRoom = false;
 let pendingLobbyEntry = false; // waiting for the room's initial state before typing the lobby in
 
 const canvas = document.getElementById('gameCanvas');
@@ -364,10 +369,19 @@ const lobbyScreen = new LobbyScreen(canvas, ctx, uiManager,
         if (!selectedMode) { showModal('?INVALID GAME MODE'); return; }
         room.send('startGame', { mode: selectedMode, settings: selectedSettings });
     },
-    () => { leaveDestination = 'play'; if (room) room.send('leaveToMenu'); },
+    () => leaveRoom('play'),
     (message) => showModal(message),
     (isPrivate) => { if (room) room.send('setPrivacy', { private: isPrivate }); }   // host toggles Public/Private
 );
+
+// Ask the server to take us out of the room. From here on we ignore the room's game messages —
+// we're no longer a participant, so its round/game events (and their sounds) aren't ours to act on.
+function leaveRoom(destination = 'main') {
+    if (!room) return;
+    leaveDestination = destination;
+    leavingRoom = true;
+    room.send('leaveToMenu');
+}
 
 const gameScreen = new GameScreen(canvas, ctx, isMobile);
 
@@ -583,6 +597,7 @@ async function tryReconnect() {
     try {
         uiManager.blocked = true;
         room = await colyseusClient.reconnect(token);
+        leavingRoom = false;   // resumed session — listen again
         localStorage.setItem('reconnectionToken', room.reconnectionToken);
         room.onLeave(() => {
             localStorage.removeItem('reconnectionToken');
@@ -590,6 +605,7 @@ async function tryReconnect() {
             if (currentMode) currentMode.reset();
             currentMode = null;
             room = null;   // clear the ref so `if (room)` reflects reality after leaving
+            leavingRoom = false;
         });
         // Defer like a fresh join — the lobby (or game) shows once state arrives.
         pendingLobbyEntry = true;
@@ -644,6 +660,7 @@ function joinGame(type, code) {
 
 function onRoomJoined(r) {
     room = r;
+    leavingRoom = false;   // fresh room — listen again
     localStorage.setItem('reconnectionToken', room.reconnectionToken);
     room.onLeave(() => {
         localStorage.removeItem('reconnectionToken');
@@ -662,6 +679,7 @@ function onRoomJoined(r) {
         }
         showScreen(leaveDestination);   // snapshots the live game frame for the scroll BEFORE we tear it down
         leaveDestination = 'main';
+        leavingRoom = false;            // we're out — the next room's messages are ours again
         if (currentMode) currentMode.reset();
         currentMode = null;             // drop the stale mode (matches returnedToLobby) so nothing lingers
         room = null;                    // the room is gone — clear the ref so `if (room)` reflects reality
@@ -989,7 +1007,7 @@ function showGameOverOverlay(winner) {
     gameOverBtns.mainMenu = makeButton('MAIN MENU', 0, 0,   // a normal button — not a vote toggle
         // Keep the overlay ALIVE (don't clear it here) so it persists and scrolls up when the
         // transition snapshots it; room.onLeave repaints + clears it right before the scroll.
-        () => room.send('leaveToMenu'), { blocksInput: true });
+        () => leaveRoom('main'), { blocksInput: true });
 
     uiManager.buttons.push(gameOverBtns.playAgain);
     uiManager.buttons.push(gameOverBtns.returnToLobby);
@@ -1125,6 +1143,9 @@ function setupRoomMessages(isReconnecting = false) {
     ];
     modeMessages.forEach(type => {
         room.onMessage(type, (data) => {
+            // On our way out: the server may still broadcast round/game events (including the
+            // gameOver our own departure triggered) before our socket closes. They're not ours.
+            if (leavingRoom) return;
             if (type === 'reconnected' && data.gameStarted) {
                 pendingLobbyEntry = false; // reconnecting into a live game, not the lobby
                 if (transition.isActive()) transition.cancelToEnd();
@@ -1740,8 +1761,7 @@ function leaveToMainMenu() {
     }
 
     if (room) {
-        leaveDestination = 'main';
-        room.send('leaveToMenu');   // async → room.onLeave transitions; overlay already closed → clean snapshot
+        leaveRoom('main');   // async → room.onLeave transitions; overlay already closed → clean snapshot
     } else {
         const from = currentScreen;
         ctx.clearRect(0, 0, canvas.width, canvas.height);
