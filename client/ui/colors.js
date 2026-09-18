@@ -17,27 +17,14 @@ export const THEMES = {
     white:  { fg: '#a6abb3', glowHi: '#ffffff' },  // cool blue-grey — pushed toward grey for the cold
                                                    // CRT phosphor look; well below pure white so it
                                                    // isn't blinding and the click-glow reads on press
-    // The campaign reward: not a fixed colour but a slow drift around the hue wheel in PASTELS —
-    // pale lilac, butter, peach, mint — over a background tinted the same hue but nearly black,
-    // so it colours the monitor without ever competing with the glyphs. `cycle` hands it to
-    // tickTheme(); since every shade, the glow and the CRT phosphor tint derive from theme.fg at
-    // call time, the WHOLE game drifts together. The values here are just where it starts.
-    rainbow: { fg: '#f0b4c8', glowHi: '#fbe6ee', bg: '#090000', cycle: true },
+    // The campaign reward: every character rides a shared colour cycle from its own random point
+    // (see charColor below); theme.fg here is just the global fallback the UI still uses. The
+    // background is pure black like every other theme. What differs is `ambient`: the fixed
+    // themes' CRT haze and screen grain are their fg colour at low intensity, but this theme's
+    // fg is a moving rainbow — so the shader takes a fixed dark blue for those screen-wide terms
+    // instead. Same mechanism, same intensity, just a chosen colour rather than the text's.
+    rainbow: { fg: '#f0b4c8', glowHi: '#fbe6ee', ambient: '#1e3a8a', cycle: true },
 };
-
-// The rainbow background is DECOUPLED from the foreground hue: it drifts between a very dark red,
-// green and blue on its own slower clock, so the two never move in lockstep. Every other theme
-// uses pure black, so these sit just barely above it — a tint you notice only as a mood, never as
-// a colour competing with the glyphs.
-// The three are NOT the same numbers: the eye weights green ~3× red and ~11× blue for brightness,
-// so equal channel values would make the green phase glaringly the brightest. These are picked to
-// land at roughly equal PERCEIVED darkness instead.
-const BG_ANCHORS = [
-    [9, 0, 0],     // very dark red
-    [0, 3, 0],     // very dark green  (lowest — green reads brightest)
-    [0, 0, 15],    // very dark blue   (highest — blue reads darkest)
-];
-const BG_PERIOD_MS = 63000;   // one full red→green→blue→red trip (deliberately not 42s)
 
 // PERFORMANCE: GameScreen bakes a canvas tile per glyph and throws the whole cache away whenever
 // theme.fg changes (each rebuild is a createElement + an opentype path render, per glyph). A
@@ -66,6 +53,7 @@ export function applyTheme(id) {
     theme.fg = t.fg;
     theme.glowHi = t.glowHi;
     theme.bg = t.bg || '#000000';
+    theme.ambient = t.ambient || null;   // shader's screen-wide phosphor; null = use fg (fixed themes)
     cycling = !!t.cycle;
     lastHueStep = -1;        // force the next tick to land on the live colour
     if (cycling) tickTheme();
@@ -87,16 +75,7 @@ function hslHex(h, s, l) {
 export function tickTheme(nowMs = performance.now()) {
     if (!cycling) return;
 
-    // BACKGROUND: crossfades red → green → blue on its own clock. Free to move every frame —
-    // nothing caches on theme.bg, it's only ever a fillRect colour.
-    const bp = (nowMs / BG_PERIOD_MS) * BG_ANCHORS.length;
-    const i = Math.floor(bp) % BG_ANCHORS.length;
-    const f = bp - Math.floor(bp);
-    const a = BG_ANCHORS[i], b = BG_ANCHORS[(i + 1) % BG_ANCHORS.length];
-    const ch = (n) => Math.round(a[n] + (b[n] - a[n]) * f).toString(16).padStart(2, '0');
-    theme.bg = `#${ch(0)}${ch(1)}${ch(2)}`;
-
-    // FOREGROUND: quantised, because a changed theme.fg throws away every baked glyph tile.
+    // FOREGROUND (the UI's global colour): quantised so it doesn't churn caches keyed on fg.
     const step = Math.floor(nowMs / RAINBOW_PERIOD_MS * RAINBOW_STEPS) % RAINBOW_STEPS;
     if (step === lastHueStep) return;
     lastHueStep = step;

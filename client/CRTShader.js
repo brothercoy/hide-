@@ -282,8 +282,10 @@ export class CRTEffect {
     // (÷255), NOT the brightest channel — so a dim theme glows dimly. A fully-saturated theme
     // (green #00ff41 / orange #ff8a00, each with a 255 channel) is unaffected, but the paperwhite
     // grey no longer gets boosted back to a full-intensity haze that washed the dimming out.
+    // A theme may set `ambient` to decouple this from its text colour (the rainbow's text is a
+    // moving spectrum; its haze is a fixed dark blue). Unset = the fg, as every fixed theme has.
     _phosphor() {
-        const n = parseInt(theme.fg.slice(1), 16);
+        const n = parseInt((theme.ambient || theme.fg).slice(1), 16);
         return [((n >> 16) & 255) / 255, ((n >> 8) & 255) / 255, (n & 255) / 255];
     }
 
