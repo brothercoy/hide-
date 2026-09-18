@@ -778,6 +778,19 @@ class GameRoom extends Room {
                 // still searching, the round can now end.
                 this.broadcastPlayerList();
                 const active = this.getAlivePlayers();
+                // One player left (the rest left to the menu or their reconnection window expired):
+                // the game ends now and they take the normal winner screen — same as DEL, where a
+                // lone survivor wins the match. The leaver is dropped FIRST so the ranking never
+                // hands the win to someone who is no longer in the match.
+                if (active.length <= 1) {
+                    this.taps = [];
+                    this.inCountdown = false;
+                    this.roundActive = false;
+                    this.timeUpHandled = true;
+                    this._dropFromMatch(sid);
+                    this._endFrequencyGame();
+                    return;
+                }
                 if (this.roundActive && active.length >= 1) {
                     const tappedActive = this.taps.filter(t => this.activePlayers[t.id] && this.activePlayers[t.id].alive).length;
                     if (tappedActive >= active.length) this._endFrequencyRound();
