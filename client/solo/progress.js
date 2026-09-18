@@ -17,9 +17,12 @@ export const LEVELS = 12;           // levels per chapter
 
 const KEY = 'campaign.progress';    // { [chapterId]: [true,…] } — per-level completion, by flag id
 
-// Bump to invalidate every existing save — the launch/reset lever. A browser whose stored version
-// doesn't match wipes its progress once, on first load, and starts the campaign clean. Anyone
-// visiting for the first time is unaffected (they have nothing stored).
+// Bump to invalidate every existing save — the deliberate global-reset lever. A browser whose
+// STORED version differs wipes its progress once, on first load. A browser with NO stored version
+// (a save from before versioning existed, or a first-time visitor) is never wiped: it simply gets
+// stamped with the current version and carries on. Treating "no version" as "stale" erased real
+// players' campaigns when this shipped (2026-09-17) — that is exactly what this distinction
+// prevents from ever happening again.
 const SAVE_VERSION = 1;
 const VERSION_KEY = 'campaign.saveVersion';
 
@@ -27,8 +30,11 @@ let _checked = false;
 function load() {
     if (!_checked) {
         _checked = true;
-        if (getPref(VERSION_KEY, 0) !== SAVE_VERSION) {
-            setPref(KEY, {});
+        const stored = getPref(VERSION_KEY, null);
+        if (stored === null) {
+            setPref(VERSION_KEY, SAVE_VERSION);          // pre-versioning save: keep it, stamp it
+        } else if (stored !== SAVE_VERSION) {
+            setPref(KEY, {});                            // a deliberate bump: the only thing that wipes
             setPref(VERSION_KEY, SAVE_VERSION);
         }
     }
