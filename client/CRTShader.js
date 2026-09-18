@@ -35,7 +35,8 @@ export class CRTEffect {
             adaptiveIntensity: 3.0,
             vignetteStrength: 0.99,
             curvature: 0.2,
-            flickerStrength: 0.03
+            flickerStrength: 0.03,
+            glowFollowsPixel: 0.0,   // set per frame from the theme (only the rainbow turns it on)
         };
 
         this._initShader();
@@ -81,6 +82,7 @@ export class CRTEffect {
             uniform float curvature;
             uniform float flickerStrength;
             uniform vec3 phosphor;   // theme foreground (normalized) — phosphor tint
+            uniform float glowFollowsPixel;   // 1 = halos take the colour of what they surround
 
             varying vec2 vUv;
 
@@ -161,7 +163,8 @@ export class CRTEffect {
                 // 8-tap neighborhood fetch of tDiffuse — 9 texture reads (8 taps + an
                 // unused luminance sample) collapse to 1. Reused for the static-noise
                 // mask further down.
-                float bloomField = texture2D(bloomTex, uv).r;
+                vec4 bloomTexel = texture2D(bloomTex, uv);          // blurred scene COLOUR
+                float bloomField = dot(bloomTexel.rgb, LUMA);       // its luminance — the mask
                 // The glow is two terms combined so EVERY lit element glows, not just big
                 // bright ones:
                 //  - localGlow: from this pixel's OWN brightness (free — pixel is already
@@ -175,17 +178,17 @@ export class CRTEffect {
                 float haloGlow  = smoothstep(0.4, 0.75, bloomField);
                 float nearBright = max(localGlow, haloGlow);
 
-                // The glow takes the colour of WHAT is glowing: the blurred colour of this pixel's
-                // neighbourhood, normalised to its brightest channel — so each character's halo is
-                // its own colour when the theme gives characters independent colours (rainbow).
-                // Where nothing coloured is nearby it falls back to the theme uniform, which is
-                // also what every fixed theme resolves to (their text IS the uniform colour). The
-                // 4-tap sample is only paid inside glow regions, never on the empty background.
+                // The glow's colour. Fixed themes: the phosphor uniform, exactly as always.
+                // A theme with independently coloured characters (rainbow) sets glowFollowsPixel,
+                // and then the halo takes the colour of what it surrounds: the blurred scene colour
+                // from the SAME texel the mask came from, normalised to its brightest channel and
+                // scaled to the phosphor's brightness. Same texel as the mask means the colour
+                // reaches exactly as far as the glow does — no ring, no seam, no fallback patches.
+                // Off in the empty background (texel near black) it rests on the phosphor.
                 vec3 glowCol = phosphor;
-                if (nearBright > 0.001) {
-                    vec3 nb = sampleBloom(tDiffuse, uv, 0.005, texture2D(tDiffuse, uv)).rgb;
-                    float nbMax = max(nb.r, max(nb.g, nb.b));
-                    if (nbMax > 0.02) glowCol = nb / nbMax;
+                if (glowFollowsPixel > 0.5) {
+                    float nbMax = max(bloomTexel.r, max(bloomTexel.g, bloomTexel.b));
+                    if (nbMax > 0.02) glowCol = bloomTexel.rgb / nbMax * max(phosphor.r, max(phosphor.g, phosphor.b));
                 }
 
                 // Phosphor noise glow: grainy in bright areas, fades to dark in dark areas
@@ -373,20 +376,23 @@ export class CRTEffect {
             uniform vec2 blurDir;
             varying vec2 vUv;
             const vec3 LUMA = vec3(0.299, 0.587, 0.114);
+            // Blurs the scene's COLOUR, not just its luminance. The main pass takes its glow mask
+            // from this texel's luminance (dot with LUMA — linear, so identical to blurring the
+            // luminance directly) and, when a theme asks for it, the glow's COLOUR from the same
+            // texel — so a halo is the colour of what it surrounds, at exactly the mask's extent.
             void main() {
-                float lum = 0.0;
+                vec3 c = vec3(0.0);
                 float s = 1.8; // step multiplier — increase for wider glow
-                lum += dot(texture2D(tInput, vUv - blurDir * s * 4.0).rgb, LUMA) * 0.0625;
-                lum += dot(texture2D(tInput, vUv - blurDir * s * 3.0).rgb, LUMA) * 0.125;
-                lum += dot(texture2D(tInput, vUv - blurDir * s * 2.0).rgb, LUMA) * 0.25;
-                lum += dot(texture2D(tInput, vUv - blurDir * s * 1.0).rgb, LUMA) * 0.5;
-                lum += dot(texture2D(tInput, vUv                    ).rgb, LUMA) * 1.0;
-                lum += dot(texture2D(tInput, vUv + blurDir * s * 1.0).rgb, LUMA) * 0.5;
-                lum += dot(texture2D(tInput, vUv + blurDir * s * 2.0).rgb, LUMA) * 0.25;
-                lum += dot(texture2D(tInput, vUv + blurDir * s * 3.0).rgb, LUMA) * 0.125;
-                lum += dot(texture2D(tInput, vUv + blurDir * s * 4.0).rgb, LUMA) * 0.0625;
-                lum /= 2.875;
-                gl_FragColor = vec4(lum, lum, lum, 1.0);
+                c += texture2D(tInput, vUv - blurDir * s * 4.0).rgb * 0.0625;
+                c += texture2D(tInput, vUv - blurDir * s * 3.0).rgb * 0.125;
+                c += texture2D(tInput, vUv - blurDir * s * 2.0).rgb * 0.25;
+                c += texture2D(tInput, vUv - blurDir * s * 1.0).rgb * 0.5;
+                c += texture2D(tInput, vUv                    ).rgb * 1.0;
+                c += texture2D(tInput, vUv + blurDir * s * 1.0).rgb * 0.5;
+                c += texture2D(tInput, vUv + blurDir * s * 2.0).rgb * 0.25;
+                c += texture2D(tInput, vUv + blurDir * s * 3.0).rgb * 0.125;
+                c += texture2D(tInput, vUv + blurDir * s * 4.0).rgb * 0.0625;
+                gl_FragColor = vec4(c / 2.875, 1.0);
             }
         `;
 
@@ -498,6 +504,9 @@ export class CRTEffect {
         gl.uniform3f(this.uniformLocations['phosphor'], pr, pg, pb);
 
         this.uniforms.time = time;
+        // Only a theme whose characters carry their own colours wants per-pixel halo colour;
+        // every fixed theme keeps the single phosphor and renders exactly as it always has.
+        this.uniforms.glowFollowsPixel = theme.ambient ? 1.0 : 0.0;
         Object.entries(this.uniforms).forEach(([name, value]) => {
             const loc = this.uniformLocations[name];
             if (loc !== null) gl.uniform1f(loc, value);
