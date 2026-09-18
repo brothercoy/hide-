@@ -17,15 +17,23 @@ export const THEMES = {
     white:  { fg: '#a6abb3', glowHi: '#ffffff' },  // cool blue-grey — pushed toward grey for the cold
                                                    // CRT phosphor look; well below pure white so it
                                                    // isn't blinding and the click-glow reads on press
-    // The campaign reward: not a fixed colour but a slow walk around the hue wheel. `cycle` makes
-    // tickTheme() rewrite fg/glowHi every frame — and since every shade, the glow and the CRT
-    // phosphor tint are derived from theme.fg at call time, the WHOLE game drifts through the
-    // spectrum with it. fg/glowHi here are just the starting point.
-    rainbow: { fg: '#ff4d4d', glowHi: '#ffd6d6', cycle: true },
+    // The campaign reward: not a fixed colour but a slow drift around the hue wheel in PASTELS —
+    // pale lilac, butter, peach, mint — over a background tinted the same hue but nearly black,
+    // so it colours the monitor without ever competing with the glyphs. `cycle` hands it to
+    // tickTheme(); since every shade, the glow and the CRT phosphor tint derive from theme.fg at
+    // call time, the WHOLE game drifts together. The values here are just where it starts.
+    rainbow: { fg: '#f0b4c8', glowHi: '#fbe6ee', bg: '#120409', cycle: true },
 };
 
-const RAINBOW_PERIOD_MS = 14000;   // one full trip around the wheel
+// PERFORMANCE: GameScreen bakes a canvas tile per glyph and throws the whole cache away whenever
+// theme.fg changes (each rebuild is a createElement + an opentype path render, per glyph). A
+// colour that moved every frame would re-rasterise the entire field 60×/s. So the hue is
+// QUANTISED: it only actually changes on a step boundary — ~3×/s instead of 60 — which is a ~2.6°
+// hue move in pastel shades, far too small to see, but 20× less cache churn.
+const RAINBOW_PERIOD_MS = 42000;   // one full trip around the wheel
+const RAINBOW_STEPS = 140;         // ≈2.6° and ~300ms per step
 let cycling = false;
+let lastHueStep = -1;
 
 // Switch the active palette in place. Mutates `theme` (not reassigns) so every module that imported
 // the object sees the change; helpers read it at call time, so the swap is immediate and global.
@@ -33,7 +41,10 @@ export function applyTheme(id) {
     const t = THEMES[id] || THEMES.green;
     theme.fg = t.fg;
     theme.glowHi = t.glowHi;
+    theme.bg = t.bg || '#000000';
     cycling = !!t.cycle;
+    lastHueStep = -1;        // force the next tick to land on the live colour
+    if (cycling) tickTheme();
 }
 
 function hslHex(h, s, l) {
@@ -47,12 +58,17 @@ function hslHex(h, s, l) {
 }
 
 // Called once per frame from the game loop. A no-op for the fixed palettes; for `rainbow` it walks
-// the hue so the entire UI drifts through the spectrum together.
+// the hue so the entire UI drifts through the spectrum together. Returns early unless the hue
+// actually moved a step — that early-out is what keeps the glyph caches from thrashing.
 export function tickTheme(nowMs = performance.now()) {
     if (!cycling) return;
-    const h = (nowMs / RAINBOW_PERIOD_MS * 360) % 360;
-    theme.fg = hslHex(h, 1, 0.6);        // saturated, bright enough to read on black
-    theme.glowHi = hslHex(h, 1, 0.86);   // the click-glow's bright end, same hue
+    const step = Math.floor(nowMs / RAINBOW_PERIOD_MS * RAINBOW_STEPS) % RAINBOW_STEPS;
+    if (step === lastHueStep) return;
+    lastHueStep = step;
+    const h = step * 360 / RAINBOW_STEPS;
+    theme.fg = hslHex(h, 0.62, 0.78);      // pastel — pale enough to read as "light rainbow"
+    theme.glowHi = hslHex(h, 0.5, 0.92);   // the click-glow's bright end, same hue
+    theme.bg = hslHex(h, 0.55, 0.07);      // near-black, just tinted — never competes with the text
 }
 
 function rgbOf(hex) {
