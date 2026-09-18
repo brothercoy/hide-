@@ -43,7 +43,7 @@ const THEME_OPTIONS = [
     { id: 'white', label: 'White' },
     // Second row, sitting under ORANGE (the middle option, which is screen-centered). Placed in
     // the gap that was already there, so nothing else on the screen moves.
-    { id: 'rainbow', label: 'Rainbow', row: 1 },
+    { id: 'cosmic', label: 'Cosmic', row: 1 },
 ];
 
 export class SettingsScreen {

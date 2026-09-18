@@ -7,7 +7,7 @@ import { FLAGS } from './flags.js';
 import { isLevelComplete, LEVELS } from './progress.js';
 
 // Themes that have to be earned. Everything not listed is always available.
-const REWARD_THEMES = new Set(['rainbow']);
+const REWARD_THEMES = new Set(['cosmic']);
 
 // True once every DESIGNED chapter has its final level beaten — the same test the campaign-win
 // screen fires on, so the two can never disagree.

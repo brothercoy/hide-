@@ -44,7 +44,7 @@ const THEME_OPTIONS = [
     { id: 'white', label: 'White' },
     // Second row, under ORANGE (the middle option, which is centered) — in the gap that was
     // already there, so nothing else in the panel moves.
-    { id: 'rainbow', label: 'Rainbow', row: 1 },
+    { id: 'cosmic', label: 'Cosmic', row: 1 },
 ];
 const VOLUME_PREFS = [
     { label: 'MASTER VOLUME', key: 'volume.master', default: 100 },

@@ -26,7 +26,7 @@ export const THEMES = {
     // NOTE the blue is FULL brightness, built like green (#00ff41: one channel at 255, a small
     // secondary). The shader's 0.09 haze factor is what makes it dark on screen — handing it a
     // hex that's already dark darkens it twice and the glow all but vanishes.
-    rainbow: { fg: '#f0b4c8', glowHi: '#fbe6ee', ambient: '#0055ff', cycle: true },
+    cosmic: { fg: '#f0b4c8', glowHi: '#fbe6ee', ambient: '#0055ff', cycle: true },
 };
 
 // PERFORMANCE: GameScreen bakes a canvas tile per glyph and throws the whole cache away whenever
