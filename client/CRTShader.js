@@ -175,9 +175,22 @@ export class CRTEffect {
                 float haloGlow  = smoothstep(0.4, 0.75, bloomField);
                 float nearBright = max(localGlow, haloGlow);
 
+                // The glow takes the colour of WHAT is glowing: the blurred colour of this pixel's
+                // neighbourhood, normalised to its brightest channel — so each character's halo is
+                // its own colour when the theme gives characters independent colours (rainbow).
+                // Where nothing coloured is nearby it falls back to the theme uniform, which is
+                // also what every fixed theme resolves to (their text IS the uniform colour). The
+                // 4-tap sample is only paid inside glow regions, never on the empty background.
+                vec3 glowCol = phosphor;
+                if (nearBright > 0.001) {
+                    vec3 nb = sampleBloom(tDiffuse, uv, 0.005, texture2D(tDiffuse, uv)).rgb;
+                    float nbMax = max(nb.r, max(nb.g, nb.b));
+                    if (nbMax > 0.02) glowCol = nb / nbMax;
+                }
+
                 // Phosphor noise glow: grainy in bright areas, fades to dark in dark areas
                 float noiseGlow = noiseVal * nearBright;
-                pixel.rgb += noiseGlow * phosphor * bloomIntensity * 0.8;
+                pixel.rgb += noiseGlow * glowCol * bloomIntensity * 0.8;
 
                 if (rgbShift > 0.005) {
                     float shift = rgbShift * RGB_SHIFT_SCALE;
@@ -221,7 +234,7 @@ export class CRTEffect {
                 // One animated-noise sample, reused for both the bright-area grain and
                 // the radial screen grain (the two rand() calls were identical).
                 float screenNoise = rand(uv * vec2(1601.0, 901.0) + vec2(fract(time * 17.3), fract(time * 13.7)));
-                pixel.rgb += screenNoise * phosphor * lumField * 0.5;
+                pixel.rgb += screenNoise * glowCol * lumField * 0.5;   // near text: that text's colour
 
                 // Radial vignette for noise — bright center, fades to edges
                 vec2 noiseCenter = uv - 0.5;

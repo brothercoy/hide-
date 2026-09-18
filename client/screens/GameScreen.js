@@ -1,4 +1,4 @@
-import { theme, disconnectGlyph } from '../ui/colors.js';
+import { theme, disconnectGlyph, isCycling, charColor, charGlow } from '../ui/colors.js';
 import { RowReveal, drawRevealSegments } from '../ui/RowReveal.js';
 import { fontForChar } from '../ui/Font.js';
 import { bandTop } from '../ui/viewport.js';
@@ -67,8 +67,11 @@ export class GameScreen {
         this.FONT_SIZE = isMobile ? 36 : 32;  // bouncing-character font — kept small so many fit
         this.FRAME_SIZE = 76;                 // border-frame font — independent of the chars; sets box size
         this._metricsCache = new Map();
-        this._glyphCache = new Map(); // char -> pre-rendered glyph tile (atlas)
-        this._glyphColor = null;      // theme color the tiles were baked in
+        this._glyphCache = new Map(); // "char|colour" -> pre-rendered glyph tile (atlas)
+        this._tileTheme = null;       // theme id the tiles were baked under (NOT the colour — the
+                                      // rainbow's colour moves; its tiles are keyed by colour instead)
+        this._charPhases = null;      // rainbow: each character's random point on the shared cycle
+        this._phaseSrc = null;        // the chars array those phases belong to (re-rolled per round)
         this._cw = null;              // cached monospace char width at the FRAME font
         this.roomCode = '';           // shown top-left at the frame font; COPY CODE sits under it
         this._inkCache = new Map();   // measured ink bounds per string at the FRAME font
@@ -79,8 +82,7 @@ export class GameScreen {
         this.glitchUntil = 0;         // scramble the play field until this timestamp (miss feedback)
         this._glitchGlyphs = [];      // per-char random glyph while glitching
         this._glitchSwapAt = 0;       // last time the glitch glyphs were re-rolled
-        this._glowCache = new Map();  // char -> glowHi-colored tile (target tap glow overlay)
-        this._glowColor = null;       // theme color the glow tiles were baked in
+        this._glowCache = new Map();  // "char|colour" -> glow-coloured tile (target tap glow overlay)
         this._matchOverStart = null;  // when the match-over screen first appeared → drives its animation
         this._moShowing = false;      // rising-edge tracker for the match-over screen
         this._winnerStart = null;     // when the game-over screen first appeared → drives the field brighten
@@ -218,44 +220,53 @@ export class GameScreen {
     // The glyph is drawn from its opentype VECTOR path (not canvas fillText), sized
     // and positioned from the reliable glyph bounding box so its ink-box center sits
     // exactly at the tile center — matching the collision circle. Rebuilt on theme.
-    _getGlyph(char) {
-        if (this._glyphColor !== theme.fg) { this._glyphCache.clear(); this._glyphColor = theme.fg; }
-        let g = this._glyphCache.get(char);
-        if (g) return g;
+    // Tiles are keyed by (char, colour). For the fixed themes the colour is always theme.fg, so
+    // that's one tile per glyph exactly as before. For the rainbow each character passes its own
+    // colour, drawn from a shared quantised cycle — so the cache holds (glyphs × steps) tiles and
+    // every character reuses them. Both caches drop only when the THEME changes; keying on the
+    // colour would have flushed them on every rainbow step. A size cap keeps a long campaign
+    // (six alphabets' worth of glyphs) from growing without bound.
+    static TILE_CACHE_MAX = 6000;
+    _tileCheck() {
+        if (this._tileTheme !== theme.id) {
+            this._glyphCache.clear(); this._glowCache.clear();
+            this._tileTheme = theme.id;
+        }
+    }
+    _bakeTile(char, colour) {
         const m = this._getMetrics(char);
         const PAD = 4;
         const w = Math.max(1, Math.ceil(m.width) + 2 * PAD);
         const h = Math.max(1, Math.ceil(m.height) + 2 * PAD);
         const cv = document.createElement('canvas');
         cv.width = w; cv.height = h;
-        const g2d = cv.getContext('2d');
         // getPath(char, originX, baselineY, FS): ink center lands at the tile center.
         const path = fontForChar(char).getPath(char, w / 2 - m.inkCX, h / 2 + m.inkCY, this.FONT_SIZE);
-        path.fill = theme.fg;
-        path.draw(g2d);
-        g = { canvas: cv, w, h };
-        this._glyphCache.set(char, g);
+        path.fill = colour;
+        path.draw(cv.getContext('2d'));
+        return { canvas: cv, w, h };
+    }
+    _getGlyph(char, colour = theme.fg) {
+        this._tileCheck();
+        const key = char + '|' + colour;
+        let g = this._glyphCache.get(key);
+        if (g) return g;
+        if (this._glyphCache.size >= GameScreen.TILE_CACHE_MAX) this._glyphCache.clear();
+        g = this._bakeTile(char, colour);
+        this._glyphCache.set(key, g);
         return g;
     }
 
-    // Same tile as _getGlyph but baked in the glow colour (theme.glowHi) — overlaid on the
-    // target during its tap animation. Identical layout/size, so it drops onto the normal tile
-    // with no position shift.
-    _getGlowGlyph(char) {
-        if (this._glowColor !== theme.glowHi) { this._glowCache.clear(); this._glowColor = theme.glowHi; }
-        let g = this._glowCache.get(char);
+    // Same tile as _getGlyph but baked in the glow colour — overlaid on the target during its tap
+    // animation. Identical layout/size, so it drops onto the normal tile with no position shift.
+    _getGlowGlyph(char, colour = theme.glowHi) {
+        this._tileCheck();
+        const key = char + '|' + colour;
+        let g = this._glowCache.get(key);
         if (g) return g;
-        const m = this._getMetrics(char);
-        const PAD = 4;
-        const w = Math.max(1, Math.ceil(m.width) + 2 * PAD);
-        const h = Math.max(1, Math.ceil(m.height) + 2 * PAD);
-        const cv = document.createElement('canvas');
-        cv.width = w; cv.height = h;
-        const path = fontForChar(char).getPath(char, w / 2 - m.inkCX, h / 2 + m.inkCY, this.FONT_SIZE);
-        path.fill = theme.glowHi;
-        path.draw(cv.getContext('2d'));
-        g = { canvas: cv, w, h };
-        this._glowCache.set(char, g);
+        if (this._glowCache.size >= GameScreen.TILE_CACHE_MAX) this._glowCache.clear();
+        g = this._bakeTile(char, colour);
+        this._glowCache.set(key, g);
         return g;
     }
 
@@ -1085,6 +1096,14 @@ export class GameScreen {
             targetAnim = { alpha: 1, glow: 0.35 + 0.45 * osc };
         }
         else if ((showRoundOver || showRoundResult) && !showMatchOver && !glitching && !winnerId) targetAnim = this._roundOverTargetState(now);
+        // Rainbow: every character rides the shared colour cycle from its own random point. The
+        // phases belong to THIS chars array — a new round hands us a new array, and each character
+        // re-rolls. Fixed themes never touch this; they pass theme.fg exactly as before.
+        const cycling = isCycling();
+        if (cycling && this._phaseSrc !== chars) {
+            this._phaseSrc = chars;
+            this._charPhases = chars.map(() => Math.random());
+        }
         for (let i = 0; i < nChars; i++) {
             const j = i * 3;
             const ix = posA[j]     + (posB[j]     - posA[j])     * t;
@@ -1100,11 +1119,12 @@ export class GameScreen {
                 : winnerId ? goAlpha
                 : roundOverlay ? (this.solo && showRoundOver ? SOLO_TIMEUP_CHAR_DIM : ROUND_OVER_CHAR_DIM)
                 : 1;
-            const g = this._getGlyph(ch);
+            const col = cycling ? charColor(this._charPhases[i], now) : theme.fg;
+            const g = this._getGlyph(ch, col);
             ctx.drawImage(g.canvas, -g.w / 2, -g.h / 2);
             if (anim && anim.glow > 0) {                     // glow-colour overlay on the target
                 ctx.globalAlpha = anim.glow;
-                const gg = this._getGlowGlyph(ch);
+                const gg = this._getGlowGlyph(ch, cycling ? charGlow(this._charPhases[i], now) : theme.glowHi);
                 ctx.drawImage(gg.canvas, -gg.w / 2, -gg.h / 2);
             }
         }

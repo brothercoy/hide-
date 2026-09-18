@@ -44,8 +44,17 @@ const BG_PERIOD_MS = 63000;   // one full red→green→blue→red trip (deliber
 // colour that moved every frame would re-rasterise the entire field 60×/s. So the hue is
 // QUANTISED: it only actually changes on a step boundary — ~3×/s instead of 60 — which is a ~2.6°
 // hue move in pastel shades, far too small to see, but 20× less cache churn.
-const RAINBOW_PERIOD_MS = 42000;   // one full trip around the wheel
-const RAINBOW_STEPS = 140;         // ≈2.6° and ~300ms per step
+const RAINBOW_PERIOD_MS = 12000;   // the GLOBAL theme.fg cycle (UI text, until that goes per-char)
+const RAINBOW_STEPS = 140;         // ≈2.6° per step
+
+// The two candidate looks, one-word switch. 'pastel' reads as a coloured hue without shouting;
+// 'saturated' is built like green/orange (one channel full, one empty) — the form the CRT shader
+// preserves intact, where it washes pastels toward white. Evaluate by eye; flip to compare.
+export const RAINBOW_PALETTE = 'pastel';
+const PALETTES = {
+    pastel:    { s: 0.62, l: 0.78, glowS: 0.5, glowL: 0.92 },
+    saturated: { s: 1.0,  l: 0.5,  glowS: 0.6, glowL: 0.85 },
+};
 let cycling = false;
 let lastHueStep = -1;
 
@@ -53,6 +62,7 @@ let lastHueStep = -1;
 // the object sees the change; helpers read it at call time, so the swap is immediate and global.
 export function applyTheme(id) {
     const t = THEMES[id] || THEMES.green;
+    theme.id = THEMES[id] ? id : 'green';   // caches key on THIS, not on fg (rainbow's fg moves)
     theme.fg = t.fg;
     theme.glowHi = t.glowHi;
     theme.bg = t.bg || '#000000';
@@ -91,9 +101,36 @@ export function tickTheme(nowMs = performance.now()) {
     if (step === lastHueStep) return;
     lastHueStep = step;
     const h = step * 360 / RAINBOW_STEPS;
-    theme.fg = hslHex(h, 0.62, 0.78);      // pastel — pale enough to read as "light rainbow"
-    theme.glowHi = hslHex(h, 0.5, 0.92);   // the click-glow's bright end, same hue
+    const p = PALETTES[RAINBOW_PALETTE];
+    theme.fg = hslHex(h, p.s, p.l);
+    theme.glowHi = hslHex(h, p.glowS, p.glowL);
 }
+
+// ── Per-CHARACTER colour (rainbow) ───────────────────────────────────────────
+// ONE shared cycle; each character sits at its own random point on it (phase 0..1) and rides
+// round independently. The cycle is quantised into CHAR_STEPS colours so the field's tile cache
+// is bounded and shared: every character indexes the same CHAR_STEPS tiles per glyph, just at
+// different offsets — so after warm-up, per-character colour costs nothing per frame.
+const CHAR_PERIOD_MS = 4000;   // one trip round the wheel — per character
+const CHAR_STEPS = 60;         // 6° per step; at this speed a character moves a step every ~4 frames
+const _stepFg = [], _stepGlow = [];
+function bakeSteps() {
+    if (_stepFg.length) return;
+    const p = PALETTES[RAINBOW_PALETTE];
+    for (let i = 0; i < CHAR_STEPS; i++) {
+        const h = i * 360 / CHAR_STEPS;
+        _stepFg.push(hslHex(h, p.s, p.l));
+        _stepGlow.push(hslHex(h, p.glowS, p.glowL));
+    }
+}
+export function isCycling() { return cycling; }
+function charStep(phase, nowMs) {
+    const s = Math.floor((nowMs / CHAR_PERIOD_MS + phase) * CHAR_STEPS) % CHAR_STEPS;
+    return s < 0 ? s + CHAR_STEPS : s;
+}
+// The colour a character with this phase shows right now — and its click-glow's bright end.
+export function charColor(phase, nowMs = performance.now()) { bakeSteps(); return _stepFg[charStep(phase, nowMs)]; }
+export function charGlow(phase, nowMs = performance.now()) { bakeSteps(); return _stepGlow[charStep(phase, nowMs)]; }
 
 function rgbOf(hex) {
     const n = parseInt(hex.slice(1), 16);
