@@ -11,6 +11,7 @@ import { makeSlider, drawSlider } from '../ui/Slider.js';
 import { theme, bgAlpha, applyTheme } from '../ui/colors.js';
 import { getPref, setPref } from '../prefs.js';
 import { sfx, applyVolumePrefs, humEnabled, setHumEnabled } from '../audio/sfx.js';
+import { spawnSparkles } from '../ui/Sparkles.js';
 import { themeLocked } from '../solo/rewards.js';
 
 const PREF_THEME = 'theme';
@@ -172,7 +173,7 @@ export class SettingsOverlay {
             // Plain (theme options) fire immediately on release; normal (MAIN MENU) overshoot into the
             // glow and fire onClick at its end (updateButtonZ sets _fireClick) — same as uiManager.
             if (btn.plain) btn.onClick();
-            else { sfx('BTN_CONFIRM'); btn.releasePhase = 'releasing'; btn.glowT = 0; }
+            else { sfx('BTN_CONFIRM'); spawnSparkles(btn.rect); btn.releasePhase = 'releasing'; btn.glowT = 0; }
         }
     }
 

@@ -1,6 +1,7 @@
 import { updateButtonZ, CHAR_ROT_SPEED, CHAR_ROT_MAX } from './Button.js';
 import { charWidth } from './Font.js';
 import { sfx } from '../audio/sfx.js';
+import { spawnSparkles } from './Sparkles.js';
 
 // The input overlays are opacity:1 (so the native selection/context menu shows) but render nothing —
 // this hides the native ::selection highlight too, since we draw our own on the canvas. Injected once.
@@ -233,7 +234,7 @@ export class UIManager {
         el.addEventListener('keydown', e => {
             if (e.key === 'Enter') {
                 const btn = this.buttons.find(b => b.isDefault);
-                if (btn) { sfx('BTN_CONFIRM'); btn.onClick(); }
+                if (btn) { sfx('BTN_CONFIRM'); spawnSparkles(btn.rect); btn.onClick(); }
             }
         });
         el.addEventListener('blur', () => {
@@ -393,8 +394,9 @@ export class UIManager {
                     btn.onClick();
                 } else {
                     // Confirm rings only for buttons that glow — plain/noGlow toggles
-                    // (speed options, vote buttons) keep just their press sound.
-                    if (!btn.noGlow) sfx('BTN_CONFIRM');
+                    // (speed options, vote buttons) keep just their press sound. Sparkles ride
+                    // with the sound (cosmic theme only — the call is a no-op otherwise).
+                    if (!btn.noGlow) { sfx('BTN_CONFIRM'); spawnSparkles(btn.fullRect || btn.rect); }
                     btn.releasePhase = 'releasing';
                     btn.glowT = 0;
                     // Normal buttons fire onClick at the end of the glow cycle.
@@ -541,7 +543,7 @@ export class UIManager {
             this._focusNextInput(-1);
         } else if (e.key === 'Enter') {
             const btn = this.buttons.find(b => b.isDefault);
-            if (btn) { sfx('BTN_CONFIRM'); btn.onClick(); }
+            if (btn) { sfx('BTN_CONFIRM'); spawnSparkles(btn.rect); btn.onClick(); }
         } else if (e.key.length === 1 && !e.ctrlKey && !e.metaKey) {
             if (hasSelection) this._deleteSelection(inp);
             if (inp.value.length < inp.maxLength) {

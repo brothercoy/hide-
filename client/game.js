@@ -28,6 +28,7 @@ import { drawRotateGate } from './ui/RotateGate.js';
 import { GAME_INTRO_MS } from '../timings.js';   // shared: the server holds the first countdown this long
 import { getPref, setPref } from './prefs.js';
 import { unlockAudio, sfx, feedTick, typeTick, tickBurst, duckMusic } from './audio/sfx.js';
+import { spawnSparkles, drawSparkles } from './ui/Sparkles.js';
 import { setMusic, syncMusic, setMusicTension } from './audio/music.js';
 
 // Apply the saved theme before anything paints (default green). `theme` is read live everywhere —
@@ -1822,6 +1823,7 @@ function draw() {
         // incoming screen. The HUD types in via the feed/tail, not pinned here.
         uiManager.offsetY = transition.currentOffsetY();
         transition.render(uiManager.elapsed, () => drawScreenInto(currentScreen));
+        drawSparkles(ctx);   // a burst finishes before a nav transition starts, but never clip one
         return;
     }
 
@@ -1834,6 +1836,8 @@ function draw() {
     if (hudIntroPending) drawHUDIntro(); // hidden until the menu intro reveals, then types in
     if (hudIntroPending) drawModal();    // still typing — just the modal overlay (none here, but safe)
     else drawPersistentHUD();            // full interactive HUD (also draws the modal)
+
+    drawSparkles(ctx);   // confirm sparkles (cosmic theme) over the screen and HUD
 
     // Campaign win sits over EVERYTHING, HUD included — it owns the screen while it runs.
     drawCampaignWin();
@@ -1887,6 +1891,9 @@ canvas.addEventListener('mousedown', (e) => {
             // so the reward pair plays as one gesture regardless of hold length.
             sfx('BTN_PRESS');
             sfx('BTN_CONFIRM', { when: 0.12 });
+            // Sparkles around the found character (the click landed within its hit circle, so
+            // the click point is the character, near enough).
+            spawnSparkles({ x: cx + gameScreen.boxCenterX - 22, y: cy + canvas.height / 2 - 22, w: 44, h: 44 });
             if (soloGame) soloGame.win();        // solo: the client decides the hit (offline)
             else room.send('tap', { nx: hit.nx, ny: hit.ny, time: Date.now() });   // MP: server validates
         } else if (gameScreen.isInPlayField(cx, cy)) {

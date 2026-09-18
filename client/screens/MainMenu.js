@@ -3,6 +3,7 @@ import { charWidth } from '../ui/Font.js';
 import { theme, glow } from '../ui/colors.js';
 import { vScale, bandTop } from '../ui/viewport.js';
 import { sfx, typeTick, feedTick } from '../audio/sfx.js';
+import { spawnSparkles } from '../ui/Sparkles.js';
 
 const FONT_SIZE = 50;         // button label font (SOLO / MULTIPLAYER / SETTINGS)
 const BTN_GAP = 8;           // vertical gap BETWEEN buttons (on top of each button's height)
@@ -310,6 +311,7 @@ export class MainMenu {
             my >= sc.rect.y && my <= sc.rect.y + sc.rect.h) {
             sc.releasePhase = 'releasing';
             sfx('BTN_CONFIRM', { gainMul: 0.12 });   // the char glows — same pair, at easter-egg volume
+            spawnSparkles(sc.rect);
         }
         // released off-char: z drifts back to SPECIAL_Z naturally in _updateSpecialChars
     }
