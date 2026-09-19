@@ -78,6 +78,7 @@ export class GameScreen {
         this._inkCache = new Map();   // measured ink bounds per string at the FRAME font
         this.modeId = 'redacted';     // 'redacted' hides the Round; other modes show it
         this.solo = false;            // single-player campaign: centered box, no player column / room code
+        this.showHearts = true;       // solo only: the lives row (off for the DAILY, which costs none)
         this.soloLabel = '';          // campaign HUD label under the box, e.g. "USA: 1" (set by game.js)
         this.soloGlyphs = '';         // the chapter's alphabet — miss-glitch noise draws from it (set by game.js)
         this.glitchUntil = 0;         // scramble the play field until this timestamp (miss feedback)
@@ -457,7 +458,7 @@ export class GameScreen {
         this._drawFrame(ctx, cx, cy);
 
         // Solo carries the campaign's lives in the same top-right spot as the menu screens.
-        if (this.solo) drawHearts(ctx, this.canvas);
+        if (this.solo && this.showHearts) drawHearts(ctx, this.canvas);
 
         // Multiplayer chrome — room code (top-left) + the player/score list. Solo has neither.
         if (!this.solo) {
@@ -545,7 +546,7 @@ export class GameScreen {
 
         const out = [];
         // Solo: the lives sit above everything else, so they type in first — as on the menu screens.
-        if (this.solo) out.push(heartsRow(this.canvas, this.ctx));
+        if (this.solo && this.showHearts) out.push(heartsRow(this.canvas, this.ctx));
         if (this.roomCode) out.push(row(this.roomCode, BOX_LEFT_MARGIN, bandTop(this.canvas) + ROOMCODE_TOP));
 
         for (let i = 0; i < BOX_ROWS; i++) {

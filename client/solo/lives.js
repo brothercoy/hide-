@@ -60,6 +60,14 @@ function localDay(ms) {
     return d.toISOString().slice(0, 10);
 }
 
+// The player's local calendar day right now, by the SERVER's clock when we have it — the same day
+// boundary the lives refill uses, so the daily level turns over at the same moment. Before the
+// clock has synced (or offline) the device's own day stands in.
+export function localToday() {
+    const t = now();
+    return localDay(t == null ? Date.now() : t);
+}
+
 function load() {
     const s = getPref(KEY, null);
     if (s && typeof s === 'object' && typeof s.lives === 'number') return s;

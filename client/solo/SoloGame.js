@@ -48,6 +48,8 @@ export class SoloGame {
                 level: level.campaign.level, totalLevels: level.campaign.totalLevels,
                 settings: this.settings, charRadii: charRadii || {},
                 rng: sim.seededRng(level.seed),
+                // The DAILY seeds the spawns too, so everyone starts from the identical board.
+                spawnRng: level.spawnSeed ? sim.seededRng(level.spawnSeed) : undefined,
                 // Authored overrides (client/solo/levels.js), if any:
                 forceTarget: level.authored?.target,
                 forceTwin: level.authored?.twin,
@@ -64,6 +66,8 @@ export class SoloGame {
         this.timeLeft = this.settings.roundTime;
         this.phase = 'countdown';          // 'countdown' → 'round' → 'done'
         this.won = false;
+        this.misses = 0;                   // in-field presses that weren't the target (game.js counts them)
+        this.foundIn = null;               // seconds from round start to the find (the daily's score)
         // The countdown is HELD while the game's frame types in (game.js typeGameIn), exactly like
         // the server holding the first multiplayer countdown for the intro: it starts when the feed
         // lands, and draw() passes null until then so the prompt doesn't show early.
@@ -123,6 +127,7 @@ export class SoloGame {
     _finish(won) {
         this.phase = 'done';
         this.won = won;
+        if (won) this.foundIn = this.settings.roundTime - this.timeLeft;
         this._doneAt = Date.now();
         setMusic(null);   // the result screen is silent, win or lose
         // Time's up — the round-open sound dropped low (a power-down). The life is settled NOW,

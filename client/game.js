@@ -13,6 +13,8 @@ import { LEVEL_TARGETS } from './solo/levels.js';
 import { FLAGS } from './solo/flags.js';
 import { hasLives, getLives, loseLife, syncClock, nextRefillText, devSetLives, MAX_LIVES, isInfinite, grantInfinite, devSetInfinite } from './solo/lives.js';
 import { blinkLostHeart } from './solo/Hearts.js';
+import { dailyKey, dailyNumber, dailyConfig, dailyDone, recordDaily, devResetDaily, getDailyResult } from './solo/daily.js';
+import { DailyScreen } from './screens/DailyScreen.js';
 import { CHARSETS } from '../charsets.js';
 import { SoloScreen } from './screens/SoloScreen.js';
 import { ChapterScreen } from './screens/ChapterScreen.js';
@@ -324,7 +326,7 @@ const screens = {};
 const mainMenu = new MainMenu(canvas, ctx, uiManager,
     () => showScreen('solo'),   // SOLO — type in the campaign home screen
     () => showScreen('play'),   // MULTIPLAYER — unchanged behavior
-    () => showScreen('settings'),
+    () => startDaily(),         // DAILY — today's one-attempt level (settings lives on the HUD gear)
     // The @ $ © ! ! secret solved: lives go infinite, and the line types out over the menu.
     () => { grantInfinite(); beginRewardLine('INFINITE LIVES UNLOCKED'); }
 );
@@ -418,9 +420,13 @@ let quickJoinStart = 0;             // when the current search began (to suppres
 const QUICK_JOIN_RETRY_MS = 2500;  // how often to re-check for an available public lobby
 const QUICK_JOIN_GRACE_MS = 250;   // don't paint the LOADING overlay until the search lasts this long
 
+// The daily level's result page: SHARE copies the pasteable result; BACK goes home.
+const dailyScreen = new DailyScreen(canvas, ctx, uiManager, () => showScreen('main'));
+
 screens.main = mainMenu;
 screens.play = playScreen;
 screens.settings = settingsScreen;
+screens.daily = dailyScreen;
 screens.lobby = lobbyScreen;
 screens.solo = soloScreen;
 screens.chapter = chapterScreen;
@@ -1328,6 +1334,25 @@ function soloLevelConfig(c, n, chapterId) {
     };
 }
 
+// DAILY: today's level, the same for everyone, one attempt. The main-menu button is dimmed once
+// the attempt is spent, so this only ever runs on a fresh day.
+function startDaily() {
+    const key = dailyKey();
+    if (dailyDone(key)) return;
+    startSolo(dailyConfig(key), { daily: true, key, name: `DAILY #${dailyNumber(key)}` });
+}
+
+// Wrap up the daily attempt, however it ended, and show the result page.
+function finishDaily(won) {
+    const r = recordDaily({ key: soloIdent.key, won, time: soloGame?.foundIn, misses: soloGame?.misses || 0 });
+    soloIdent = null;
+    soloGame = null;
+    currentMode = null;
+    gameScreen.solo = false;
+    dailyScreen.setResult(r);
+    showScreen('daily');
+}
+
 function startSolo(level = { mode: 'redacted', settings: { charCount: 45, speedScale: 0.2, roundTime: 20 } }, ident = null) {
     soloIdent = ident;               // which campaign level this is (null = ad-hoc launch, no progress)
     if (transition.isActive()) transition.cancelToEnd();
@@ -1337,8 +1362,10 @@ function startSolo(level = { mode: 'redacted', settings: { charCount: 45, speedS
     gameCopyBtn = null;             // solo has no room code → no COPY CODE button
     uiManager.clear();
     gameScreen.solo = true;
-    // The HUD line under the box: "USA: Level 1" (country + 1-based level) instead of Match X/Y.
-    gameScreen.soloLabel = ident?.name ? `${ident.name}: Level ${ident.levelIdx + 1}` : '';
+    gameScreen.showHearts = !ident?.daily;   // the daily costs no lives, so it shows none
+    // The HUD line under the box: "USA: Level 1" (country + 1-based level) instead of Match X/Y;
+    // the daily shows its number.
+    gameScreen.soloLabel = ident?.daily ? ident.name : (ident?.name ? `${ident.name}: Level ${ident.levelIdx + 1}` : '');
     gameScreen.soloGlyphs = level.charset?.glyphs || '';   // miss-glitch scrambles in the chapter's alphabet
     gameScreen.setMode(level.mode);
     gameScreen.setRoomCode('');
@@ -1376,16 +1403,19 @@ if (import.meta.env.DEV) {
         // five characters unlocked, lives still ordinary. dev.infinite(false) revokes the reward.
         secret() { for (const l of [1, 3, 5, 7]) completeLevel('c1', l); markSecretFound('©'); location.reload(); },
         infinite(on = true) { devSetInfinite(on); location.reload(); },
+        // Forget today's daily attempt so it can be played again.
+        daily() { devResetDaily(); location.reload(); },
         // What the game currently thinks — quicker than digging through localStorage.
         state() {
             const p = getPref('campaign.progress', {});
             console.log('lives:', getPref('campaign.lives', null), '| infinite:', isInfinite());
+            console.log('daily:', dailyKey(), '#' + dailyNumber(), '| last result:', getDailyResult());
             console.log('secrets found:', getPref('campaign.secrets', {}));
             console.log('progress:', Object.keys(p).length ? p : '(none — brand new)');
             console.log('saveVersion:', getPref('campaign.saveVersion', null));
         },
     };
-    console.log('dev tools ready: dev.reset() dev.completeAll() dev.upTo(n) dev.lives(n) dev.secret() dev.infinite(on) dev.state()');
+    console.log('dev tools ready: dev.reset() dev.completeAll() dev.upTo(n) dev.lives(n) dev.secret() dev.infinite(on) dev.daily() dev.state()');
 }
 
 // Tear down a solo level and go home. The life (if any) has already been settled by the caller.
@@ -1401,12 +1431,13 @@ function abandonSolo() {
 // hits zero, so the heart it took blinks off over the TIMES UP! banner. Replays are free, and
 // infinite lives spend nothing (no blink either — nothing was lost).
 function soloTimeUp() {
-    if (!soloIdent || soloIdent.wasComplete) return;
+    if (!soloIdent || soloIdent.daily || soloIdent.wasComplete) return;   // the daily costs no life
     const before = getLives();
     if (loseLife() < before) blinkLostHeart(MAX_LIVES - before);   // hearts spend left to right
 }
 
 function endSolo(won) {
+    if (soloIdent?.daily) { finishDaily(won); return; }   // its own result page, no campaign bookkeeping
     // A win is recorded permanently (progress.js) — level gating reads it.
     if (won && soloIdent?.chapterId != null) completeLevel(soloIdent.chapterId, soloIdent.levelIdx);
     const ceremony = won && soloIdent?.ceremony;
@@ -1955,6 +1986,11 @@ function leaveToMainMenu() {
     if (currentScreen === 'main') return;
 
     if (soloGame) {   // offline solo — no room to leave; tear it down and go home
+        // The daily is ONE attempt: walking out spends it (recorded as not found), and we ask.
+        if (soloIdent?.daily) {
+            showConfirm('DAILY ATTEMPT WILL BE LOST. CONTINUE?', () => finishDaily(false));
+            return;
+        }
         // Walking out of a level you haven't beaten forfeits it, exactly like running out of
         // time — so it costs a life, and we ask first. Abandoning a REPLAY costs nothing — nor
         // does anything once lives are infinite.
@@ -2004,6 +2040,7 @@ function drawScreenInto(name) {
     if (name === 'main') mainMenu.draw();
     else if (name === 'play') playScreen.draw();
     else if (name === 'settings') settingsScreen.draw();
+    else if (name === 'daily') dailyScreen.draw();
     else if (name === 'solo') soloScreen.draw();
     else if (name === 'chapter') chapterScreen.draw();
     else if (name === 'lobby') lobbyScreen.draw();
@@ -2142,6 +2179,7 @@ canvas.addEventListener('mousedown', (e) => {
         } else if (gameScreen.isInPlayField(cx, cy)) {
             gameScreen.triggerGlitch();          // missed inside the field — scramble (no penalty)
             sfx('ERROR2');                       // the sour glitter that goes with the scramble
+            if (soloGame) soloGame.misses++;     // the daily's share line counts these
         }
     }
 });

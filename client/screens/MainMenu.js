@@ -6,6 +6,7 @@ import { sfx, holdSfx, typeTick, feedTick } from '../audio/sfx.js';
 import { spawnSparkles } from '../ui/Sparkles.js';
 import { SECRET_CHARS, secretUnlocked } from '../solo/rewards.js';
 import { isInfinite } from '../solo/lives.js';
+import { dailyDone } from '../solo/daily.js';
 
 const FONT_SIZE = 50;         // button label font (SOLO / MULTIPLAYER / SETTINGS)
 const BTN_GAP = 8;           // vertical gap BETWEEN buttons (on top of each button's height)
@@ -85,13 +86,13 @@ function getBtnChars(btn) {
 }
 
 export class MainMenu {
-    constructor(canvas, ctx, uiManager, onSolo, onPlay, onSettings, onSecret) {
+    constructor(canvas, ctx, uiManager, onSolo, onPlay, onDaily, onSecret) {
         this.canvas = canvas;
         this.ctx = ctx;
         this.ui = uiManager;
         this.onSolo = onSolo;
         this.onPlay = onPlay;         // MULTIPLAYER (same behavior as the old PLAY)
-        this.onSettings = onSettings;
+        this.onDaily = onDaily;       // DAILY — took SETTINGS' slot (settings lives on the HUD gear)
         this.onSecret = onSecret;     // all five special chars held down — the reward is game.js's
         this.secretSolved = false;    // re-read on enter: solved → the chars are plain buttons
         this.introStart = null;
@@ -133,10 +134,10 @@ export class MainMenu {
         const { startY, btnSpacing } = this._btnLayout();
         const solo = this.ui.buttons.find(b => b.label === 'SOLO');
         const multi = this.ui.buttons.find(b => b.label === 'MULTIPLAYER');
-        const settings = this.ui.buttons.find(b => b.label === 'SETTINGS');
+        const daily = this.ui.buttons.find(b => b.label === 'DAILY');
         if (solo) { solo.x = cx; solo.y = startY; }
         if (multi) { multi.x = cx; multi.y = startY + btnSpacing; }
-        if (settings) { settings.x = cx; settings.y = startY + 2 * btnSpacing; }
+        if (daily) { daily.x = cx; daily.y = startY + 2 * btnSpacing; }
     }
 
     // opts.typed === true when entered via the typed-scroll transition (returning
@@ -181,7 +182,8 @@ export class MainMenu {
 
         this.ui.buttons.push(makeButton('SOLO', cx, startY, () => this.onSolo(), { blocksInput: true }));
         this.ui.buttons.push(makeButton('MULTIPLAYER', cx, startY + btnSpacing, () => this.onPlay(), { blocksInput: true }));
-        this.ui.buttons.push(makeButton('SETTINGS', cx, startY + 2 * btnSpacing, () => this.onSettings(), { blocksInput: true }));
+        // DAILY dims once today's attempt is spent (re-read on every entry, so it wakes up tomorrow).
+        this.ui.buttons.push(makeButton('DAILY', cx, startY + 2 * btnSpacing, () => this.onDaily(), { blocksInput: true, disabled: dailyDone() }));
 
         if (this.typed) {
             // Steady state from the first frame; the feed already typed it in.
