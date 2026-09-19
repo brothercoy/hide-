@@ -1075,14 +1075,23 @@ function updatePlayAgainState() {
     gameOverBtns.playAgain.disabled = connected <= 1;
 }
 
+let afterFanfare = null;   // the theme's entrance under the winner screen, once the fanfare has rung out
 function showGameOverOverlay(winner) {
     winnerId = winner;
     gameOverStart = performance.now();   // kick off the scripted reveal
     gameOverTicked = 0;                  // reset the winner-typing tick counter
     // Herald trumpets over the scrim fade — every mode ends through here, so DEL and ACK share it.
-    // The music was already cut for 'gameOver', so it rings into silence.
-    sfx('WINNER_FANFARE');
-    setMusic(null);                      // the winner screen is silent, by design not by luck
+    // The music was already cut for 'gameOver', so it rings into silence — and once it has rung
+    // out, the main-menu theme comes in under the winner screen. MAIN MENU then simply carries
+    // that theme on; PLAY AGAIN / RETURN TO LOBBY switch to the lobby's song as they always did.
+    const fanfareS = sfx('WINNER_FANFARE');
+    setMusic(null);
+    const thisGameOver = gameOverStart;
+    clearTimeout(afterFanfare);
+    afterFanfare = setTimeout(() => {
+        // Still on THIS winner screen? (Leaving already chose the next screen's music.)
+        if (winnerId && gameOverStart === thisGameOver) setMusic('THEME2');
+    }, fanfareS * 1000);
     uiManager.clear();
     // Same interaction/look as the lobby's REDACTED/FREQUENCY mode buttons: fire on
     // release, no glow pulse, '*' corners.
