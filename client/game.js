@@ -897,17 +897,18 @@ function drawCampaignWin() {
     ctx.globalAlpha = 1;
 }
 
-// --- Reward line: one typed line over the dimmed screen ("INFINITE LIVES UNLOCKED") ------------
+// --- Reward line: one typed line over the dimmed screen ("INFINITE LIVES UNLOCKED", "NEW THEME
+// UNLOCKED" after chapters 2 and 4) ---------------------------------------------------------------
 // The campaign-win screen's subtitle treatment on its own: after a beat (so whatever triggered it
 // can finish its own glow), everything dims, a cursor blinks at the centre, the line types out at
-// the subtitle size and pace, holds, and fades. Input is blocked for the whole run.
+// the subtitle size and pace, holds, and fades. Input is blocked for the whole run. The MUSIC is
+// left alone — this is a visual note, not a ceremony; only the campaign win ducks, for its fanfare.
 const RL_DELAY_MS = 900;
 let rewardLine = null;     // { text, start, ticked }
 
 function beginRewardLine(text) {
     rewardLine = { text, start: performance.now(), ticked: 0 };
     uiManager.blocked = true;
-    duckMusic(0.18, 0.25);
 }
 // Timeline, in ms from the start (all after the delay).
 function rlTimes(text) {
@@ -922,7 +923,6 @@ function updateRewardLine() {
         rewardLine = null;
         uiManager.blocked = false;
         uiManager.lastTime = performance.now();
-        duckMusic(1, 0.9);
     }
 }
 function drawRewardLine() {
