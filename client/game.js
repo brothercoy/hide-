@@ -555,44 +555,22 @@ function handleCreateRoom(name) {
     playerName = name;
     sessionStorage.setItem('playerName', name); // remember for this browser instance
 
-    // The Play screen stays underneath the LOADING overlay during the async join — on success
-    // showScreen('lobby') scrolls it off; on failure the modal sits over the live screen.
+    // Keep the Play screen intact during the async join — on success showScreen
+    // ('lobby') scrolls it off; on failure the modal sits over the live screen.
     joinGame('create');
 }
 
-// WAITING FOR THE SERVER — shared by CREATE, JOIN and QUICK JOIN. The LOADING overlay (with
-// CANCEL) covers the Play screen while a join is in flight. It matters most on a free host that
-// sleeps when idle: the first request of the day can take up to a minute to answer, and without
-// this the screen just sat there. The overlay only paints after QUICK_JOIN_GRACE_MS, so a join
-// that answers at once never flashes it.
-//
-// `joinToken` guards against a result that arrives AFTER the player pressed CANCEL: every wait
-// (and every cancel) takes a new token, and a result whose token is stale is dropped — a room it
-// landed in is left again immediately.
-let joinToken = 0;
-function beginWaiting() {
-    quickJoinSearching = true;
-    quickJoinStart = performance.now();
-    quickJoinOverlay.reset();
-    uiManager.blocked = true;   // block the Play screen behind the overlay
-    return ++joinToken;
-}
-// The wait ended without a room (failed, or cancelled): drop the overlay and free the screen.
-function stopWaiting() {
-    quickJoinSearching = false;
-    if (quickJoinRetry) { clearTimeout(quickJoinRetry); quickJoinRetry = null; }
-    uiManager.blocked = false;
-    uiManager.lastTime = performance.now();
-}
-
 // QUICK JOIN: matchmake into any available PUBLIC lobby (never create one). If none are available
-// yet, keep the LOADING overlay up and retry until one opens — or the player cancels. A public
+// yet, keep the searching overlay up and retry until one opens — or the player cancels. A public
 // lobby mid-game is still joinable (you land as a spectator).
 function handleQuickJoin(name) {
     if (!name) { showModal('?INVALID NAME'); return; }
     playerName = name;
     sessionStorage.setItem('playerName', name);
-    beginWaiting();
+    quickJoinSearching = true;
+    quickJoinStart = performance.now();
+    quickJoinOverlay.reset();
+    uiManager.blocked = true;   // block the Play screen behind the searching overlay
     quickJoinAttempt();
 }
 
@@ -609,11 +587,12 @@ function quickJoinAttempt() {
     });
 }
 
-// CANCEL on the overlay — for any of the three joins. Stays on the Play screen; anything still in
-// flight is invalidated by the token bump and ignored when it lands.
 function cancelQuickJoin() {
-    joinToken++;
-    stopWaiting();
+    quickJoinSearching = false;
+    if (quickJoinRetry) { clearTimeout(quickJoinRetry); quickJoinRetry = null; }
+    uiManager.blocked = false;
+    uiManager.lastTime = performance.now();
+    // stay on the Play screen
 }
 
 function handleJoinRoom(name, code) {
@@ -678,28 +657,20 @@ window.addEventListener('load', () => {
 
 function joinGame(type, code) {
     const options = { playerName };
-    const token = beginWaiting();
-    const live = () => token === joinToken && quickJoinSearching;   // still the wait the player is watching
-    const landed = (r) => {
-        if (!live()) { r.leave(); return; }   // cancelled while the join was in flight
-        quickJoinSearching = false;           // the lobby's own screen change takes over from here
-        onRoomJoined(r);
-    };
-    const failed = (msg) => { if (!live()) return; stopWaiting(); showModal(msg); };
     if (type === 'create') {
         lobbyScreen.resetToDefault();   // a freshly created room always starts clean (return-to-lobby keeps settings)
-        colyseusClient.create('game_room', options).then(landed).catch(() => failed('?SERVER UNAVAILABLE'));
+        colyseusClient.create('game_room', options).then(onRoomJoined);
     } else {
-        // A code that the server says it doesn't know is INVALID CODE; not reaching the server at
-        // all is a different message, so a friend's real code is never blamed for a dead network.
         fetch('/join/' + code)
             .then(r => r.json())
             .then(data => {
-                if (!live()) return;
-                if (data.roomId) colyseusClient.joinById(data.roomId, options).then(landed).catch(() => failed('?INVALID CODE'));
-                else failed('?INVALID CODE');
+                if (data.roomId) {
+                    colyseusClient.joinById(data.roomId, options).then(onRoomJoined);
+                } else {
+                    showModal('?INVALID CODE');
+                }
             })
-            .catch(() => failed('?SERVER UNAVAILABLE'));
+            .catch(() => showModal('?INVALID CODE'));
     }
 }
 
