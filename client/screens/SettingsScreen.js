@@ -122,11 +122,13 @@ export class SettingsScreen {
         // setting — the selected option is `active` (held inner, no hover), the rest rest outward
         // and are clickable. NOT a toggle: there's always exactly one selected.
         const btnY = L.themeButtonY;
-        const row0 = THEME_OPTIONS.filter(o => !o.row);
+        // The first row is laid out from the themes actually EARNED, centred as a group: GREEN
+        // alone sits at centre, GREEN WHITE straddle it, and the full row spreads as before. An
+        // unearned reward theme isn't built at all — no button means nothing to see and nothing
+        // to click, rather than a dim one hinting at it.
+        const row0 = THEME_OPTIONS.filter(o => !o.row && !themeLocked(o.id));
         const startX = cx - THEME_BTN_SPACING * (row0.length - 1) / 2;
         THEME_OPTIONS.forEach((opt) => {
-            // An unearned reward theme isn't built at all — no button means nothing to see and
-            // nothing to click, rather than a dim one hinting at it.
             if (themeLocked(opt.id)) return;
             const i = row0.indexOf(opt);
             // Row 0 spreads across; a row-1 option sits centered (i.e. under the middle one).
@@ -183,7 +185,7 @@ export class SettingsScreen {
         const cx = this.canvas.width / 2;
         const L = this._layout();
         const btnY = L.themeButtonY;
-        const row0 = THEME_OPTIONS.filter(o => !o.row);
+        const row0 = THEME_OPTIONS.filter(o => !o.row && !themeLocked(o.id));   // the earned ones, centred as a group
         const startX = cx - THEME_BTN_SPACING * (row0.length - 1) / 2;
         this.ui.buttons.forEach(b => {
             if (!b.themeId) return;

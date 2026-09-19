@@ -216,7 +216,8 @@ export class SettingsOverlay {
         const humY = slider1Y + 3 * SLIDER_SPACING;
         const mainMenuY = humY + SLIDER_TO_BTN;
 
-        const row0 = this.themeButtons.filter(b => !b.themeRow);
+        // The first row is the themes actually earned (hidden = unearned), centred as a group.
+        const row0 = this.themeButtons.filter(b => !b.themeRow && !b.hidden);
         const startX = cx - THEME_BTN_SPACING * (row0.length - 1) / 2;
         this.themeButtons.forEach((b) => {
             // Row 0 spreads across; a row-1 option sits centered — i.e. directly under the middle.
