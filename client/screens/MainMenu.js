@@ -6,7 +6,6 @@ import { sfx, holdSfx, typeTick, feedTick } from '../audio/sfx.js';
 import { spawnSparkles } from '../ui/Sparkles.js';
 import { SECRET_CHARS, secretUnlocked } from '../solo/rewards.js';
 import { isInfinite } from '../solo/lives.js';
-import { dailyDone } from '../solo/daily.js';
 
 const FONT_SIZE = 50;         // button label font (SOLO / MULTIPLAYER / SETTINGS)
 const BTN_GAP = 8;           // vertical gap BETWEEN buttons (on top of each button's height)
@@ -182,8 +181,8 @@ export class MainMenu {
 
         this.ui.buttons.push(makeButton('SOLO', cx, startY, () => this.onSolo(), { blocksInput: true }));
         this.ui.buttons.push(makeButton('MULTIPLAYER', cx, startY + btnSpacing, () => this.onPlay(), { blocksInput: true }));
-        // DAILY dims once today's attempt is spent (re-read on every entry, so it wakes up tomorrow).
-        this.ui.buttons.push(makeButton('DAILY', cx, startY + 2 * btnSpacing, () => this.onDaily(), { blocksInput: true, disabled: dailyDone() }));
+        // DAILY: today's level — or, once the attempt is spent, today's result page (to share again).
+        this.ui.buttons.push(makeButton('DAILY', cx, startY + 2 * btnSpacing, () => this.onDaily(), { blocksInput: true }));
 
         if (this.typed) {
             // Steady state from the first frame; the feed already typed it in.

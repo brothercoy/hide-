@@ -1334,11 +1334,11 @@ function soloLevelConfig(c, n, chapterId) {
     };
 }
 
-// DAILY: today's level, the same for everyone, one attempt. The main-menu button is dimmed once
-// the attempt is spent, so this only ever runs on a fresh day.
+// DAILY: today's level, the same for everyone, one attempt. Once the attempt is spent, the button
+// opens today's result page instead, so it can be shared again until the day turns over.
 function startDaily() {
     const key = dailyKey();
-    if (dailyDone(key)) return;
+    if (dailyDone(key)) { dailyScreen.setResult(getDailyResult()); showScreen('daily'); return; }
     startSolo(dailyConfig(key), { daily: true, key, name: `DAILY #${dailyNumber(key)}` });
 }
 

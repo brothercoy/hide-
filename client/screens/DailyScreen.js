@@ -1,6 +1,6 @@
 // The daily level's RESULT page — shown once the day's attempt ends (found, timed out, or walked
-// out of). The number, the day's alphabet, the time and misses, a SHARE button that copies the
-// pasteable result, and BACK to the main menu (where DAILY now sits dimmed until tomorrow).
+// out of), and again whenever DAILY is pressed for the rest of the day. The number, the day's
+// alphabet, the time and misses, a SHARE button that copies the pasteable card, and BACK.
 import { makeButton, drawButton, buttonRows } from '../ui/Button.js';
 import { makeBracketButton, drawBracketButton, bracketButtonRows } from '../ui/BracketButton.js';
 import { textRow } from '../ui/Transition.js';
@@ -18,6 +18,10 @@ const MISSES_Y = 400;       // 2 MISSES
 const SHARE_Y = 540;        // } SHARE {
 const BACK_Y = 660;
 const COPIED_MS = 1500;     // SHARE reads COPIED for this long
+// The link on the shared card. Where the game is served from, unless the build says otherwise —
+// on itch.io the page is served from itch's own iframe address, so the itch build sets
+// VITE_SHARE_URL to the address people should actually open.
+const SHARE_URL = import.meta.env.VITE_SHARE_URL || location.origin;
 
 export class DailyScreen {
     constructor(canvas, ctx, uiManager, onBack) {
@@ -66,7 +70,7 @@ export class DailyScreen {
     // localhost); a hidden textarea + execCommand is the fallback for anything older.
     _share() {
         if (!this.result) return;
-        const text = shareText(this.result, location.origin);
+        const text = shareText(this.result, SHARE_URL);
         const done = () => { this._copiedAt = performance.now(); sfx('BTN_CONFIRM'); };
         const fallback = () => {
             try {

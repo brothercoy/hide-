@@ -8,9 +8,10 @@
 // player starts from the identical board.
 //
 // ONE ATTEMPT: the day's result is recorded whether it was won, lost to the clock, or walked out
-// of, and the DAILY button dims until tomorrow. That is what makes times comparable — nobody can
-// retry until they get a good one.
+// of. Until tomorrow, DAILY on the main menu opens the result page again (to share it) rather
+// than the level. That is what makes times comparable — nobody can retry until they get a good one.
 import { CHARSETS } from '../../charsets.js';
+import { GAME_MODES } from '../../gameModes.js';
 import { FLAGS } from './flags.js';
 import { getPref, setPref } from '../prefs.js';
 import { localToday } from './lives.js';
@@ -19,11 +20,16 @@ const EPOCH = '2026-09-19';          // DAILY #1
 const RESULT_KEY = 'daily.result';   // { key, num, chapter, won, time, misses } — the latest attempt
 const MAX_MARKS = 20;                // the share line shows at most this many misses
 
-// The level's shape. Tuned for a single fresh attempt: a mid-ladder confusion level (so the
-// target has look-alikes but isn't buried), a fuller field than the campaign's opening levels,
-// and one clock for every alphabet.
+// The level's shape: the multiplayer lobby's MAXIMUM character count and its fastest speed, every
+// day (read from the mode config so they can never drift apart), a mid-ladder confusion level (the
+// target has look-alikes but isn't buried), and one clock for every alphabet.
 const DAILY_LADDER = { level: 7, totalLevels: 12 };
-const DAILY_SETTINGS = { charCount: 60, speedScale: 0.25, roundTime: 30 };
+const MP = GAME_MODES.redacted.settingsOptions;   // the lobby's ranges for DEL
+const DAILY_SETTINGS = {
+    charCount: MP.charCount.max,
+    speedScale: Math.max(...MP.speedScale.options),
+    roundTime: 30,
+};
 
 export function dailyKey() { return localToday(); }
 
@@ -70,14 +76,27 @@ export function recordDaily({ key, won, time, misses }) {
     return r;
 }
 
-// The pasteable result — plain text, one glyph per press, on-brand and readable in any chat:
-//   hide DAILY #12 · JAPAN
-//   x x ✓  7.42s
+// The pasteable result — a bordered card in the game's own button style, one glyph per press,
+// then the link on its own line:
+//   +----------------+
+//   | hide DAILY #12 |
+//   | JAPAN          |
+//   | x x ✓  7.42s   |
+//   +----------------+
 //   https://…
+// (The box lines up in any monospace view; a chat that sets messages in a proportional face will
+// wobble the right edge a little — the marks and the time still read.)
 export function shareText(r, origin = '') {
     const marks = 'x '.repeat(Math.min(r.misses, MAX_MARKS)) + (r.misses > MAX_MARKS ? '… ' : '');
-    const line = r.won ? `${marks}✓  ${r.time.toFixed(2)}s` : `${marks}✗  TIMES UP`;
-    return [`hide DAILY #${r.num} · ${r.chapter}`, line, origin].filter(Boolean).join('\n');
+    const lines = [
+        `hide DAILY #${r.num}`,
+        r.chapter,
+        r.won ? `${marks}✓  ${r.time.toFixed(2)}s` : `${marks}✗  TIMES UP`,
+    ];
+    const w = Math.max(...lines.map(l => [...l].length));
+    const rule = `+${'-'.repeat(w + 2)}+`;
+    const pad = (l) => l + ' '.repeat(w - [...l].length);
+    return [rule, ...lines.map(l => `| ${pad(l)} |`), rule, origin].filter(Boolean).join('\n');
 }
 
 // Dev only: forget today's attempt.
