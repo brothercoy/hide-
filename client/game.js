@@ -1128,6 +1128,11 @@ function setupRoomMessages(isReconnecting = false) {
     });
 
     room.onMessage('playerList', (data) => {
+        // Once we've asked to leave, the room's last words aren't ours: the server broadcasts the
+        // roster WITHOUT us a moment before it closes our connection, and acting on it would
+        // rebuild the lobby as a non-host (START GAME gone, everything dimmed) — exactly the frame
+        // the scroll-off then snapshots. Leave the screen as it was.
+        if (leavingRoom) return;
         playerList = data.players;
         const me = data.players.find(p => p.id === room.sessionId);
         isHost = me ? me.isHost : false;
@@ -1143,6 +1148,7 @@ function setupRoomMessages(isReconnecting = false) {
     });
 
     room.onMessage('settingsUpdated', (data) => {
+        if (leavingRoom) return;   // same rule: no repaint of a screen that is scrolling away
         if (isHost) return;
         selectedMode = data.mode;
         selectedSettings = { ...data.settings };
@@ -1151,7 +1157,7 @@ function setupRoomMessages(isReconnecting = false) {
 
     // Public/Private lobby visibility — applied for everyone (idempotent for the host who set it);
     // also carries the current value to a fresh joiner via sendPlayerState.
-    room.onMessage('privacyUpdated', (data) => lobbyScreen.applyRemotePrivacy(data.private));
+    room.onMessage('privacyUpdated', (data) => { if (!leavingRoom) lobbyScreen.applyRemotePrivacy(data.private); });
 
     room.onMessage('gameStarted', (data) => {
         pendingLobbyEntry = false; // going to the game, not the lobby
