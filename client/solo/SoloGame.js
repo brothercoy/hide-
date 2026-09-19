@@ -24,6 +24,7 @@ export class SoloGame {
         this.canvas = canvas;
         this.ctx = ctx;
         this.onEnd = callbacks.onEnd;
+        this.onTimeUp = callbacks.onTimeUp;   // the clock ran out — fires AT the TIMES UP! moment, before the hold
 
         this.gameMode = GAME_MODES[level.mode] || GAME_MODES.redacted;
         this.settings = { ...this.gameMode.defaultSettings, ...(level.settings || {}) };
@@ -123,8 +124,9 @@ export class SoloGame {
         this.won = won;
         this._doneAt = Date.now();
         setMusic(null);   // the result screen is silent, win or lose
-        // Time's up — the round-open sound dropped low (a power-down).
-        if (!won) sfx('ROUND_START', { freqMul: 0.45 });
+        // Time's up — the round-open sound dropped low (a power-down). The life is settled NOW,
+        // so the lost heart can blink off over the banner rather than after it.
+        if (!won) { sfx('ROUND_START', { freqMul: 0.45 }); this.onTimeUp?.(); }
         // Chapter completed — the country's anthem jingle rings out over the banner (and keeps
         // playing across the return to the flag screen); CHAPTER_CLEAR if no anthem exists yet.
         else if (this.isFinal) {

@@ -20,6 +20,27 @@ const FONT = 52;
 const GAP = 1.45;      // heart pitch, in character widths
 const MARGIN_X = 64;   // from the right edge
 const MARGIN_Y = 18;   // from the top of the safe band
+const SPENT_ALPHA = 0.22;
+
+// LOSING A HEART (time up on a level): the heart just spent doesn't simply go dim — it blinks,
+// fading out and back three times, and stays off after the last fade. The store is already
+// updated when this starts (the heart IS spent); the blink is an override on how it draws until
+// it's done, ending exactly on the spent shade so there's no step at the hand-off.
+const BLINK_HALF_MS = 260;   // one fade (out, or back in)
+const BLINK_DIPS = 3;        // fades OUT — with a fade back in between each, so 5 halves in all
+let loss = null;             // { index, at } while a heart is blinking off
+
+export function blinkLostHeart(index) {
+    loss = { index, at: performance.now() };
+}
+// The blinking heart's alpha right now, or null once the blink has finished.
+function blinkAlpha(now) {
+    const phase = (now - loss.at) / BLINK_HALF_MS;
+    if (phase >= 2 * BLINK_DIPS - 1) { loss = null; return null; }
+    const k = phase % 2;
+    const bright = k < 1 ? 1 - k : k - 1;   // 1→0 on even halves, 0→1 on odd
+    return SPENT_ALPHA + (1 - SPENT_ALPHA) * bright;
+}
 
 // Where the row sits and how wide each step is. The y is above every screen's own content, which
 // is also what makes the hearts type in FIRST: the transition feeds rows top-down.
@@ -46,8 +67,10 @@ export function drawHearts(ctx, canvas, n = MAX_LIVES) {
     }
     const lives = getLives();
     const spent = MAX_LIVES - lives;   // the first `spent` hearts are the ones already used
+    const blink = loss ? blinkAlpha(performance.now()) : null;
     for (let i = 0; i < Math.min(n, MAX_LIVES); i++) {
-        ctx.fillStyle = i < spent ? dim(0.22) : theme.fg;
+        ctx.fillStyle = (blink != null && loss && i === loss.index) ? dim(blink)
+            : i < spent ? dim(SPENT_ALPHA) : theme.fg;
         ctx.fillText(HEART, g.left + i * g.step, g.y);
     }
 }

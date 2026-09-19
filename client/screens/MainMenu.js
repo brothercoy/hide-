@@ -31,7 +31,8 @@ const SECRET_LOCKED_GAIN = 0.12; // the locked press's error, at the old easter-
 // only leaving the screen lets them up. All five down at once solves it: they rise and confirm
 // together, and game.js runs the INFINITE LIVES reward. Solved, they're plain buttons.
 const SECRET_CHORD = [1, 1.25, 1.5, 1.875, 2];
-const SECRET_VIB_PX = 2;            // held-char jitter amplitude — a rapid buzz, not a wobble
+const SECRET_VIB_HZ = 16;           // held-char rock rate — side to side, in step with the tone's tremolo
+const SECRET_VIB_RAD = 0.10;        // ...and how far it leans each way (radians)
 const SECRET_CONFIRM_STAGGER = 0.05; // s between each char's confirm when all five release — a ripple, not one loud hit
 const SPECIAL_Z_GLOW    = 1.0;  // overshoot target on release — glow fires here, then returns to SPECIAL_Z
 const SPECIAL_PRESS_SPEED  = 0.005; // z units per ms while held
@@ -504,10 +505,10 @@ export class MainMenu {
             // Single brightened-color draw — identical to the button glow.
             // (The old second-draw overlay is no longer needed now that the glow
             // sits at z = 1.0 / full opacity, same as buttons.)
-            // A held char buzzes: a fresh random offset every frame. The hit-rect stays put.
-            const jx = sc.held ? (Math.random() * 2 - 1) * SECRET_VIB_PX : 0;
-            const jy = sc.held ? (Math.random() * 2 - 1) * SECRET_VIB_PX : 0;
-            drawChar(ctx, sc.char, x + jx, specialY + jy, z, color, SPECIAL_SIZE);
+            // A held char vibrates by ROCKING side to side about its centre — it never leaves its
+            // spot, so the hit-rect is untouched.
+            const rot = sc.held ? Math.sin(performance.now() / 1000 * Math.PI * 2 * SECRET_VIB_HZ) * SECRET_VIB_RAD : 0;
+            drawChar(ctx, sc.char, x, specialY, z, color, SPECIAL_SIZE, rot);
             ctx.font = `${SPECIAL_SIZE}px "IBMVGA"`;
 
             x += charW + SPECIAL_SPACING;

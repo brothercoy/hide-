@@ -302,8 +302,8 @@ export const PATCHES = {
         name: 'SECRET_HOLD', desc: 'Held special char — BTN_PRESS body pitched up, continuous, vibrating (one per chord tone)',
         sustain: true,
         voices: [
-            { wave: 'sine', freq: 240, freqEnd: null, delay: 0, attack: 0.03, decay: 0.2, gain: 0.11, filter: null, lfo: { rate: 16, depth: 0.45 } },
-            { wave: 'square', freq: 240, freqEnd: null, delay: 0, attack: 0.03, decay: 0.2, gain: 0.022, filter: { type: 'lowpass', cutoff: 900, q: 0.7 }, lfo: { rate: 16, depth: 0.45 } },
+            { wave: 'sine', freq: 240, freqEnd: null, delay: 0, attack: 0.03, decay: 0.2, gain: 0.05, filter: null, lfo: { rate: 16, depth: 0.45 } },
+            { wave: 'square', freq: 240, freqEnd: null, delay: 0, attack: 0.03, decay: 0.2, gain: 0.01, filter: { type: 'lowpass', cutoff: 900, q: 0.7 }, lfo: { rate: 16, depth: 0.45 } },
         ],
     },
     HUM: {

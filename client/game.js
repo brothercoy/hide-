@@ -11,7 +11,8 @@ import { completeLevel, isLevelComplete, LEVELS, devCompleteAll, devReset, devUp
 import { isSecretLevel, markSecretFound, SECRET_SFX_GAIN, devResetSecrets } from './solo/rewards.js';
 import { LEVEL_TARGETS } from './solo/levels.js';
 import { FLAGS } from './solo/flags.js';
-import { hasLives, loseLife, syncClock, nextRefillText, devSetLives, MAX_LIVES, isInfinite, grantInfinite, devSetInfinite } from './solo/lives.js';
+import { hasLives, getLives, loseLife, syncClock, nextRefillText, devSetLives, MAX_LIVES, isInfinite, grantInfinite, devSetInfinite } from './solo/lives.js';
+import { blinkLostHeart } from './solo/Hearts.js';
 import { CHARSETS } from '../charsets.js';
 import { SoloScreen } from './screens/SoloScreen.js';
 import { ChapterScreen } from './screens/ChapterScreen.js';
@@ -1310,7 +1311,8 @@ function startSolo(level = { mode: 'redacted', settings: { charCount: 45, speedS
     gameScreen.setMode(level.mode);
     gameScreen.setRoomCode('');
     gameScreen.prewarmGlyphs();
-    soloGame = new SoloGame(canvas, ctx, level, gameScreen.charRadii(level.charset?.glyphs || ''), { onEnd: endSolo });
+    soloGame = new SoloGame(canvas, ctx, level, gameScreen.charRadii((level.charset?.glyphs || '') + (level.authored?.plant || '')),
+        { onEnd: endSolo, onTimeUp: soloTimeUp });
     currentMode = soloGame;         // drawScreenInto('game') → soloGame.draw(gameScreen)
     setMusic(null, { atBar: true }); // the theme finishes its measure; BATTLE starts with the round
     currentScreen = 'game';
@@ -1363,11 +1365,18 @@ function abandonSolo() {
     showScreen('main');
 }
 
+// Ran out of time on a level not yet beaten: that costs a life — settled the moment the clock
+// hits zero, so the heart it took blinks off over the TIMES UP! banner. Replays are free, and
+// infinite lives spend nothing (no blink either — nothing was lost).
+function soloTimeUp() {
+    if (!soloIdent || soloIdent.wasComplete) return;
+    const before = getLives();
+    if (loseLife() < before) blinkLostHeart(MAX_LIVES - before);   // hearts spend left to right
+}
+
 function endSolo(won) {
     // A win is recorded permanently (progress.js) — level gating reads it.
     if (won && soloIdent?.chapterId != null) completeLevel(soloIdent.chapterId, soloIdent.levelIdx);
-    // Ran out of time on a level not yet beaten: that costs a life. Replays are free.
-    if (!won && soloIdent && !soloIdent.wasComplete) loseLife();
     const ceremony = won && soloIdent?.ceremony;
     const clearedChapterId = soloIdent?.chapterId;
     soloIdent = null;
