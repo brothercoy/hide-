@@ -609,11 +609,17 @@ function quickJoinAttempt() {
     });
 }
 
-// CANCEL on the overlay — for any of the three joins. Stays on the Play screen; anything still in
-// flight is invalidated by the token bump and ignored when it lands.
+// CANCEL on the overlay — for any of the three joins, or the boot-time reconnect. Anything still in
+// flight is invalidated by the token bump and ignored when it lands. Joins stay on the Play
+// screen; a wait that needs to go somewhere else on cancel (the reconnect, which has no screen
+// under it yet) sets `onCancelWait`.
+let onCancelWait = null;
 function cancelQuickJoin() {
     joinToken++;
     stopWaiting();
+    const after = onCancelWait;
+    onCancelWait = null;
+    if (after) after();
 }
 
 function handleJoinRoom(name, code) {
@@ -625,15 +631,23 @@ function handleJoinRoom(name, code) {
     joinGame('join', code);
 }
 
+// Boot with a reconnection token: try to resume the room BEFORE showing any screen. The server
+// may be asleep (free host), so this waits under the LOADING overlay rather than on a black
+// screen — with CANCEL as the way out to the main menu, which drops the token like a failure.
 async function tryReconnect() {
     const token = localStorage.getItem('reconnectionToken');
     if (!token) {
         showScreen('main');
         return;
     }
+    const wait = beginWaiting();
+    onCancelWait = () => { localStorage.removeItem('reconnectionToken'); showScreen('main'); };
     try {
-        uiManager.blocked = true;
-        room = await colyseusClient.reconnect(token);
+        const r = await colyseusClient.reconnect(token);
+        if (wait !== joinToken) { r.leave(); return; }   // cancelled: already on the main menu
+        onCancelWait = null;
+        quickJoinSearching = false;   // the lobby's own screen change takes over (input stays blocked until it lands)
+        room = r;
         leavingRoom = false;   // resumed session — listen again
         localStorage.setItem('reconnectionToken', room.reconnectionToken);
         room.onLeave(() => {
@@ -648,9 +662,10 @@ async function tryReconnect() {
         pendingLobbyEntry = true;
         setupRoomMessages(true);
     } catch (e) {
+        if (wait !== joinToken) return;   // cancelled: nothing more to do
+        onCancelWait = null;
+        stopWaiting();
         localStorage.removeItem('reconnectionToken');
-        uiManager.blocked = false;
-        uiManager.lastTime = performance.now();
         showScreen('main');
     }
 }
