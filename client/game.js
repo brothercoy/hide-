@@ -910,6 +910,16 @@ function beginRewardLine(text) {
     rewardLine = { text, start: performance.now(), ticked: 0 };
     uiManager.blocked = true;
 }
+
+// The chapter-clear ceremony's input lock: from the moment the flag screen is asked for until the
+// reveal wave has finished (or, when a theme is granted, until its line has finished typing). The
+// HUD icons bypass uiManager, so the canvas handlers check this too.
+let ceremonyLock = false;
+function endCeremonyLock() {
+    ceremonyLock = false;
+    uiManager.blocked = false;
+    uiManager.lastTime = performance.now();
+}
 // Timeline, in ms from the start (all after the delay).
 function rlTimes(text) {
     const typeStart = RL_DELAY_MS + WIN_FADE_MS + WIN_PRE_MS;
@@ -921,6 +931,7 @@ function updateRewardLine() {
     if (!rewardLine) return;
     if (performance.now() - rewardLine.start >= rlTimes(rewardLine.text).end) {
         rewardLine = null;
+        ceremonyLock = false;   // a theme line is the ceremony's last act
         uiManager.blocked = false;
         uiManager.lastTime = performance.now();
     }
@@ -1411,14 +1422,21 @@ function endSolo(won) {
         // A chapter that hands out a theme (2 → white, 4 → orange) says so once the next flag's
         // reveal has finished: the same typed NEW THEME UNLOCKED line the campaign win uses.
         const newTheme = themeForChapter(clearedChapterId);
-        soloScreen.beginUnlock(clearedChapterId, newTheme ? () => beginRewardLine('NEW THEME UNLOCKED') : null);
+        soloScreen.beginUnlock(clearedChapterId, () => {
+            if (newTheme) beginRewardLine('NEW THEME UNLOCKED');   // keeps the lock; lets go when the line ends
+            else endCeremonyLock();
+        });
         if (campaignDone) beginCampaignWin();
         showScreen('solo', {
             onComplete: () => {
+                if (ceremonyLock) uiManager.blocked = true;   // the transition's landing unblocks; re-assert
                 soloScreen.startUnlock();
                 startCampaignWin();
             },
         });
+        // The ceremony can't be interrupted: no flag can be opened while the screen types in, the
+        // next flag reveals, or the theme line types. (The campaign win holds its own lock.)
+        if (soloScreen.unlock) { ceremonyLock = true; uiManager.blocked = true; }
     } else {
         showScreen('chapter');   // back to the chapter's level page
     }
@@ -2075,7 +2093,7 @@ document.addEventListener('visibilitychange', () => {
 
 canvas.addEventListener('mousedown', (e) => {
     if (gateActive) return;   // portrait rotate gate — ignore input
-    if (campaignWin || rewardLine) return;  // a reward screen owns the screen (HUD icons bypass uiManager)
+    if (campaignWin || rewardLine || ceremonyLock) return;  // a reward screen owns the screen (HUD icons bypass uiManager)
     // Modal OK: the press sound belongs on press-down (the action still fires on
     // click), and while held the brackets hold their pressed state.
     if (modalMessage) {
@@ -2127,7 +2145,7 @@ canvas.addEventListener('mousedown', (e) => {
 
 canvas.addEventListener('mouseup', (e) => {
     if (gateActive) return;   // portrait rotate gate — ignore input
-    if (campaignWin || rewardLine) return;
+    if (campaignWin || rewardLine || ceremonyLock) return;
     modalOk.pressed = modalNo.pressed = false;  // end the hold-preview (the action rides the click)
     const { x, y } = hudEventPos(e);
     if (quickJoinSearching) { quickJoinOverlay.onMouseUp(x, y); return; }
@@ -2138,7 +2156,7 @@ canvas.addEventListener('mouseup', (e) => {
 
 canvas.addEventListener('click', (e) => {
     if (gateActive) return;   // portrait rotate gate — ignore input
-    if (campaignWin || rewardLine) return;
+    if (campaignWin || rewardLine || ceremonyLock) return;
     if (transition.isActive()) return; // ignore clicks mid-transition
 
     const rect = canvas.getBoundingClientRect();
