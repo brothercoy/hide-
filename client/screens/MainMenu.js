@@ -4,7 +4,7 @@ import { theme, glow } from '../ui/colors.js';
 import { vScale, bandTop } from '../ui/viewport.js';
 import { sfx, holdSfx, typeTick, feedTick } from '../audio/sfx.js';
 import { spawnSparkles } from '../ui/Sparkles.js';
-import { SECRET_CHARS, secretUnlocked } from '../solo/rewards.js';
+import { SECRET_CHARS, secretUnlocked, SECRET_SFX_GAIN } from '../solo/rewards.js';
 import { isInfinite } from '../solo/lives.js';
 
 const FONT_SIZE = 50;         // button label font (SOLO / MULTIPLAYER / SETTINGS)
@@ -33,7 +33,8 @@ const SECRET_LOCKED_GAIN = 0.12; // the locked press's error, at the old easter-
 const SECRET_CHORD = [1, 1.25, 1.5, 1.875, 2];
 const SECRET_VIB_HZ = 16;           // held-char rock rate — side to side, in step with the tone's tremolo
 const SECRET_VIB_RAD = 0.10;        // ...and how far it leans each way (radians)
-const SECRET_CONFIRM_STAGGER = 0.05; // s between each char's confirm when all five release — a ripple, not one loud hit
+const SECRET_LEAVE_FADE = 0.9;      // s — the held tones ease out as you leave the screen (not a cut)
+const SECRET_SOLVE_FADE = 2.5;      // s — solved: the full chord (fifth tone included) lingers under the flurry
 const SPECIAL_Z_GLOW    = 1.0;  // overshoot target on release — glow fires here, then returns to SPECIAL_Z
 const SPECIAL_PRESS_SPEED  = 0.005; // z units per ms while held
 const SPECIAL_RETURN_SPEED = 0.005; // z units per ms when returning
@@ -247,29 +248,31 @@ export class MainMenu {
     // special-char listeners come off the canvas — they used to stay attached on every other
     // screen, where a click on a special's old spot could still register a press.
     leave() {
-        this._releaseHeld();
+        this._releaseHeld(SECRET_LEAVE_FADE);
         this.canvas.removeEventListener('mousedown', this._bindSpecialClick);
         this.canvas.removeEventListener('mouseup',   this._bindSpecialRelease);
         this.canvas.removeEventListener('mousemove', this._bindSpecialMove);
     }
 
-    _releaseHeld() {
+    // Let every held char up; their tones fade over `fade` seconds.
+    _releaseHeld(fade = SECRET_LEAVE_FADE) {
         for (const sc of this.specialChars) {
-            if (sc.hold) sc.hold.stop();
+            if (sc.hold) sc.hold.stop(fade);
             sc.hold = null;
             sc.held = false;
         }
     }
 
-    // All five held: they all come up and confirm together — the one time the secret rings the
-    // normal confirm on every char at once — then the reward is the game's to show.
+    // All five held: the fifth tone has just joined the chord, which now lingers and fades slowly
+    // under the solve flurry (CHAPTER_CLEAR slowed, at the same quiet level each character was
+    // found with) while all five rise and glow together. The reward is the game's to show.
     _completeSecret() {
-        this._releaseHeld();
+        this._releaseHeld(SECRET_SOLVE_FADE);
         this.secretSolved = true;
-        this.specialChars.forEach((sc, i) => {
+        sfx('SECRET_SOLVE', { gainMul: SECRET_SFX_GAIN });
+        this.specialChars.forEach(sc => {
             sc.releasePhase = 'releasing';
             sc.glowT = 0;
-            sfx('BTN_CONFIRM', { when: i * SECRET_CONFIRM_STAGGER });
             if (sc.rect) spawnSparkles(sc.rect);
         });
         this.onSecret?.();

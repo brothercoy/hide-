@@ -8,14 +8,16 @@
 // They spend LEFT TO RIGHT: the leftmost heart dims first, so the remaining lives stay bunched at
 // the right-hand end.
 //
-// INFINITE LIVES (the main menu's secret solved): the three hearts are replaced by a single ∞,
-// right-aligned where the last heart sat.
+// INFINITE LIVES (the main menu's secret solved): the three hearts are replaced by a single
+// infinity sign, right-aligned where the last heart sat. The font's own ∞ glyph is a poor thing
+// at this size, so it's an 8 turned on its side — rotated about its INK centre so it sits
+// exactly where a glyph would.
 import { theme, dim } from '../ui/colors.js';
 import { bandTop } from '../ui/viewport.js';
 import { getLives, MAX_LIVES, isInfinite } from './lives.js';
 
 const HEART = '♥';
-const INFINITY = '∞';
+const INFINITY = '8';   // drawn sideways
 const FONT = 52;
 const GAP = 1.45;      // heart pitch, in character widths
 const MARGIN_X = 64;   // from the right edge
@@ -26,7 +28,7 @@ const SPENT_ALPHA = 0.22;
 // fading out and back three times, and stays off after the last fade. The store is already
 // updated when this starts (the heart IS spent); the blink is an override on how it draws until
 // it's done, ending exactly on the spent shade so there's no step at the hand-off.
-const BLINK_HALF_MS = 260;   // one fade (out, or back in)
+const BLINK_HALF_MS = 420;   // one fade (out, or back in) — the TIMES UP! banner holds long enough for all five
 const BLINK_DIPS = 3;        // fades OUT — with a fade back in between each, so 5 halves in all
 let loss = null;             // { index, at } while a heart is blinking off
 
@@ -62,7 +64,7 @@ export function drawHearts(ctx, canvas, n = MAX_LIVES) {
     ctx.textBaseline = 'top';
     ctx.globalAlpha = 1;
     if (isInfinite()) {
-        if (n > 0) { ctx.fillStyle = theme.fg; ctx.fillText(INFINITY, g.left, g.y); }
+        if (n > 0) drawSideways8(ctx, g.left, g.y);
         return;
     }
     const lives = getLives();
@@ -73,6 +75,25 @@ export function drawHearts(ctx, canvas, n = MAX_LIVES) {
             : i < spent ? dim(SPENT_ALPHA) : theme.fg;
         ctx.fillText(HEART, g.left + i * g.step, g.y);
     }
+}
+
+// The infinity sign: an 8 turned 90° about the centre of its own ink, so the turn doesn't shove it
+// off the spot the cell gives it. Its ink box comes from the canvas's own measurement (with
+// textBaseline 'top' the ascent is measured from the cell's top edge); if a context can't
+// measure ink, it turns about the cell centre instead.
+function drawSideways8(ctx, left, y) {
+    const m = ctx.measureText(INFINITY);
+    const cw = m.width;
+    const inkCX = left + (Number.isFinite(m.actualBoundingBoxRight) && Number.isFinite(m.actualBoundingBoxLeft)
+        ? (m.actualBoundingBoxRight - m.actualBoundingBoxLeft) / 2 : cw / 2);
+    const inkCY = y + (Number.isFinite(m.actualBoundingBoxDescent) && Number.isFinite(m.actualBoundingBoxAscent)
+        ? (m.actualBoundingBoxDescent - m.actualBoundingBoxAscent) / 2 : FONT / 2);
+    ctx.save();
+    ctx.translate(inkCX, inkCY);
+    ctx.rotate(Math.PI / 2);
+    ctx.fillStyle = theme.fg;
+    ctx.fillText(INFINITY, left - inkCX, y - inkCY);
+    ctx.restore();
 }
 
 // One typeable row for the screen-transition feed — the hearts appear one at a time like any other

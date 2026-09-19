@@ -205,16 +205,18 @@ export function startSustain(patch, fadeOut = 0.4, bus = undefined, mods = {}) {
     const handles = patch.voices.map(v => buildVoice(v, t0, true, m));
     let stopped = false;
     return {
-        stop() {
+        // Fade out over `fade` seconds (default: the fadeOut it was started with) — so one held
+        // sound can bow out quickly in one situation and linger in another.
+        stop(fade = fadeOut) {
             if (stopped) return;
             stopped = true;
             const t = ctx.currentTime;
             for (const h of handles) {
                 h.env.gain.cancelScheduledValues(t);
                 h.env.gain.setValueAtTime(h.env.gain.value, t);
-                h.env.gain.exponentialRampToValueAtTime(EPS, t + fadeOut);
-                h.src.stop(t + fadeOut + 0.05);
-                if (h.lfo) h.lfo.stop(t + fadeOut + 0.05);
+                h.env.gain.exponentialRampToValueAtTime(EPS, t + fade);
+                h.src.stop(t + fade + 0.05);
+                if (h.lfo) h.lfo.stop(t + fade + 0.05);
             }
         },
     };

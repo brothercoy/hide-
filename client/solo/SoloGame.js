@@ -13,7 +13,8 @@ import { theme } from '../ui/colors.js';
 import { sfx, tickBurst } from '../audio/sfx.js';
 import { setMusic, playJingle } from '../audio/music.js';
 
-const RESULT_MS = 1600;      // hold the COMPLETE / TIME UP banner before returning to the menu
+const RESULT_MS = 1600;      // hold the COMPLETE! banner before returning to the menu
+const RESULT_LOSS_MS = 2400; // TIMES UP! holds longer — the lost heart blinks off over it (Hearts.js, ~2.1s)
 const RESULT_FONT = 104;
 import { SECRET_SFX_GAIN as SECRET_GAIN } from './rewards.js';   // the quiet CHAPTER_CLEAR of a secret
 
@@ -113,7 +114,7 @@ export class SoloGame {
             if (this.timeLeft <= 0) { this.timeLeft = 0; this._finish(false); }
             return;
         }
-        if (this.phase === 'done' && !this._ended && now - this._doneAt >= RESULT_MS) {
+        if (this.phase === 'done' && !this._ended && now - this._doneAt >= (this.won ? RESULT_MS : RESULT_LOSS_MS)) {
             this._ended = true;
             this.onEnd(this.won);
         }

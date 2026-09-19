@@ -306,6 +306,31 @@ export const PATCHES = {
             { wave: 'square', freq: 240, freqEnd: null, delay: 0, attack: 0.03, decay: 0.2, gain: 0.01, filter: { type: 'lowpass', cutoff: 900, q: 0.7 }, lfo: { rate: 16, depth: 0.45 } },
         ],
     },
+    // The secret SOLVED (all five held): CHAPTER_CLEAR — the sound each character was found
+    // with — slowed to a harp flurry. Same voices, the arpeggio and glitter spread ~1.8× wider
+    // in time and ringing a little longer, with the four chord tones swelling instead of flat —
+    // a crescendo rather than a hit. Plays over the held chord as it fades.
+    SECRET_SOLVE: {
+        name: 'SECRET_SOLVE', desc: 'Secret solved — CHAPTER_CLEAR slowed to a harp flurry: wider arpeggio, swelling, longer glitter',
+        voices: [
+            { wave: 'noise', freq: 440, freqEnd: null, delay: 0, attack: 0.001, decay: 0.02, gain: 0.25, filter: { type: 'bandpass', cutoff: 2800, q: 1.2 } },
+            { wave: 'sine', freq: 45, freqEnd: 150, delay: 0, attack: 0.003, decay: 0.09, gain: 0.45, filter: null },
+            // Rising arpeggio C5 E5 G5 C6 — slower, swelling
+            { wave: 'triangle', freq: 523, freqEnd: null, delay: 0.09, attack: 0.006, decay: 0.55, gain: 0.08, filter: null },
+            { wave: 'triangle', freq: 659, freqEnd: null, delay: 0.34, attack: 0.006, decay: 0.55, gain: 0.10, filter: null },
+            { wave: 'triangle', freq: 784, freqEnd: null, delay: 0.59, attack: 0.006, decay: 0.6, gain: 0.12, filter: null },
+            { wave: 'triangle', freq: 1046, freqEnd: null, delay: 0.85, attack: 0.006, decay: 1.2, gain: 0.14, filter: null },
+            { wave: 'square', freq: 2093, freqEnd: null, delay: 0.85, attack: 0.005, decay: 0.45, gain: 0.022, filter: { type: 'bandpass', cutoff: 2100, q: 6 } },
+            // Harmonic glitter climbing away, spaced out
+            { wave: 'noise', freq: 440, freqEnd: null, delay: 1.12, attack: 0.001, decay: 0.03, gain: 0.04, filter: { type: 'bandpass', cutoff: 5200, q: 6 } },
+            { wave: 'square', freq: 1319, freqEnd: null, delay: 1.12, attack: 0.003, decay: 0.26, gain: 0.03, filter: { type: 'bandpass', cutoff: 1300, q: 8 } },
+            { wave: 'noise', freq: 440, freqEnd: null, delay: 1.30, attack: 0.001, decay: 0.03, gain: 0.035, filter: { type: 'bandpass', cutoff: 7400, q: 6 } },
+            { wave: 'square', freq: 1568, freqEnd: null, delay: 1.30, attack: 0.003, decay: 0.26, gain: 0.026, filter: { type: 'bandpass', cutoff: 1600, q: 8 } },
+            { wave: 'noise', freq: 440, freqEnd: null, delay: 1.48, attack: 0.001, decay: 0.025, gain: 0.03, filter: { type: 'bandpass', cutoff: 9500, q: 6 } },
+            { wave: 'square', freq: 2093, freqEnd: null, delay: 1.48, attack: 0.003, decay: 0.24, gain: 0.022, filter: { type: 'bandpass', cutoff: 2100, q: 8 } },
+            { wave: 'square', freq: 2637, freqEnd: null, delay: 1.71, attack: 0.005, decay: 0.3, gain: 0.014, filter: { type: 'bandpass', cutoff: 2600, q: 8 } },
+        ],
+    },
     HUM: {
         name: 'HUM', desc: 'Idle transformer hum bed — 120 Hz + harmonics, continuous',
         sustain: true,
