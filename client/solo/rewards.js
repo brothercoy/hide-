@@ -17,14 +17,19 @@ export function campaignComplete() {
 // listed is always available. The settings screens list themes in this unlock order.
 const chapterBeaten = (id) => isLevelComplete(id, LEVELS - 1);
 const REWARD_THEMES = {
-    white:  () => chapterBeaten('c2'),   // GREECE
-    orange: () => chapterBeaten('c4'),   // JAPAN
-    cosmic: campaignComplete,            // the whole campaign
+    white:  { chapter: 'c2', earned: () => chapterBeaten('c2') },   // GREECE
+    orange: { chapter: 'c4', earned: () => chapterBeaten('c4') },   // JAPAN
+    cosmic: { chapter: null, earned: campaignComplete },           // the whole campaign (the win screen announces it)
 };
 
 export function themeLocked(id) {
-    const earned = REWARD_THEMES[id];
-    return !!earned && !earned();
+    const r = REWARD_THEMES[id];
+    return !!r && !r.earned();
+}
+
+// The theme a chapter's clear hands out, or null — so the clear ceremony can say so.
+export function themeForChapter(chapterId) {
+    return Object.keys(REWARD_THEMES).find(id => REWARD_THEMES[id].chapter === chapterId) || null;
 }
 
 // ── The main menu's @ $ © ! ! row — the INFINITE LIVES secret ────────────────

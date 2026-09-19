@@ -27,11 +27,12 @@ export class SoloScreen {
 
     // Arm the unlock ceremony for the chapter AFTER `afterChapterId` — call BEFORE showScreen('solo').
     // The flag types in still-locked ('?'); startUnlock() (fired once the screen transition has
-    // fully landed) then runs the reveal wave — see _drawUnlockAnim.
-    beginUnlock(afterChapterId) {
+    // fully landed) then runs the reveal wave — see _drawUnlockAnim. `onDone` (optional) fires the
+    // moment the wave has run off and the flag is whole — what follows the reveal hangs off it.
+    beginUnlock(afterChapterId, onDone = null) {
         const idx = FLAGS.findIndex(f => f.id === afterChapterId) + 1;
         this.unlock = (idx > 0 && idx < FLAGS.length && FLAGS[idx].art)
-            ? { idx, start: null, ticked: 0, done: false, consumed: false, tick: -1, scr: null }
+            ? { idx, start: null, ticked: 0, done: false, consumed: false, tick: -1, scr: null, onDone }
             : null;
     }
 
@@ -224,6 +225,7 @@ export class SoloScreen {
             const btn = makeButton('', 0, 0, () => this.onSelectChapter(FLAGS[i], i), { blocksInput: true });
             this.flagButtons[i] = btn;
             this.ui.buttons.push(btn);
+            u.onDone?.();
         }
     }
 

@@ -8,7 +8,7 @@ import { SettingsOverlay } from './screens/SettingsOverlay.js';
 import { QuickJoinOverlay } from './screens/QuickJoinOverlay.js';
 import { SoloGame } from './solo/SoloGame.js';
 import { completeLevel, isLevelComplete, LEVELS, devCompleteAll, devReset, devUpTo } from './solo/progress.js';
-import { isSecretLevel, markSecretFound, SECRET_SFX_GAIN, devResetSecrets, themeLocked } from './solo/rewards.js';
+import { isSecretLevel, markSecretFound, SECRET_SFX_GAIN, devResetSecrets, themeLocked, themeForChapter } from './solo/rewards.js';
 import { LEVEL_TARGETS } from './solo/levels.js';
 import { FLAGS } from './solo/flags.js';
 import { hasLives, getLives, loseLife, syncClock, nextRefillText, devSetLives, MAX_LIVES, isInfinite, grantInfinite, devSetInfinite } from './solo/lives.js';
@@ -1399,7 +1399,10 @@ function endSolo(won) {
         // page; once its type-in lands, the next chapter's flag plays its unlock reveal — or,
         // if that was the LAST level of the LAST chapter, the campaign-win screen.
         const campaignDone = FLAGS.every(f => !f.art || isLevelComplete(f.id, LEVELS - 1));
-        soloScreen.beginUnlock(clearedChapterId);
+        // A chapter that hands out a theme (2 → white, 4 → orange) says so once the next flag's
+        // reveal has finished: the same typed NEW THEME UNLOCKED line the campaign win uses.
+        const newTheme = themeForChapter(clearedChapterId);
+        soloScreen.beginUnlock(clearedChapterId, newTheme ? () => beginRewardLine('NEW THEME UNLOCKED') : null);
         if (campaignDone) beginCampaignWin();
         showScreen('solo', {
             onComplete: () => {
