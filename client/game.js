@@ -816,6 +816,7 @@ function updateCampaignWin() {
     while (campaignWin.enters < entersDue) { campaignWin.enters++; typeTick(); }
     if (t >= WIN_SUB_END + WIN_HOLD_MS + WIN_FADE_MS) {
         campaignWin = null;
+        ceremonyLock = false;      // the win screen is the last chapter's whole ceremony
         uiManager.blocked = false;
         uiManager.lastTime = performance.now();
         duckMusic(1, 0.9);         // …and let the music swell back as the screen clears
@@ -1435,8 +1436,10 @@ function endSolo(won) {
             },
         });
         // The ceremony can't be interrupted: no flag can be opened while the screen types in, the
-        // next flag reveals, or the theme line types. (The campaign win holds its own lock.)
-        if (soloScreen.unlock) { ceremonyLock = true; uiManager.blocked = true; }
+        // next flag reveals, or the theme line types — or, for the last chapter, while the win
+        // screen waits to start and runs (it releases the lock when it ends). showScreen's typed
+        // path re-enables input for the type-in, hence set AFTER it.
+        if (soloScreen.unlock || campaignWin) { ceremonyLock = true; uiManager.blocked = true; }
     } else {
         showScreen('chapter');   // back to the chapter's level page
     }
