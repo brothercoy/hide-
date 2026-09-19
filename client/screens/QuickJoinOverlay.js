@@ -1,7 +1,9 @@
-// Quick-join "searching" overlay — dims the screen while we wait for an available public lobby to
-// join. Shows LOADING with a typewriter dot cycle (LOADING → LOADING... → back) and a blinking
-// cursor at the end, plus a { CANCEL } bracket button. uiManager is blocked behind it, so the
-// overlay drives the CANCEL button's input itself (same pattern as SettingsOverlay).
+// The "waiting for the server" overlay — dims the screen while a join is in flight: QUICK JOIN
+// searching for a public lobby, CREATE waiting for the room, or JOIN looking a code up. (Named for
+// quick join, which had it first.) Shows LOADING with a typewriter dot cycle (LOADING →
+// LOADING... → back) and a blinking cursor at the end, plus a { CANCEL } bracket button.
+// uiManager is blocked behind it, so the overlay drives the CANCEL button's input itself (same
+// pattern as SettingsOverlay).
 import { makeBracketButton, drawBracketButton } from '../ui/BracketButton.js';
 import { theme, bgAlpha } from '../ui/colors.js';
 import { sfx } from '../audio/sfx.js';
