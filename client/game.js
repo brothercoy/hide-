@@ -13,8 +13,7 @@ import { LEVEL_TARGETS } from './solo/levels.js';
 import { FLAGS } from './solo/flags.js';
 import { hasLives, getLives, loseLife, syncClock, nextRefillText, devSetLives, MAX_LIVES, isInfinite, grantInfinite, devSetInfinite } from './solo/lives.js';
 import { blinkLostHeart } from './solo/Hearts.js';
-import { dailyKey, dailyNumber, dailyConfig, dailyDone, recordDaily, devResetDaily, getDailyResult } from './solo/daily.js';
-import { DailyScreen } from './screens/DailyScreen.js';
+import { dailyKey, dailyNumber, dailyConfig, dailyDone, recordDaily, devResetDaily, getDailyResult, copyShare } from './solo/daily.js';
 import { CHARSETS } from '../charsets.js';
 import { SoloScreen } from './screens/SoloScreen.js';
 import { ChapterScreen } from './screens/ChapterScreen.js';
@@ -420,13 +419,9 @@ let quickJoinStart = 0;             // when the current search began (to suppres
 const QUICK_JOIN_RETRY_MS = 2500;  // how often to re-check for an available public lobby
 const QUICK_JOIN_GRACE_MS = 250;   // don't paint the LOADING overlay until the search lasts this long
 
-// The daily level's result page: SHARE copies the pasteable result; BACK goes home.
-const dailyScreen = new DailyScreen(canvas, ctx, uiManager, () => showScreen('main'));
-
 screens.main = mainMenu;
 screens.play = playScreen;
 screens.settings = settingsScreen;
-screens.daily = dailyScreen;
 screens.lobby = lobbyScreen;
 screens.solo = soloScreen;
 screens.chapter = chapterScreen;
@@ -1335,22 +1330,50 @@ function soloLevelConfig(c, n, chapterId) {
 }
 
 // DAILY: today's level, the same for everyone, one attempt. Once the attempt is spent, the button
-// opens today's result page instead, so it can be shared again until the day turns over.
+// shows today's result again (SHARE / BACK) until the day turns over.
 function startDaily() {
     const key = dailyKey();
-    if (dailyDone(key)) { dailyScreen.setResult(getDailyResult()); showScreen('daily'); return; }
+    if (dailyDone(key)) { showDailyResult(getDailyResult(), 'BACK', null); return; }
     startSolo(dailyConfig(key), { daily: true, key, name: `DAILY #${dailyNumber(key)}` });
 }
 
-// Wrap up the daily attempt, however it ended, and show the result page.
+// Wrap up the daily attempt, however it ended: record it and put the result up over the game's
+// own ending (COMPLETE! / TIMES UP!). CONTINUE tears the level down and goes home.
 function finishDaily(won) {
+    soloGame?.forfeit();   // a walk-out ends the level now (a natural ending is already 'done')
     const r = recordDaily({ key: soloIdent.key, won, time: soloGame?.foundIn, misses: soloGame?.misses || 0 });
-    soloIdent = null;
-    soloGame = null;
-    currentMode = null;
-    gameScreen.solo = false;
-    dailyScreen.setResult(r);
-    showScreen('daily');
+    showDailyResult(r, 'CONTINUE', () => {
+        soloIdent = null;
+        soloGame = null;
+        currentMode = null;
+        gameScreen.solo = false;
+        showScreen('main');
+    });
+}
+
+// The link on the shared card. hide-ascii.com is the game's home; a build can point elsewhere.
+const SHARE_URL = import.meta.env.VITE_SHARE_URL || 'https://hide-ascii.com';
+const COPIED_MS = 1500;   // SHARE reads COPIED for this long
+
+// The daily's result, as a modal: the ASCII box with the number, alphabet, time and misses, and
+// SHARE beside CONTINUE (after the level) or BACK (from the menu). SHARE copies the card and
+// keeps the box up, flipping to COPIED for a moment; the other button closes it.
+function showDailyResult(r, closeLabel, onClose) {
+    const misses = `${r.misses} ${r.misses === 1 ? 'MISS' : 'MISSES'}`;
+    const lines = [
+        `DAILY #${r.num} · ${r.chapter}`,
+        r.won ? `FOUND IN ${r.time.toFixed(2)}S · ${misses}` : `TIMES UP · ${misses}`,
+    ];
+    const share = () => {
+        const mine = modalChoice;
+        copyShare(r, SHARE_URL).then(ok => {
+            if (!ok || modalChoice !== mine) return;
+            sfx('BTN_CONFIRM');
+            mine.yesLabel = 'COPIED';
+            setTimeout(() => { if (modalChoice === mine) mine.yesLabel = 'SHARE'; }, COPIED_MS);
+        });
+    };
+    showConfirm(lines, share, onClose, { yesLabel: 'SHARE', noLabel: closeLabel, yesKeepsOpen: true, sound: null });
 }
 
 function startSolo(level = { mode: 'redacted', settings: { charCount: 45, speedScale: 0.2, roundTime: 20 } }, ident = null) {
@@ -1533,11 +1556,18 @@ function showModal(message) {
     resetModalButtons();
 }
 
-// A question with two answers. `onYes` runs on confirm; dismissing (NO) just closes it.
-function showConfirm(message, onYes, onNo) {
-    sfx('ERROR');
+// A question with two answers. `onYes` runs on confirm; dismissing (NO) just closes it. `message`
+// may be a string or an array of lines. Options: the two labels (YES / NO by default);
+// `yesKeepsOpen` makes the first button act WITHOUT closing the box (the daily's SHARE); `sound`
+// is the opening sound (the ERROR buzz by default; null for none).
+function showConfirm(message, onYes, onNo, opts = {}) {
+    if (opts.sound !== null) sfx(opts.sound || 'ERROR');
     modalMessage = message;
-    modalChoice = { yes: onYes || (() => {}), no: onNo || (() => {}) };
+    modalChoice = {
+        yes: onYes || (() => {}), no: onNo || (() => {}),
+        yesLabel: opts.yesLabel || 'YES', noLabel: opts.noLabel || 'NO',
+        keepOpen: !!opts.yesKeepsOpen,
+    };
     uiManager.blocked = true;
     uiManager.buttons.forEach(btn => btn.hoverProgress = 0);
     resetModalButtons();
@@ -1575,7 +1605,7 @@ function updateModal(dt) {
 // confirm whose brackets snap inward on hover.
 function drawModal() {
     if (!modalMessage) return;
-    const msg = modalMessage.toUpperCase();
+    const lines = (Array.isArray(modalMessage) ? modalMessage : [modalMessage]).map(s => String(s).toUpperCase());
 
     ctx.fillStyle = bgAlpha(0.8);
     ctx.fillRect(0, 0, canvas.width, canvas.height);
@@ -1586,47 +1616,54 @@ function drawModal() {
     const lh = MODAL_FONT;
     const cx = canvas.width / 2;
 
-    // A YES/NO pair is wider than the message on a short question, so the box has to fit both.
-    const btnChars = modalChoice ? Math.ceil((4 * (MODAL_OK_REST + cw) + 2 * cw) / cw) : 0;
-    const innerChars = Math.max(msg.length, btnChars) + MODAL_PAD_X * 2; // dashes between the corners
+    // Each bracket button's half-width: the rest spread, or wider for a long label (CONTINUE) so
+    // the brackets never sit on the letters.
+    const restOf = (label) => Math.max(MODAL_OK_REST, ctx.measureText(label).width / 2 + cw * 0.75);
+    const yesLabel = modalChoice ? modalChoice.yesLabel : 'OK';
+    const noLabel = modalChoice ? modalChoice.noLabel : '';
+    const reachYes = restOf(yesLabel) + cw, reachNo = modalChoice ? restOf(noLabel) + cw : 0;
+    // A button pair is wider than the message on a short question, so the box has to fit both.
+    const btnChars = Math.ceil((modalChoice ? 2 * reachYes + 2 * reachNo + cw : 2 * reachYes) / cw);
+    const msgChars = Math.max(...lines.map(l => [...l].length));
+    const innerChars = Math.max(msgChars, btnChars) + MODAL_PAD_X * 2; // dashes between the corners
     const boxChars = innerChars + 2;                 // incl. '+' corners
     const boxLeft = cx - (boxChars * cw) / 2;
 
-    const rows = 7; // top, pad, message, pad, ok, pad, bottom
+    const rows = 6 + lines.length; // top, pad, message lines, pad, buttons, pad, bottom
     const boxTop = canvas.height / 2 - (rows * lh) / 2;
     const top = MODAL_BORDER_C + MODAL_BORDER_H.repeat(innerChars) + MODAL_BORDER_C;
     const mid = MODAL_BORDER_L + ' '.repeat(innerChars) + MODAL_BORDER_R;
 
     ctx.fillStyle = theme.fg;
     ctx.textAlign = 'left';
-    const frame = [top, mid, mid, mid, mid, mid, top];
+    const frame = [top, ...Array(rows - 2).fill(mid), top];
     for (let i = 0; i < frame.length; i++) ctx.fillText(frame[i], boxLeft, boxTop + i * lh);
 
-    // Message (row 2), centered
+    // Message (from row 2), centered, one row per line
     ctx.textAlign = 'center';
-    ctx.fillText(msg, cx, boxTop + 2 * lh);
+    lines.forEach((l, i) => ctx.fillText(l, cx, boxTop + (2 + i) * lh));
 
-    // Buttons (row 4) — brackets face OUTWARD at rest ( { OK } ); on hover they swap
-    // to inward ( } OK { ) and flash tight→spread. A confirm shows YES and NO side by side,
-    // a plain message a single centred OK.
-    const okY = boxTop + 4 * lh;
-    const reach = MODAL_OK_REST + cw;
+    // Buttons (two rows under the message) — brackets face OUTWARD at rest ( { OK } ); on hover
+    // they swap to inward ( } OK { ) and flash tight→spread. A confirm shows its two labels side
+    // by side, a plain message a single centred OK.
+    const okY = boxTop + (3 + lines.length) * lh;
     // Held down: brackets hold the pressed state (inward, snapped tight, steady) —
     // same hold-preview as every bracket control.
     const drawBtn = (label, bx, b) => {
         const held = b.pressed;
-        const gap = MODAL_OK_REST - (held ? MODAL_OK_SNAP_STEP : b.snap);
+        const rest = restOf(label);
+        const gap = rest - (held ? MODAL_OK_SNAP_STEP : b.snap);
         ctx.fillText(label, bx, okY);
         ctx.fillText(held || b.over ? '}' : '{', bx - gap, okY);
         ctx.fillText(held || b.over ? '{' : '}', bx + gap, okY);
         // Hit rect uses the REST spread (widest extent) so hovering doesn't shrink it
         // and flicker the hover state.
+        const reach = rest + cw;
         b.rect = { x: bx - reach, y: okY, w: reach * 2, h: lh };
     };
     if (modalChoice) {
-        const half = reach + cw;
-        drawBtn('YES', cx - half, modalOk);
-        drawBtn('NO', cx + half, modalNo);
+        drawBtn(yesLabel, cx - (reachYes + cw / 2), modalOk);
+        drawBtn(noLabel, cx + (reachNo + cw / 2), modalNo);
     } else {
         drawBtn('OK', cx, modalOk);
         modalNo.rect = null;
@@ -1987,6 +2024,7 @@ function leaveToMainMenu() {
 
     if (soloGame) {   // offline solo — no room to leave; tear it down and go home
         // The daily is ONE attempt: walking out spends it (recorded as not found), and we ask.
+        // YES ends the level where it stands and puts the result up, like any other ending.
         if (soloIdent?.daily) {
             showConfirm('DAILY ATTEMPT WILL BE LOST. CONTINUE?', () => finishDaily(false));
             return;
@@ -2040,7 +2078,6 @@ function drawScreenInto(name) {
     if (name === 'main') mainMenu.draw();
     else if (name === 'play') playScreen.draw();
     else if (name === 'settings') settingsScreen.draw();
-    else if (name === 'daily') dailyScreen.draw();
     else if (name === 'solo') soloScreen.draw();
     else if (name === 'chapter') chapterScreen.draw();
     else if (name === 'lobby') lobbyScreen.draw();
@@ -2214,7 +2251,10 @@ canvas.addEventListener('click', (e) => {
         // Press sound already rang on mousedown. A confirm runs its branch AFTER closing, so the
         // branch is free to open a screen transition (or another modal) on a clean slate.
         const choice = modalChoice;
-        if (hits(getModalOkRect())) { dismissModal(); (choice ? choice.yes : () => {})(); }
+        if (hits(getModalOkRect())) {
+            if (choice?.keepOpen) { choice.yes(); return; }   // acts in place (SHARE) — the box stays
+            dismissModal(); (choice ? choice.yes : () => {})();
+        }
         else if (modalNo.rect && hits(modalNo.rect)) { dismissModal(); if (choice) choice.no(); }
         return;
     }

@@ -146,6 +146,17 @@ export class SoloGame {
     // Tapped the target (game.js calls this when GameScreen.hitTest reports a hit) → level complete.
     win() { if (this.phase === 'round') this._finish(true); }
 
+    // Walked out mid-level (the daily): the level is over as a loss, shown as TIMES UP!, and it
+    // will NOT report onEnd — the caller is already handling the ending.
+    forfeit() {
+        if (this.phase === 'done') return;
+        this.phase = 'done';
+        this.won = false;
+        this._doneAt = Date.now();
+        this._ended = true;
+        setMusic(null);
+    }
+
     // Reuse GameScreen's own hit-test against the live positions (no interpolation — solo is local, so
     // what's drawn IS the current position: posA === posB, t = 0). Hits only exist while the round
     // is LIVE — countdown and the result banner can never ring the found sound.

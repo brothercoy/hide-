@@ -8,10 +8,11 @@
 // player starts from the identical board.
 //
 // ONE ATTEMPT: the day's result is recorded whether it was won, lost to the clock, or walked out
-// of. Until tomorrow, DAILY on the main menu opens the result page again (to share it) rather
-// than the level. That is what makes times comparable — nobody can retry until they get a good one.
+// of. Until tomorrow, DAILY on the main menu shows the result again (to share it) rather than the
+// level. That is what makes times comparable — nobody can retry until they get a good one.
 import { CHARSETS } from '../../charsets.js';
 import { GAME_MODES } from '../../gameModes.js';
+import { seededRng } from '../../gameSim.js';
 import { FLAGS } from './flags.js';
 import { getPref, setPref } from '../prefs.js';
 import { localToday } from './lives.js';
@@ -20,10 +21,11 @@ const EPOCH = '2026-09-19';          // DAILY #1
 const RESULT_KEY = 'daily.result';   // { key, num, chapter, won, time, misses } — the latest attempt
 const MAX_MARKS = 20;                // the share line shows at most this many misses
 
-// The level's shape: the multiplayer lobby's MAXIMUM character count and its fastest speed, every
-// day (read from the mode config so they can never drift apart), a mid-ladder confusion level (the
-// target has look-alikes but isn't buried), and one clock for every alphabet.
-const DAILY_LADDER = { level: 7, totalLevels: 12 };
+// What is FIXED every day: the multiplayer lobby's MAXIMUM character count and its fastest speed
+// (read from the mode config so they can never drift apart), and one clock. Everything else —
+// the alphabet, and how deep on the confusion ladder (1 = loose noise … 12 = the target alone in
+// a sea of its closest twin) — is drawn from the day's seed, so any country at any difficulty.
+const LADDER_STEPS = 12;
 const MP = GAME_MODES.redacted.settingsOptions;   // the lobby's ranges for DEL
 const DAILY_SETTINGS = {
     charCount: MP.charCount.max,
@@ -40,21 +42,25 @@ export function dailyNumber(key = dailyKey()) {
     return Math.round((Date.UTC(y, m - 1, d) - Date.UTC(ey, em - 1, ed)) / 86400000) + 1;
 }
 
-// The day's alphabet: the six chapters in turn, one per day.
-export function dailyChapter(key = dailyKey()) {
-    const n = dailyNumber(key);
-    return FLAGS[((n - 1) % FLAGS.length + FLAGS.length) % FLAGS.length];
+// The day's draw: which alphabet, and how hard. Seeded by the day, so it is random but the same
+// for everyone.
+export function dailyPick(key = dailyKey()) {
+    const pick = seededRng(`daily:${key}:pick`);
+    const flag = FLAGS[Math.floor(pick() * FLAGS.length)];
+    const level = 1 + Math.floor(pick() * LADDER_STEPS);
+    return { flag, level };
 }
+export function dailyChapter(key = dailyKey()) { return dailyPick(key).flag; }
 
 // A SoloGame level config for the day — the campaign's shape with the spawns seeded as well.
 export function dailyConfig(key = dailyKey()) {
-    const flag = dailyChapter(key);
+    const { flag, level } = dailyPick(key);
     return {
         mode: 'redacted',
         daily: true,
         seed: `daily:${key}`,
         spawnSeed: `daily:${key}:spawn`,
-        campaign: DAILY_LADDER,
+        campaign: { level, totalLevels: LADDER_STEPS },
         charset: CHARSETS[flag.id],
         settings: { ...DAILY_SETTINGS },
     };
@@ -76,27 +82,54 @@ export function recordDaily({ key, won, time, misses }) {
     return r;
 }
 
-// The pasteable result — a bordered card in the game's own button style, one glyph per press,
-// then the link on its own line:
-//   +----------------+
-//   | hide DAILY #12 |
-//   | JAPAN          |
-//   | x x ✓  7.42s   |
-//   +----------------+
-//   https://…
+// The pasteable result — a bordered card in the game's own button style, ALWAYS the same width
+// (CARD_W characters inside) whatever the day's alphabet or number, one glyph per press with the
+// misses wrapped MARKS_PER_ROW to a row, then the link on its own line:
+//   +---------------------+
+//   | hide DAILY #12      |
+//   | JAPAN               |
+//   | x x x x x x x x x x |
+//   | x x ✓  7.42s        |
+//   +---------------------+
+//   https://hide-ascii.com
 // (The box lines up in any monospace view; a chat that sets messages in a proportional face will
 // wobble the right edge a little — the marks and the time still read.)
+const CARD_W = 19;          // inner width — fits "hide DAILY #9999", every alphabet, and a full marks row
+const MARKS_PER_ROW = 10;   // "x x x x x x x x x x" is 19 characters
 export function shareText(r, origin = '') {
-    const marks = 'x '.repeat(Math.min(r.misses, MAX_MARKS)) + (r.misses > MAX_MARKS ? '… ' : '');
-    const lines = [
-        `hide DAILY #${r.num}`,
-        r.chapter,
-        r.won ? `${marks}✓  ${r.time.toFixed(2)}s` : `${marks}✗  TIMES UP`,
-    ];
-    const w = Math.max(...lines.map(l => [...l].length));
-    const rule = `+${'-'.repeat(w + 2)}+`;
-    const pad = (l) => l + ' '.repeat(w - [...l].length);
+    const shown = Math.min(r.misses, MAX_MARKS);
+    const marks = Array.from({ length: shown }, () => 'x');
+    if (r.misses > MAX_MARKS) marks.push('…');
+    const result = r.won ? `✓  ${r.time.toFixed(2)}s` : '✗  TIMES UP';
+    // Rows of marks; the result rides on the last row if it fits, else takes its own.
+    const rows = [];
+    for (let i = 0; i < marks.length; i += MARKS_PER_ROW) rows.push(marks.slice(i, i + MARKS_PER_ROW).join(' '));
+    const last = rows.length ? rows[rows.length - 1] : '';
+    if (last && [...(`${last} ${result}`)].length <= CARD_W) rows[rows.length - 1] = `${last} ${result}`;
+    else rows.push(result);
+    const lines = [`hide DAILY #${r.num}`, r.chapter, ...rows];
+    const rule = `+${'-'.repeat(CARD_W + 2)}+`;
+    const pad = (l) => l + ' '.repeat(Math.max(0, CARD_W - [...l].length));
     return [rule, ...lines.map(l => `| ${pad(l)} |`), rule, origin].filter(Boolean).join('\n');
+}
+
+// Copy the card to the clipboard. The async clipboard API needs a secure page (https or
+// localhost); a hidden textarea + execCommand is the fallback for anything older. Resolves true
+// when the text made it to the clipboard.
+export function copyShare(r, origin) {
+    const text = shareText(r, origin);
+    const fallback = () => {
+        try {
+            const ta = document.createElement('textarea');
+            ta.value = text; ta.style.position = 'fixed'; ta.style.opacity = '0';
+            document.body.appendChild(ta); ta.select();
+            const ok = document.execCommand('copy');
+            ta.remove();
+            return ok;
+        } catch { return false; }
+    };
+    if (navigator.clipboard?.writeText) return navigator.clipboard.writeText(text).then(() => true, fallback);
+    return Promise.resolve(fallback());
 }
 
 // Dev only: forget today's attempt.
