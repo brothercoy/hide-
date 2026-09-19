@@ -39,8 +39,8 @@ const BTN_HALF_H = 1.25;       // BACK button half-height in FONT_SIZE units (bu
 const THEME_ROW2_GAP = 40;
 const THEME_OPTIONS = [
     { id: 'green', label: 'Green' },
-    { id: 'orange', label: 'Orange' },
-    { id: 'white', label: 'White' },
+    { id: 'white', label: 'White' },     // unlocks with chapter 2
+    { id: 'orange', label: 'Orange' },   // unlocks with chapter 4
     // Second row, sitting under ORANGE (the middle option, which is screen-centered). Placed in
     // the gap that was already there, so nothing else on the screen moves.
     { id: 'cosmic', label: 'Cosmic', row: 1 },

@@ -41,8 +41,8 @@ const THEME_UNDERLINE_W = 160; // px width of the ~~~~ rule under 'Theme'
 const THEME_ROW2_GAP = 40;
 const THEME_OPTIONS = [
     { id: 'green', label: 'Green' },
-    { id: 'orange', label: 'Orange' },
-    { id: 'white', label: 'White' },
+    { id: 'white', label: 'White' },     // unlocks with chapter 2
+    { id: 'orange', label: 'Orange' },   // unlocks with chapter 4
     // Second row, under ORANGE (the middle option, which is centered) — in the gap that was
     // already there, so nothing else in the panel moves.
     { id: 'cosmic', label: 'Cosmic', row: 1 },

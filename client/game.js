@@ -8,7 +8,7 @@ import { SettingsOverlay } from './screens/SettingsOverlay.js';
 import { QuickJoinOverlay } from './screens/QuickJoinOverlay.js';
 import { SoloGame } from './solo/SoloGame.js';
 import { completeLevel, isLevelComplete, LEVELS, devCompleteAll, devReset, devUpTo } from './solo/progress.js';
-import { isSecretLevel, markSecretFound, SECRET_SFX_GAIN, devResetSecrets } from './solo/rewards.js';
+import { isSecretLevel, markSecretFound, SECRET_SFX_GAIN, devResetSecrets, themeLocked } from './solo/rewards.js';
 import { LEVEL_TARGETS } from './solo/levels.js';
 import { FLAGS } from './solo/flags.js';
 import { hasLives, getLives, loseLife, syncClock, nextRefillText, devSetLives, MAX_LIVES, isInfinite, grantInfinite, devSetInfinite } from './solo/lives.js';
@@ -36,7 +36,12 @@ import { setMusic, syncMusic, setMusicTension } from './audio/music.js';
 
 // Apply the saved theme before anything paints (default green). `theme` is read live everywhere —
 // UI shades, the click glow, and the CRT phosphor tint — so this one call colours the whole game.
-applyTheme(getPref('theme', 'green'));
+// A saved theme the player hasn't earned (themes are chapter rewards now; a save from before the
+// gates may hold one) falls back to green, and the preference is corrected so Settings agrees.
+const savedTheme = getPref('theme', 'green');
+const bootTheme = themeLocked(savedTheme) ? 'green' : savedTheme;
+if (bootTheme !== savedTheme) setPref('theme', bootTheme);
+applyTheme(bootTheme);
 // Ask the server what time it is, and refill the solo lives if the player's local day has turned.
 // Their own device clock is never consulted — setting the date forward buys nothing.
 syncClock();

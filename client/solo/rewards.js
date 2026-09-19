@@ -7,17 +7,24 @@ import { FLAGS } from './flags.js';
 import { isLevelComplete, LEVELS } from './progress.js';
 import { getPref, setPref } from '../prefs.js';
 
-// Themes that have to be earned. Everything not listed is always available.
-const REWARD_THEMES = new Set(['cosmic']);
-
 // True once every DESIGNED chapter has its final level beaten — the same test the campaign-win
 // screen fires on, so the two can never disagree.
 export function campaignComplete() {
     return FLAGS.every(f => !f.art || isLevelComplete(f.id, LEVELS - 1));
 }
 
+// Themes that have to be earned, each by beating a chapter (its final level). Everything not
+// listed is always available. The settings screens list themes in this unlock order.
+const chapterBeaten = (id) => isLevelComplete(id, LEVELS - 1);
+const REWARD_THEMES = {
+    white:  () => chapterBeaten('c2'),   // GREECE
+    orange: () => chapterBeaten('c4'),   // JAPAN
+    cosmic: campaignComplete,            // the whole campaign
+};
+
 export function themeLocked(id) {
-    return REWARD_THEMES.has(id) && !campaignComplete();
+    const earned = REWARD_THEMES[id];
+    return !!earned && !earned();
 }
 
 // ── The main menu's @ $ © ! ! row — the INFINITE LIVES secret ────────────────
