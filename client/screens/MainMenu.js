@@ -4,7 +4,7 @@ import { theme, glow } from '../ui/colors.js';
 import { vScale, bandTop } from '../ui/viewport.js';
 import { sfx, holdSfx, typeTick, feedTick } from '../audio/sfx.js';
 import { spawnSparkles } from '../ui/Sparkles.js';
-import { SECRET_CHARS, secretUnlocked, SECRET_SFX_GAIN } from '../solo/rewards.js';
+import { SECRET_CHARS, secretUnlocked } from '../solo/rewards.js';
 import { isInfinite } from '../solo/lives.js';
 
 const FONT_SIZE = 50;         // button label font (SOLO / MULTIPLAYER / SETTINGS)
@@ -263,13 +263,14 @@ export class MainMenu {
         }
     }
 
-    // All five held: the fifth tone has just joined the chord, which now lingers and fades slowly
-    // under the solve flurry (CHAPTER_CLEAR slowed, at the same quiet level each character was
-    // found with) while all five rise and glow together. The reward is the game's to show.
+    // All five held: the fifth tone has just joined the chord — at the same level as the other
+    // four — and the chord now lingers and fades slowly under the solve flurry (CHAPTER_CLEAR
+    // slowed to a harp flurry, at normal volume) while all five rise and glow together. The
+    // reward is the game's to show.
     _completeSecret() {
         this._releaseHeld(SECRET_SOLVE_FADE);
         this.secretSolved = true;
-        sfx('SECRET_SOLVE', { gainMul: SECRET_SFX_GAIN });
+        sfx('SECRET_SOLVE');
         this.specialChars.forEach(sc => {
             sc.releasePhase = 'releasing';
             sc.glowT = 0;

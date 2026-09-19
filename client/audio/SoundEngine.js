@@ -164,7 +164,7 @@ function buildVoice(voice, t0, hold, mods = { freqMul: 1, gainMul: 1 }) {
         src.stop(stopAt);
         if (lfo) lfo.stop(stopAt);
     }
-    return { src, env, lfo, start, attack };
+    return { src, env, lfo, lfoGain, start, attack, g };
 }
 
 // ── Public playback API ──────────────────────────────────────────────────────
@@ -212,11 +212,27 @@ export function startSustain(patch, fadeOut = 0.4, bus = undefined, mods = {}) {
             stopped = true;
             const t = ctx.currentTime;
             for (const h of handles) {
-                h.env.gain.cancelScheduledValues(t);
-                h.env.gain.setValueAtTime(h.env.gain.value, t);
-                h.env.gain.exponentialRampToValueAtTime(EPS, t + fade);
-                h.src.stop(t + fade + 0.05);
-                if (h.lfo) h.lfo.stop(t + fade + 0.05);
+                // The fade starts from the voice's OWN held level (h.g), once its attack is done —
+                // an attack still in flight is left to finish first, so a sustain stopped in the
+                // same tick it was started (the fifth secret tone) still sounds at its proper
+                // level before fading. NEVER read gain.value here for that level: a GainNode's
+                // gain defaults to 1, and until the render thread has processed the start event
+                // .value still reports that 1 — the fade would then run down from FULL volume.
+                // (+1ms: cancelScheduledValues removes events AT its time too, and the attack
+                // ramp's own event sits exactly at start+attack.)
+                const from = Math.max(t, h.start + h.attack + 0.001);
+                h.env.gain.cancelScheduledValues(from);
+                h.env.gain.setValueAtTime(h.g, from);
+                h.env.gain.exponentialRampToValueAtTime(EPS, from + fade);
+                // The flutter LFO adds to the gain param on top of the envelope — fade its depth
+                // too, or the voice keeps buzzing at the LFO's amplitude until the hard stop.
+                if (h.lfoGain) {
+                    h.lfoGain.gain.cancelScheduledValues(from);
+                    h.lfoGain.gain.setValueAtTime(h.lfoGain.gain.value, from);
+                    h.lfoGain.gain.linearRampToValueAtTime(0, from + fade);
+                }
+                h.src.stop(from + fade + 0.05);
+                if (h.lfo) h.lfo.stop(from + fade + 0.05);
             }
         },
     };
