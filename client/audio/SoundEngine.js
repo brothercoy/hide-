@@ -195,11 +195,14 @@ export function playPatch(patch, when = 0, opts = {}) {
 }
 
 // Continuous sound (hum, ambience). Returns a handle: call .stop() to fade out.
-// `bus` routes it like playPatch's opts.bus ('music' or default sfx).
-export function startSustain(patch, fadeOut = 0.4, bus = undefined) {
+// `bus` routes it like playPatch's opts.bus ('music' or default sfx). `mods.freqMul` /
+// `mods.gainMul` transpose/scale the whole patch, as playPatch's opts do — so one sustained
+// patch can be started at several pitches at once (a held chord).
+export function startSustain(patch, fadeOut = 0.4, bus = undefined, mods = {}) {
     if (!ctx) return null;
     const t0 = ctx.currentTime;
-    const handles = patch.voices.map(v => buildVoice(v, t0, true, { freqMul: 1, gainMul: 1, bus }));
+    const m = { freqMul: mods.freqMul || 1, gainMul: mods.gainMul || 1, bus };
+    const handles = patch.voices.map(v => buildVoice(v, t0, true, m));
     let stopped = false;
     return {
         stop() {

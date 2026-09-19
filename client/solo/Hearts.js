@@ -7,11 +7,15 @@
 //
 // They spend LEFT TO RIGHT: the leftmost heart dims first, so the remaining lives stay bunched at
 // the right-hand end.
+//
+// INFINITE LIVES (the main menu's secret solved): the three hearts are replaced by a single ∞,
+// right-aligned where the last heart sat.
 import { theme, dim } from '../ui/colors.js';
 import { bandTop } from '../ui/viewport.js';
-import { getLives, MAX_LIVES } from './lives.js';
+import { getLives, MAX_LIVES, isInfinite } from './lives.js';
 
 const HEART = '♥';
+const INFINITY = '∞';
 const FONT = 52;
 const GAP = 1.45;      // heart pitch, in character widths
 const MARGIN_X = 64;   // from the right edge
@@ -23,19 +27,24 @@ export function heartsGeom(canvas, ctx) {
     ctx.font = `${FONT}px "IBMVGA"`;
     const cw = ctx.measureText('M').width;
     const step = cw * GAP;
-    const width = step * (MAX_LIVES - 1) + cw;
+    const count = isInfinite() ? 1 : MAX_LIVES;   // ∞ is one glyph, sitting where the last heart would
+    const width = step * (count - 1) + cw;
     const left = canvas.width - MARGIN_X - width;
-    return { left, y: bandTop(canvas) + MARGIN_Y, step, cw, width };
+    return { left, y: bandTop(canvas) + MARGIN_Y, step, cw, width, count };
 }
 
 // Draws the first `n` hearts (n defaults to all) — full for a life still held, dim for a spent one.
 export function drawHearts(ctx, canvas, n = MAX_LIVES) {
     const g = heartsGeom(canvas, ctx);
-    const lives = getLives();
     ctx.font = `${FONT}px "IBMVGA"`;
     ctx.textAlign = 'left';
     ctx.textBaseline = 'top';
     ctx.globalAlpha = 1;
+    if (isInfinite()) {
+        if (n > 0) { ctx.fillStyle = theme.fg; ctx.fillText(INFINITY, g.left, g.y); }
+        return;
+    }
+    const lives = getLives();
     const spent = MAX_LIVES - lives;   // the first `spent` hearts are the ones already used
     for (let i = 0; i < Math.min(n, MAX_LIVES); i++) {
         ctx.fillStyle = i < spent ? dim(0.22) : theme.fg;
@@ -50,7 +59,7 @@ export function heartsRow(canvas, ctx) {
     return {
         y: g.y,
         x: g.left,
-        cost: MAX_LIVES,
+        cost: g.count,
         draw: (c, n) => { if (n > 0) drawHearts(c, canvas, n); },
     };
 }

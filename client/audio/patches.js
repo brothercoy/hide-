@@ -294,6 +294,18 @@ export const PATCHES = {
             { wave: 'noise', freq: 440, freqEnd: null, delay: 0, attack: 0.03, decay: 1.2, gain: 0.15, filter: { type: 'lowpass', cutoff: 400, q: 0.7 } },
         ],
     },
+    // The main menu's secret: a special character held DOWN. BTN_PRESS's sinking sine thunk
+    // (120→36 Hz) pitched up and frozen at the top of its fall, with a fast tremolo so it reads
+    // as the glyph vibrating. Sustained — started by holdSfx, one per held character, each
+    // transposed to a chord tone, so the chord builds as more are held.
+    SECRET_HOLD: {
+        name: 'SECRET_HOLD', desc: 'Held special char — BTN_PRESS body pitched up, continuous, vibrating (one per chord tone)',
+        sustain: true,
+        voices: [
+            { wave: 'sine', freq: 240, freqEnd: null, delay: 0, attack: 0.03, decay: 0.2, gain: 0.11, filter: null, lfo: { rate: 16, depth: 0.45 } },
+            { wave: 'square', freq: 240, freqEnd: null, delay: 0, attack: 0.03, decay: 0.2, gain: 0.022, filter: { type: 'lowpass', cutoff: 900, q: 0.7 }, lfo: { rate: 16, depth: 0.45 } },
+        ],
+    },
     HUM: {
         name: 'HUM', desc: 'Idle transformer hum bed — 120 Hz + harmonics, continuous',
         sustain: true,

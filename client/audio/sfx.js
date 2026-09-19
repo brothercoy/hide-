@@ -69,6 +69,15 @@ export function sfx(name, opts = {}) {
     return p ? playPatch(p, opts.when || 0, opts) : 0;
 }
 
+// A HELD sound: starts a sustaining patch and returns its handle ({ stop() } fades it out), or
+// null if audio isn't live. opts.freqMul / gainMul transpose and scale it like sfx's do; several
+// holds of one patch at different pitches make a chord. Caller owns the stop.
+export function holdSfx(name, opts = {}) {
+    if (!audioReady()) return null;
+    const p = PATCHES[name];
+    return p ? startSustain(p, opts.fadeOut ?? 0.25, opts.bus, opts) : null;
+}
+
 // Teletype tick, rate-limited: back-to-back single-char events (countdown edits,
 // life-loss caret steps) blur into a purr instead of stacking.
 const TICK_MIN_MS = 35;

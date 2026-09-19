@@ -14,6 +14,14 @@ import { getPref, setPref } from '../prefs.js';
 export const MAX_LIVES = 3;
 const KEY = 'campaign.lives';        // { lives, day, at } — day = local YYYY-MM-DD of the last refill,
                                      // at = the server ms when that refill happened
+const INFINITE_KEY = 'campaign.infinite';   // true once the main menu's secret has been solved
+
+// INFINITE LIVES — the main menu's @ $ © ! ! secret. Once granted, nothing here can cost a life
+// or lock the player out; the hearts draw as a single ∞. The daily refill keeps running
+// underneath, untouched, so revoking it (dev) drops straight back to the ordinary count.
+export function isInfinite() { return !!getPref(INFINITE_KEY, false); }
+export function grantInfinite() { setPref(INFINITE_KEY, true); }
+export function devSetInfinite(on) { setPref(INFINITE_KEY, !!on); }
 const MIN_REFILL_MS = 20 * 60 * 60 * 1000;   // a refill needs ~a day of SERVER time, so hopping
                                              // timezones across a date boundary buys nothing
 
@@ -77,6 +85,7 @@ export function getLives() {
 
 // Costs a life. Returns what's left.
 export function loseLife() {
+    if (isInfinite()) return getLives();   // nothing to spend — the secret's been solved
     const s = load();
     const lives = Math.max(0, s.lives - 1);
     // Stamp the day on the FIRST loss so the refill has a reference point even if the player has
@@ -85,7 +94,7 @@ export function loseLife() {
     return lives;
 }
 
-export function hasLives() { return getLives() > 0; }
+export function hasLives() { return isInfinite() || getLives() > 0; }
 
 // For the "no lives" message — the player's local midnight is when they come back.
 export function nextRefillText() {

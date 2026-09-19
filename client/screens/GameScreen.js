@@ -385,7 +385,9 @@ export class GameScreen {
         return { nx: px / this.playHalfW, ny: py / this.playHalfH };
     }
 
-    hitTest(clickX, clickY, chars, posA, posB, t, countdownActive) {
+    // `match` picks which characters count — the target by default; solo passes a predicate to
+    // test a click against a specific planted glyph instead.
+    hitTest(clickX, clickY, chars, posA, posB, t, countdownActive, match = (c) => c.isTarget) {
         if (countdownActive) return null;
         // A find must be a click INSIDE the play field — the target's hit circle (its radius +
         // the tap pad) can poke past the frame when it hugs a wall, and without this a click in
@@ -394,7 +396,7 @@ export class GameScreen {
         const n = Math.min(chars.length, (posA.length / 3) | 0, (posB.length / 3) | 0);
         for (let i = 0; i < n; i++) {
             const c = chars[i];
-            if (!c.isTarget) continue;
+            if (!match(c)) continue;
             // Interpolate to the SAME position the frame drew (posA → posB at t), so a tap
             // lands on where the target visibly is.
             const j = i * 3;

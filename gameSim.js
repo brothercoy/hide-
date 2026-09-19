@@ -189,8 +189,11 @@ export function generateField({ gameMode, settings, currentRound, charRadii, rng
 // so a "sea" level can be authored anywhere on the ladder. `charset` (optional, charsets.js)
 // swaps in a chapter's own alphabet: its glyph pool, its rotation conflicts and its confusion
 // ladder — USA (no charset) uses the ASCII set below.
+// `forcePlant` seeds ONE extra glyph into the noise — a non-target the level wants present (the
+// main menu's © secret hides in USA level 5 this way). It takes a deterministic slot, so it's in
+// the same shared puzzle for everyone, and it never displaces the target.
 export function generateSoloField({ level, totalLevels, settings, charRadii, rng, spawnRng = Math.random,
-                                    forceTarget, forceTwin, forceConfusion, charset }) {
+                                    forceTarget, forceTwin, forceConfusion, forcePlant, charset }) {
     const glyphs = charset?.glyphs ?? LETTERS;
     const conflicts = charset?.conflicts ?? CONFLICTS;
     const targetChar = forceTarget
@@ -215,6 +218,10 @@ export function generateSoloField({ level, totalLevels, settings, charRadii, rng
             ? twins[Math.floor(rng() * twins.length)]
             : pool[Math.floor(rng() * pool.length)];
         chars.push(createChar(char, false, charRadii, settings.speedScale, spawnRng));
+    }
+    if (forcePlant && chars.length) {
+        const slot = Math.floor(rng() * chars.length);
+        chars[slot] = createChar(forcePlant, false, charRadii, settings.speedScale, spawnRng);
     }
     const targetIndex = Math.floor(rng() * settings.charCount);
     const targetObj = createChar(targetChar, true, charRadii, settings.speedScale, spawnRng);

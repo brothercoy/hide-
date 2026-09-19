@@ -15,7 +15,7 @@ import { setMusic, playJingle } from '../audio/music.js';
 
 const RESULT_MS = 1600;      // hold the COMPLETE / TIME UP banner before returning to the menu
 const RESULT_FONT = 104;
-const SECRET_GAIN = 0.3;     // the secret-unlock CHAPTER_CLEAR, kept low — a hint, not a ceremony
+import { SECRET_SFX_GAIN as SECRET_GAIN } from './rewards.js';   // the quiet CHAPTER_CLEAR of a secret
 
 export class SoloGame {
     // level: { mode: 'redacted', settings: { charCount, speedScale, roundTime, ... } }
@@ -35,6 +35,8 @@ export class SoloGame {
         this.anthem = level.anthem || null;   // tracker song name (falls back to CHAPTER_CLEAR)
         // First clear of a level that unlocks one of the main menu's secret characters.
         this.secret = !!level.secret;
+        // A planted glyph hiding in the noise (levels.js `plant`) — pressing it is its own find.
+        this.plant = level.authored?.plant || null;
 
         // A campaign level is PREDETERMINED: the seed fixes the target, its twin and the field
         // composition identically for every player ("level 12" is one shared puzzle), while spawn
@@ -48,6 +50,7 @@ export class SoloGame {
                 forceTarget: level.authored?.target,
                 forceTwin: level.authored?.twin,
                 forceConfusion: level.authored?.confusion,
+                forcePlant: level.authored?.plant,
                 charset: level.charset,      // the chapter's own alphabet (charsets.js), if any
             })
             : sim.generateField({
@@ -141,6 +144,14 @@ export class SoloGame {
     hitTest(gameScreen, clickX, clickY) {
         const pos = sim.charPositions(this.chars);
         return gameScreen.hitTest(clickX, clickY, this.chars, pos, pos, 0, this.phase !== 'round');
+    }
+
+    // Did the click land on the planted secret glyph? Same hit rules as the target, live round only.
+    hitPlant(gameScreen, clickX, clickY) {
+        if (!this.plant) return null;
+        const pos = sim.charPositions(this.chars);
+        return gameScreen.hitTest(clickX, clickY, this.chars, pos, pos, 0, this.phase !== 'round',
+            (c) => !c.isTarget && c.char === this.plant);
     }
 
     draw(gameScreen) {

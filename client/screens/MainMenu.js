@@ -2,9 +2,10 @@ import { makeButton, drawButton, drawButtonPartial, buttonRows, buttonCharCount,
 import { charWidth } from '../ui/Font.js';
 import { theme, glow } from '../ui/colors.js';
 import { vScale, bandTop } from '../ui/viewport.js';
-import { sfx, typeTick, feedTick } from '../audio/sfx.js';
+import { sfx, holdSfx, typeTick, feedTick } from '../audio/sfx.js';
 import { spawnSparkles } from '../ui/Sparkles.js';
 import { SECRET_CHARS, secretUnlocked } from '../solo/rewards.js';
+import { isInfinite } from '../solo/lives.js';
 
 const FONT_SIZE = 50;         // button label font (SOLO / MULTIPLAYER / SETTINGS)
 const BTN_GAP = 8;           // vertical gap BETWEEN buttons (on top of each button's height)
@@ -24,6 +25,14 @@ const SPECIAL_Z = 2.4;          // resting depth while LOCKED — deep = faded (
 const SPECIAL_Z_UNLOCKED = 1.3; // resting depth once its USA level is beaten — the buttons' own depth (~85%)
 const SPECIAL_Z_PRESSED = 2.5;  // depth when held
 const SECRET_LOCKED_GAIN = 0.12; // the locked press's error, at the old easter-egg volume
+// THE SECRET. Until it's solved, an unlocked char pressed stays DOWN, vibrating, sounding a held
+// tone — and each further char held adds the next tone of this chord (C E G B C, as ratios of
+// SECRET_HOLD's pitch), so the sound climbs as the row fills. Pressing a held char does nothing;
+// only leaving the screen lets them up. All five down at once solves it: they rise and confirm
+// together, and game.js runs the INFINITE LIVES reward. Solved, they're plain buttons.
+const SECRET_CHORD = [1, 1.25, 1.5, 1.875, 2];
+const SECRET_VIB_PX = 2;            // held-char jitter amplitude — a rapid buzz, not a wobble
+const SECRET_CONFIRM_STAGGER = 0.05; // s between each char's confirm when all five release — a ripple, not one loud hit
 const SPECIAL_Z_GLOW    = 1.0;  // overshoot target on release — glow fires here, then returns to SPECIAL_Z
 const SPECIAL_PRESS_SPEED  = 0.005; // z units per ms while held
 const SPECIAL_RETURN_SPEED = 0.005; // z units per ms when returning
@@ -52,6 +61,8 @@ function makeSpecialChar(char) {
         introComplete: false,
         appeared: false, // has begun its entrance — clickable from this point
         unlocked: false, // its USA level beaten (re-read on every enter) — presses, glows, rests bright
+        held: false,     // pressed and staying down (the secret, unsolved) — vibrating, sounding
+        hold: null,      // the held tone's handle while `held`
     };
 }
 // Where a special char settles: locked ones sit deep and faded, unlocked ones up at button depth.
@@ -72,13 +83,15 @@ function getBtnChars(btn) {
 }
 
 export class MainMenu {
-    constructor(canvas, ctx, uiManager, onSolo, onPlay, onSettings) {
+    constructor(canvas, ctx, uiManager, onSolo, onPlay, onSettings, onSecret) {
         this.canvas = canvas;
         this.ctx = ctx;
         this.ui = uiManager;
         this.onSolo = onSolo;
         this.onPlay = onPlay;         // MULTIPLAYER (same behavior as the old PLAY)
         this.onSettings = onSettings;
+        this.onSecret = onSecret;     // all five special chars held down — the reward is game.js's
+        this.secretSolved = false;    // re-read on enter: solved → the chars are plain buttons
         this.introStart = null;
         this.introDone = false;
         this.introHasPlayed = false; // bespoke intro is once per page load — re-entries
@@ -137,6 +150,8 @@ export class MainMenu {
         this.releasedDuringIntro = new Set();
         this.ui.blocked = true;
 
+        this._releaseHeld();                   // any chars left down come back up (silently)
+        this.secretSolved = isInfinite();
         this.specialChars.forEach((sc, i) => {
             sc.releasePhase = null;
             sc.glowT = 0;
@@ -227,6 +242,38 @@ export class MainMenu {
         this.specialsStart = (this.ui.elapsed - this.introStart) + SPECIAL_AFTER_GAP;
     }
 
+    // Leaving the menu: held chars come up and their tones stop (the secret resets), and the
+    // special-char listeners come off the canvas — they used to stay attached on every other
+    // screen, where a click on a special's old spot could still register a press.
+    leave() {
+        this._releaseHeld();
+        this.canvas.removeEventListener('mousedown', this._bindSpecialClick);
+        this.canvas.removeEventListener('mouseup',   this._bindSpecialRelease);
+        this.canvas.removeEventListener('mousemove', this._bindSpecialMove);
+    }
+
+    _releaseHeld() {
+        for (const sc of this.specialChars) {
+            if (sc.hold) sc.hold.stop();
+            sc.hold = null;
+            sc.held = false;
+        }
+    }
+
+    // All five held: they all come up and confirm together — the one time the secret rings the
+    // normal confirm on every char at once — then the reward is the game's to show.
+    _completeSecret() {
+        this._releaseHeld();
+        this.secretSolved = true;
+        this.specialChars.forEach((sc, i) => {
+            sc.releasePhase = 'releasing';
+            sc.glowT = 0;
+            sfx('BTN_CONFIRM', { when: i * SECRET_CONFIRM_STAGGER });
+            if (sc.rect) spawnSparkles(sc.rect);
+        });
+        this.onSecret?.();
+    }
+
     // Row segments for the typed-scroll transition (hide, special chars, buttons).
     // Positions match the steady-state draw so the feed hands off seamlessly.
     getTypeables() {
@@ -293,6 +340,19 @@ export class MainMenu {
                 my >= sc.rect.y && my <= sc.rect.y + sc.rect.h) {
                 // Locked: not interactable — no press, no glow, just a quiet refusal.
                 if (!sc.unlocked) { sfx('ERROR', { gainMul: SECRET_LOCKED_GAIN }); return; }
+                // The secret, unsolved: the press sticks. It goes down and STAYS, buzzing on the
+                // next tone of the chord; a char already down ignores the press entirely.
+                if (!this.secretSolved) {
+                    if (sc.held) return;
+                    sc.held = true;
+                    sc.releasePhase = null;
+                    sc.glowT = 0;
+                    sfx('BTN_PRESS');
+                    const tone = this.specialChars.filter(s => s.held).length - 1;   // 0-based: how many were down before
+                    sc.hold = holdSfx('SECRET_HOLD', { freqMul: SECRET_CHORD[Math.min(tone, SECRET_CHORD.length - 1)] });
+                    if (this.specialChars.every(s => s.held)) this._completeSecret();
+                    return;
+                }
                 this._pressedSpecialChar = sc;
                 sfx('BTN_PRESS');   // earned — it presses like a button, at button volume
                 // Graduate from the intro to interactive — the press lifecycle
@@ -328,6 +388,9 @@ export class MainMenu {
     _updateSpecialChars(dt) {
         this.specialChars.forEach(sc => {
             if (!sc.introComplete) return;
+
+            // Held down (the secret): sink to the pressed depth and stay there.
+            if (sc.held) { sc.z = moveToward(sc.z, SPECIAL_Z_PRESSED, dt * SPECIAL_PRESS_SPEED); return; }
 
             const isOver = !this.ui.blocked && sc.rect &&
                 this._mouseX >= sc.rect.x && this._mouseX <= sc.rect.x + sc.rect.w &&
@@ -441,7 +504,10 @@ export class MainMenu {
             // Single brightened-color draw — identical to the button glow.
             // (The old second-draw overlay is no longer needed now that the glow
             // sits at z = 1.0 / full opacity, same as buttons.)
-            drawChar(ctx, sc.char, x, specialY, z, color, SPECIAL_SIZE);
+            // A held char buzzes: a fresh random offset every frame. The hit-rect stays put.
+            const jx = sc.held ? (Math.random() * 2 - 1) * SECRET_VIB_PX : 0;
+            const jy = sc.held ? (Math.random() * 2 - 1) * SECRET_VIB_PX : 0;
+            drawChar(ctx, sc.char, x + jx, specialY + jy, z, color, SPECIAL_SIZE);
             ctx.font = `${SPECIAL_SIZE}px "IBMVGA"`;
 
             x += charW + SPECIAL_SPACING;

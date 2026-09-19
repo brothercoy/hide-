@@ -5,6 +5,7 @@
 // dimmed option in Settings are two views of this one condition.
 import { FLAGS } from './flags.js';
 import { isLevelComplete, LEVELS } from './progress.js';
+import { getPref, setPref } from '../prefs.js';
 
 // Themes that have to be earned. Everything not listed is always available.
 const REWARD_THEMES = new Set(['cosmic']);
@@ -19,25 +20,43 @@ export function themeLocked(id) {
     return REWARD_THEMES.has(id) && !campaignComplete();
 }
 
-// ── The main menu's @ $ © ! ! row ────────────────────────────────────────────
-// Each is an easter egg locked behind the USA level whose TARGET it is (levels.js plants them on
-// levels 2/4/6/8 — the two !'s are deliberate twins, one per level). Locked: pressing just gives a
-// quiet error. Unlocked: it presses and glows like a button, and rests brighter. © has no level
-// yet and stays locked until it gets one. Order here IS the row's draw order on the menu.
+// ── The main menu's @ $ © ! ! row — the INFINITE LIVES secret ────────────────
+// Each is an easter egg locked behind USA. Four are the TARGET of a level (levels.js plants them
+// on 2/4/6/8 — the two !'s are deliberate twins, one per level) and unlock on that level's first
+// clear. © is different: it's PLANTED in level 5's noise, and pressing it there (instead of the
+// target) is the find — recorded here, since it isn't a level win. Locked: pressing just gives a
+// quiet error. Unlocked: it presses like a button. Hold all five down at once on the menu and the
+// campaign's lives become infinite. Order here IS the row's draw order.
 export const SECRET_CHARS = [
     { char: '@', chapter: 'c1', level: 1 },   // USA level 2
     { char: '$', chapter: 'c1', level: 3 },   // USA level 4
-    { char: '©', chapter: null, level: null },
+    { char: '©', found: true },               // USA level 5 — pressed in the field, not won
     { char: '!', chapter: 'c1', level: 5 },   // USA level 6
     { char: '!', chapter: 'c1', level: 7 },   // USA level 8
 ];
+export const SECRET_SFX_GAIN = 0.3;   // the quiet CHAPTER_CLEAR that marks a secret — a hint, not a ceremony
+const FOUND_KEY = 'campaign.secrets';  // { '©': true } — secrets found by pressing, not by winning
 
 export function secretUnlocked(i) {
     const s = SECRET_CHARS[i];
-    return !!s?.chapter && isLevelComplete(s.chapter, s.level);
+    if (!s) return false;
+    if (s.found) return !!(getPref(FOUND_KEY, {}) || {})[s.char];
+    return !!s.chapter && isLevelComplete(s.chapter, s.level);
+}
+export function allSecretsUnlocked() { return SECRET_CHARS.every((_, i) => secretUnlocked(i)); }
+
+// Record a press-found secret (©). Returns true the FIRST time only, so the caller can react once.
+export function markSecretFound(char) {
+    const f = getPref(FOUND_KEY, {}) || {};
+    if (f[char]) return false;
+    setPref(FOUND_KEY, { ...f, [char]: true });
+    return true;
 }
 
 // Is this level one that unlocks a secret? (The level's FIRST clear plays the unlock sound.)
 export function isSecretLevel(chapterId, levelIdx) {
     return SECRET_CHARS.some(s => s.chapter === chapterId && s.level === levelIdx);
 }
+
+// Dev only: forget every press-found secret (the level-won ones live in progress).
+export function devResetSecrets() { setPref(FOUND_KEY, {}); }

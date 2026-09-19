@@ -8,10 +8,10 @@ import { SettingsOverlay } from './screens/SettingsOverlay.js';
 import { QuickJoinOverlay } from './screens/QuickJoinOverlay.js';
 import { SoloGame } from './solo/SoloGame.js';
 import { completeLevel, isLevelComplete, LEVELS, devCompleteAll, devReset, devUpTo } from './solo/progress.js';
-import { isSecretLevel } from './solo/rewards.js';
+import { isSecretLevel, markSecretFound, SECRET_SFX_GAIN, devResetSecrets } from './solo/rewards.js';
 import { LEVEL_TARGETS } from './solo/levels.js';
 import { FLAGS } from './solo/flags.js';
-import { hasLives, loseLife, syncClock, nextRefillText, devSetLives, MAX_LIVES } from './solo/lives.js';
+import { hasLives, loseLife, syncClock, nextRefillText, devSetLives, MAX_LIVES, isInfinite, grantInfinite, devSetInfinite } from './solo/lives.js';
 import { CHARSETS } from '../charsets.js';
 import { SoloScreen } from './screens/SoloScreen.js';
 import { ChapterScreen } from './screens/ChapterScreen.js';
@@ -318,7 +318,9 @@ const screens = {};
 const mainMenu = new MainMenu(canvas, ctx, uiManager,
     () => showScreen('solo'),   // SOLO — type in the campaign home screen
     () => showScreen('play'),   // MULTIPLAYER — unchanged behavior
-    () => showScreen('settings')
+    () => showScreen('settings'),
+    // The @ $ © ! ! secret solved: lives go infinite, and the line types out over the menu.
+    () => { grantInfinite(); beginRewardLine('INFINITE LIVES UNLOCKED'); }
 );
 
 const playScreen = new PlayScreen(canvas, ctx, uiManager,
@@ -456,6 +458,7 @@ function enterScreen(name, opts) {
 const SCREEN_MUSIC = { lobby: 'THEME', chapter: 'THEME' };
 
 function showScreen(name, opts = {}) {
+    if (currentScreen === 'main' && name !== 'main') mainMenu.leave();   // held secrets reset; its listeners come off
     setMusic(SCREEN_MUSIC[name] || 'THEME2');
     // Instant path: first paint, explicit request, or font not ready.
     if (currentScreen === null || opts.instant || !fontReady) {
@@ -888,6 +891,72 @@ function drawCampaignWin() {
     ctx.globalAlpha = 1;
 }
 
+// --- Reward line: one typed line over the dimmed screen ("INFINITE LIVES UNLOCKED") ------------
+// The campaign-win screen's subtitle treatment on its own: after a beat (so whatever triggered it
+// can finish its own glow), everything dims, a cursor blinks at the centre, the line types out at
+// the subtitle size and pace, holds, and fades. Input is blocked for the whole run.
+const RL_DELAY_MS = 900;
+let rewardLine = null;     // { text, start, ticked }
+
+function beginRewardLine(text) {
+    rewardLine = { text, start: performance.now(), ticked: 0 };
+    uiManager.blocked = true;
+    duckMusic(0.18, 0.25);
+}
+// Timeline, in ms from the start (all after the delay).
+function rlTimes(text) {
+    const typeStart = RL_DELAY_MS + WIN_FADE_MS + WIN_PRE_MS;
+    const typeEnd = typeStart + text.length * WIN_SUB_TYPE_MS;
+    const outAt = typeEnd + WIN_HOLD_MS;
+    return { typeStart, typeEnd, outAt, end: outAt + WIN_FADE_MS };
+}
+function updateRewardLine() {
+    if (!rewardLine) return;
+    if (performance.now() - rewardLine.start >= rlTimes(rewardLine.text).end) {
+        rewardLine = null;
+        uiManager.blocked = false;
+        uiManager.lastTime = performance.now();
+        duckMusic(1, 0.9);
+    }
+}
+function drawRewardLine() {
+    if (!rewardLine) return;
+    const ms = performance.now() - rewardLine.start;
+    if (ms < RL_DELAY_MS) return;
+    const { text } = rewardLine;
+    const T = rlTimes(text);
+    const k = ms < RL_DELAY_MS + WIN_FADE_MS ? (ms - RL_DELAY_MS) / WIN_FADE_MS
+        : ms < T.outAt ? 1
+            : Math.max(0, 1 - (ms - T.outAt) / WIN_FADE_MS);
+
+    ctx.fillStyle = bgAlpha(k * WIN_SCRIM);
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+    const cx = canvas.width / 2, y = canvas.height / 2;
+    const n = ms < T.typeStart ? 0 : Math.min(text.length, Math.floor((ms - T.typeStart) / WIN_SUB_TYPE_MS));
+    const line = text.slice(0, n);
+
+    ctx.globalAlpha = k;
+    ctx.fillStyle = theme.fg;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.font = `${WIN_SUB_FONT}px "IBMVGA"`;
+    ctx.fillText(line, cx, y);
+    // The block cursor: alone at the centre first, then riding the end of the line as it types.
+    // Only the TEXT is centred, so the line doesn't jitter as the cursor blinks.
+    if (Math.floor(ms / WIN_CURSOR_MS) % 2 === 0) {
+        const curX = cx + ctx.measureText(line).width / 2 + 2;
+        const cw = ctx.measureText('M').width;
+        const chH = WIN_SUB_FONT - 4;
+        ctx.fillRect(curX, y - chH / 2, cw - 2, chH);
+    }
+    if (n > rewardLine.ticked) {
+        feedTick(n - rewardLine.ticked, 1);
+        rewardLine.ticked = n;
+    }
+    ctx.globalAlpha = 1;
+}
+
 // Scripted game-over reveal timeline (ms from when the overlay appears).
 let gameOverStart = 0;
 let gameOverTicked = 0;   // audio: chars already tick'd during the winner reveal
@@ -1265,19 +1334,24 @@ if (import.meta.env.DEV) {
         completeAll() { devCompleteAll(); location.reload(); },
         // A brand-new player is BOTH: no progress and full lives. Resetting progress alone left a
         // spent/locked-out lives state behind, which looked like the reset had done nothing.
-        reset() { devReset(); devSetLives(MAX_LIVES); location.reload(); },
+        reset() { devReset(); devSetLives(MAX_LIVES); devResetSecrets(); devSetInfinite(false); location.reload(); },
         upTo(chapter) { devUpTo(chapter); devSetLives(MAX_LIVES); location.reload(); },
         // Lives on their own: any count (default full) for the hearts and the lockout.
         lives(n = MAX_LIVES) { devSetLives(n); location.reload(); },
+        // The main-menu secret, ready to solve: USA 2/4/6/8 beaten and © found in level 5 — all
+        // five characters unlocked, lives still ordinary. dev.infinite(false) revokes the reward.
+        secret() { for (const l of [1, 3, 5, 7]) completeLevel('c1', l); markSecretFound('©'); location.reload(); },
+        infinite(on = true) { devSetInfinite(on); location.reload(); },
         // What the game currently thinks — quicker than digging through localStorage.
         state() {
             const p = getPref('campaign.progress', {});
-            console.log('lives:', getPref('campaign.lives', null));
+            console.log('lives:', getPref('campaign.lives', null), '| infinite:', isInfinite());
+            console.log('secrets found:', getPref('campaign.secrets', {}));
             console.log('progress:', Object.keys(p).length ? p : '(none — brand new)');
             console.log('saveVersion:', getPref('campaign.saveVersion', null));
         },
     };
-    console.log('dev tools ready: dev.reset() dev.completeAll() dev.upTo(n) dev.lives(n) dev.state()');
+    console.log('dev tools ready: dev.reset() dev.completeAll() dev.upTo(n) dev.lives(n) dev.secret() dev.infinite(on) dev.state()');
 }
 
 // Tear down a solo level and go home. The life (if any) has already been settled by the caller.
@@ -1829,8 +1903,9 @@ function leaveToMainMenu() {
 
     if (soloGame) {   // offline solo — no room to leave; tear it down and go home
         // Walking out of a level you haven't beaten forfeits it, exactly like running out of
-        // time — so it costs a life, and we ask first. Abandoning a REPLAY costs nothing.
-        if (soloIdent && !soloIdent.wasComplete) {
+        // time — so it costs a life, and we ask first. Abandoning a REPLAY costs nothing — nor
+        // does anything once lives are infinite.
+        if (soloIdent && !soloIdent.wasComplete && !isInfinite()) {
             showConfirm('A LIFE WILL BE LOST. CONTINUE?', () => {
                 loseLife();
                 abandonSolo();
@@ -1916,6 +1991,7 @@ function draw() {
     updateHUD(dt);
     updateModal(dt);
     updateCampaignWin();   // releases input when the win screen finishes
+    updateRewardLine();    // likewise for a one-line reward
     if (soloGame) soloGame.update(dt);   // offline solo runs its own tick (no server)
     // The settings overlay drives its own buttons (uiManager is blocked behind it).
     if (settingsPanelOpen) settingsOverlay.update(dt, uiManager.mouseX, uiManager.mouseY, uiManager.elapsed);
@@ -1947,6 +2023,7 @@ function draw() {
 
     // Campaign win sits over EVERYTHING, HUD included — it owns the screen while it runs.
     drawCampaignWin();
+    drawRewardLine();
 }
 
 // --- Click Handler ---
@@ -1966,7 +2043,7 @@ document.addEventListener('visibilitychange', () => {
 
 canvas.addEventListener('mousedown', (e) => {
     if (gateActive) return;   // portrait rotate gate — ignore input
-    if (campaignWin) return;  // the win screen owns the screen (HUD icons bypass uiManager)
+    if (campaignWin || rewardLine) return;  // a reward screen owns the screen (HUD icons bypass uiManager)
     // Modal OK: the press sound belongs on press-down (the action still fires on
     // click), and while held the brackets hold their pressed state.
     if (modalMessage) {
@@ -2004,6 +2081,11 @@ canvas.addEventListener('mousedown', (e) => {
                 () => gameScreen.targetPos());
             if (soloGame) soloGame.win();        // solo: the client decides the hit (offline)
             else room.send('tap', { nx: hit.nx, ny: hit.ny, time: Date.now() });   // MP: server validates
+        } else if (soloGame && soloGame.hitPlant(gameScreen, cx, cy)) {
+            // The planted secret glyph (© in USA level 5): not a miss — the quiet chapter-clear
+            // instead of the scramble, and the character comes alive on the main menu.
+            sfx('CHAPTER_CLEAR', { gainMul: SECRET_SFX_GAIN });
+            markSecretFound(soloGame.plant);
         } else if (gameScreen.isInPlayField(cx, cy)) {
             gameScreen.triggerGlitch();          // missed inside the field — scramble (no penalty)
             sfx('ERROR2');                       // the sour glitter that goes with the scramble
@@ -2013,7 +2095,7 @@ canvas.addEventListener('mousedown', (e) => {
 
 canvas.addEventListener('mouseup', (e) => {
     if (gateActive) return;   // portrait rotate gate — ignore input
-    if (campaignWin) return;
+    if (campaignWin || rewardLine) return;
     modalOk.pressed = modalNo.pressed = false;  // end the hold-preview (the action rides the click)
     const { x, y } = hudEventPos(e);
     if (quickJoinSearching) { quickJoinOverlay.onMouseUp(x, y); return; }
@@ -2024,7 +2106,7 @@ canvas.addEventListener('mouseup', (e) => {
 
 canvas.addEventListener('click', (e) => {
     if (gateActive) return;   // portrait rotate gate — ignore input
-    if (campaignWin) return;
+    if (campaignWin || rewardLine) return;
     if (transition.isActive()) return; // ignore clicks mid-transition
 
     const rect = canvas.getBoundingClientRect();

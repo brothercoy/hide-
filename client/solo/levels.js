@@ -2,7 +2,8 @@
 // level's seed id (`chapterId:levelIdx`, 0-based level). A STRING value forces just the TARGET
 // (twin/composition/confusion still come from the seed + ladder position); an OBJECT can also pin
 //   twin      — the single camouflage glyph
-//   confusion — the camouflage fraction (1 = the whole field is the twin), overriding the ladder
+//   confusion — the camouflage fraction (1 = the whole field is the twin)
+//   plant     — ONE extra non-target glyph seeded into the noise (a secret to find), overriding the ladder
 // so a "sea" level can live anywhere on the ladder. Either way the level stays the same shared
 // puzzle for every player.
 //
@@ -12,7 +13,9 @@ export const LEVEL_TARGETS = {
     // idea; the twin ! targets are deliberate). Displaced seeded targets pinned around them.
     'c1:1': '@',    // level 2
     'c1:3': '$',    // level 4
-    'c1:4': 'G',    // level 5 (shifted up)
+    // level 5 — G, with a single © planted in the noise: pressing it (instead of the target) rings
+    // the secret sound and unlocks © on the main menu. `plant` = one extra non-target glyph.
+    'c1:4': { target: 'G', plant: '©' },
     'c1:5': '!',    // level 6
     'c1:7': '!',    // level 8
     'c1:8': 'n',    // level 9 (swapped with 11)
