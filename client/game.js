@@ -13,7 +13,7 @@ import { LEVEL_TARGETS } from './solo/levels.js';
 import { FLAGS } from './solo/flags.js';
 import { hasLives, getLives, loseLife, syncClock, nextRefillText, devSetLives, MAX_LIVES, isInfinite, grantInfinite, devSetInfinite } from './solo/lives.js';
 import { blinkLostHeart } from './solo/Hearts.js';
-import { dailyKey, dailyNumber, dailyConfig, dailyDone, recordDaily, devResetDaily, getDailyResult, copyShare } from './solo/daily.js';
+import { dailyKey, dailyNumber, dailyConfig, dailyDone, recordDaily, devResetDaily, getDailyResult, copyShare, resultLines } from './solo/daily.js';
 import { CHARSETS } from '../charsets.js';
 import { SoloScreen } from './screens/SoloScreen.js';
 import { ChapterScreen } from './screens/ChapterScreen.js';
@@ -1359,11 +1359,7 @@ const COPIED_MS = 1500;   // SHARE reads COPIED for this long
 // SHARE beside CONTINUE (after the level) or BACK (from the menu). SHARE copies the card and
 // keeps the box up, flipping to COPIED for a moment; the other button closes it.
 function showDailyResult(r, closeLabel, onClose) {
-    const misses = `${r.misses} ${r.misses === 1 ? 'MISS' : 'MISSES'}`;
-    const lines = [
-        `DAILY #${r.num} · ${r.chapter}`,
-        r.won ? `FOUND IN ${r.time.toFixed(2)}S · ${misses}` : `TIMES UP · ${misses}`,
-    ];
+    const lines = resultLines(r);   // the same lines the pasted card carries
     const share = () => {
         const mine = modalChoice;
         copyShare(r, SHARE_URL).then(ok => {
@@ -1605,7 +1601,9 @@ function updateModal(dt) {
 // confirm whose brackets snap inward on hover.
 function drawModal() {
     if (!modalMessage) return;
-    const lines = (Array.isArray(modalMessage) ? modalMessage : [modalMessage]).map(s => String(s).toUpperCase());
+    // A plain string message is shouted (?INVALID CODE); an array of lines is shown as given —
+    // it was composed to read exactly like this (the daily card's lowercase title).
+    const lines = Array.isArray(modalMessage) ? modalMessage.map(String) : [String(modalMessage).toUpperCase()];
 
     ctx.fillStyle = bgAlpha(0.8);
     ctx.fillRect(0, 0, canvas.width, canvas.height);

@@ -82,35 +82,47 @@ export function recordDaily({ key, won, time, misses }) {
     return r;
 }
 
-// The pasteable result — a bordered card in the game's own button style, ALWAYS the same width
-// (CARD_W characters inside) whatever the day's alphabet or number, one glyph per press with the
-// misses wrapped MARKS_PER_ROW to a row, then the link on its own line:
-//   +---------------------+
-//   | hide DAILY #12      |
-//   | JAPAN               |
-//   | x x x x x x x x x x |
-//   | x x ✓  7.42s        |
-//   +---------------------+
-//   https://hide-ascii.com
-// (The box lines up in any monospace view; a chat that sets messages in a proportional face will
-// wobble the right edge a little — the marks and the time still read.)
-const CARD_W = 19;          // inner width — fits "hide DAILY #9999", every alphabet, and a full marks row
+// The result, as lines — shared by the in-game modal and the pasteable card so the two read the
+// same: the title, the number, the alphabet, one glyph per press (x per miss, ✓ or ✗ for the
+// last press, wrapped MARKS_PER_ROW to a row), then the time.
 const MARKS_PER_ROW = 10;   // "x x x x x x x x x x" is 19 characters
-export function shareText(r, origin = '') {
+export function resultLines(r) {
     const shown = Math.min(r.misses, MAX_MARKS);
     const marks = Array.from({ length: shown }, () => 'x');
     if (r.misses > MAX_MARKS) marks.push('…');
-    const result = r.won ? `✓  ${r.time.toFixed(2)}s` : '✗  TIMES UP';
-    // Rows of marks; the result rides on the last row if it fits, else takes its own.
+    marks.push(r.won ? '✓' : '✗');
     const rows = [];
     for (let i = 0; i < marks.length; i += MARKS_PER_ROW) rows.push(marks.slice(i, i + MARKS_PER_ROW).join(' '));
-    const last = rows.length ? rows[rows.length - 1] : '';
-    if (last && [...(`${last} ${result}`)].length <= CARD_W) rows[rows.length - 1] = `${last} ${result}`;
-    else rows.push(result);
-    const lines = [`hide DAILY #${r.num}`, r.chapter, ...rows];
-    const rule = `+${'-'.repeat(CARD_W + 2)}+`;
-    const pad = (l) => l + ' '.repeat(Math.max(0, CARD_W - [...l].length));
-    return [rule, ...lines.map(l => `| ${pad(l)} |`), rule, origin].filter(Boolean).join('\n');
+    return ['hide @$©!!', `- #${r.num}`, r.chapter, ...rows, r.won ? `${r.time.toFixed(2)}s` : 'TIMES UP'];
+}
+
+// The pasteable card — the modal itself, character for character: the # box with its blank row
+// inside top and bottom, every line centred, ALWAYS CARD_W characters wide inside whatever the
+// day's alphabet or number; then the link on its own line:
+//   #####################
+//   #                   #
+//   #    hide @$©!!     #
+//   #       - #12       #
+//   #       JAPAN       #
+//   #       x x ✓       #
+//   #       7.42s       #
+//   #                   #
+//   #####################
+//   https://hide-ascii.com
+// Every line has the same number of characters, so it is a perfect box anywhere text is
+// monospaced (a code block, a terminal, a monospace font). A chat that sets messages in a
+// proportional face draws ✓, spaces and # at different widths, and no plain-text box can stay
+// straight there.
+const CARD_W = 19;          // inner width — fits the title, every alphabet, and a full marks row
+export function shareText(r, origin = '') {
+    const centre = (l) => {
+        const n = [...l].length, left = Math.floor((CARD_W - n) / 2);
+        return ' '.repeat(Math.max(0, left)) + l + ' '.repeat(Math.max(0, CARD_W - n - left));
+    };
+    const rule = '#'.repeat(CARD_W + 2);
+    const blank = `#${' '.repeat(CARD_W)}#`;
+    const body = resultLines(r).map(l => `#${centre(l)}#`);
+    return [rule, blank, ...body, blank, rule, origin].filter(Boolean).join('\n');
 }
 
 // Copy the card to the clipboard. The async clipboard API needs a secure page (https or
