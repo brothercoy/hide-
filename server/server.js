@@ -19,6 +19,19 @@ const clientDir = existsSync(join(distDir, 'index.html')) ? distDir : join(__dir
 const app = express();
 app.use(express.json());
 
+// CROSS-ORIGIN. The itch.io build of the client is served from itch's own domain and calls this
+// server for the room-code lookup and the lives clock; browsers refuse those answers unless the
+// server says any page may read them. Both routes are public, read-only lookups, so it does.
+// (Colyseus sends its own headers for its matchmaking routes; the game socket isn't subject to
+// this check at all.)
+app.use((req, res, next) => {
+    res.set('Access-Control-Allow-Origin', '*');
+    res.set('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+    res.set('Access-Control-Allow-Headers', 'Content-Type');
+    if (req.method === 'OPTIONS') return res.sendStatus(204);   // a preflight wants only the headers
+    next();
+});
+
 // The clock the solo lives system trusts. A player's device clock is theirs to change; this one
 // isn't, so "lives come back tomorrow" can't be skipped by setting the date forward. The client
 // pairs this with its own timezone offset to find ITS local midnight (see client/solo/lives.js).

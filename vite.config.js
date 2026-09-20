@@ -2,6 +2,10 @@ import { defineConfig } from 'vite';
 
 export default defineConfig({
     root: 'client',
+    // Relative asset URLs. The site serves the build at its root, where absolute /assets/… paths
+    // would also work — but itch.io serves the same build from a sub-path on its own domain, where
+    // an absolute path resolves to the root of itch's domain and the page comes up blank.
+    base: './',
     build: {
         outDir: '../dist',
         // dist/ sits outside the Vite root, so it is NOT wiped unless we say so — without this

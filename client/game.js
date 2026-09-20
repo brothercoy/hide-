@@ -11,7 +11,7 @@ import { completeLevel, isLevelComplete, LEVELS, devCompleteAll, devReset, devUp
 import { isSecretLevel, markSecretFound, SECRET_SFX_GAIN, devResetSecrets, themeLocked, themeForChapter } from './solo/rewards.js';
 import { LEVEL_TARGETS } from './solo/levels.js';
 import { FLAGS } from './solo/flags.js';
-import { hasLives, getLives, loseLife, syncClock, nextRefillText, devSetLives, MAX_LIVES, isInfinite, grantInfinite, devSetInfinite } from './solo/lives.js';
+import { hasLives, getLives, loseLife, syncClock, setServerBase, nextRefillText, devSetLives, MAX_LIVES, isInfinite, grantInfinite, devSetInfinite } from './solo/lives.js';
 import { blinkLostHeart } from './solo/Hearts.js';
 import { dailyKey, dailyNumber, dailyConfig, dailyDone, recordDaily, devResetDaily, getDailyResult, copyShare, resultLines } from './solo/daily.js';
 import { CHARSETS } from '../charsets.js';
@@ -43,15 +43,20 @@ const savedTheme = getPref('theme', 'green');
 const bootTheme = themeLocked(savedTheme) ? 'green' : savedTheme;
 if (bootTheme !== savedTheme) setPref('theme', bootTheme);
 applyTheme(bootTheme);
+// WHERE THE SERVER IS. By default the host that served the page (localhost:3000 in dev, where
+// Vite serves the client on its own port; otherwise the page's own host over wss). A build can
+// point elsewhere: the itch.io build is served from itch's own domain and must reach back to
+// hide-ascii.com for the game socket, the room-code lookup and the lives clock (client/.env.itch).
+const SERVER_HTTP = (import.meta.env.VITE_SERVER_URL || '').replace(/\/+$/, '');
+const SERVER_WS = SERVER_HTTP
+    ? SERVER_HTTP.replace(/^http/, 'ws')                      // https://… → wss://…
+    : (window.location.hostname === 'localhost' ? 'ws://localhost:3000' : 'wss://' + window.location.hostname);
+setServerBase(SERVER_HTTP);
 // Ask the server what time it is, and refill the solo lives if the player's local day has turned.
 // Their own device clock is never consulted — setting the date forward buys nothing.
 syncClock();
 
-const colyseusClient = new Client(
-    window.location.hostname === 'localhost'
-        ? 'ws://localhost:3000'
-        : 'wss://' + window.location.hostname
-);
+const colyseusClient = new Client(SERVER_WS);
 
 // Larger font + tap tolerance on SMALL screens, purely for readability — decided by SCREEN
 // SIZE, not touch. (Touch is unreliable: touchpads/drivers make non-touch desktops report
@@ -667,7 +672,7 @@ function joinGame(type, code) {
         lobbyScreen.resetToDefault();   // a freshly created room always starts clean (return-to-lobby keeps settings)
         colyseusClient.create('game_room', options).then(onRoomJoined);
     } else {
-        fetch('/join/' + code)
+        fetch(SERVER_HTTP + '/join/' + code)
             .then(r => r.json())
             .then(data => {
                 if (data.roomId) {

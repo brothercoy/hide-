@@ -28,6 +28,9 @@ const MIN_REFILL_MS = 20 * 60 * 60 * 1000;   // a refill needs ~a day of SERVER 
 let serverNow = null;      // server ms at the moment we fetched it
 let fetchedAt = null;      // performance.now() then — so we can age it without the device clock
 let syncing = null;
+let serverBase = '';       // '' = the page's own host; the itch.io build sets the real server (game.js)
+
+export function setServerBase(base) { serverBase = base || ''; }
 
 // Server ms right now, or null if we've never reached the server this session. Ages the fetched
 // value with performance.now(), a monotonic timer the date setting can't move.
@@ -40,7 +43,7 @@ function now() {
 export function syncClock() {
     if (serverNow != null) return Promise.resolve(true);
     if (syncing) return syncing;
-    syncing = fetch('/time', { cache: 'no-store' })
+    syncing = fetch(serverBase + '/time', { cache: 'no-store' })
         .then(r => r.ok ? r.json() : Promise.reject(new Error('bad status')))
         .then(d => {
             if (typeof d.now !== 'number') throw new Error('bad payload');
