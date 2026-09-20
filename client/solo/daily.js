@@ -93,7 +93,7 @@ export function resultLines(r) {
     marks.push(r.won ? '✓' : '✗');
     const rows = [];
     for (let i = 0; i < marks.length; i += MARKS_PER_ROW) rows.push(marks.slice(i, i + MARKS_PER_ROW).join(' '));
-    return ['hide @$©!!', `- #${r.num}`, r.chapter, ...rows, r.won ? `${r.time.toFixed(2)}s` : 'TIMES UP'];
+    return ['hide @$©!!', `DAILY - #${r.num}`, r.chapter, ...rows, r.won ? `${r.time.toFixed(2)}s` : 'TIMES UP'];
 }
 
 // The pasteable card — the modal itself, character for character: the # box with its blank row
@@ -102,7 +102,7 @@ export function resultLines(r) {
 //   #####################
 //   #                   #
 //   #    hide @$©!!     #
-//   #       - #12       #
+//   #    DAILY - #12    #
 //   #       JAPAN       #
 //   #       x x ✓       #
 //   #       7.42s       #
