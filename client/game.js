@@ -1366,7 +1366,8 @@ function showDailyResult(r, closeLabel, onClose) {
             if (!ok || modalChoice !== mine) return;
             sfx('BTN_CONFIRM');
             mine.yesLabel = 'COPIED';
-            setTimeout(() => { if (modalChoice === mine) mine.yesLabel = 'SHARE'; }, COPIED_MS);
+            mine.yesHeld = true;    // } COPIED { — held look, brackets hugging the new word
+            setTimeout(() => { if (modalChoice === mine) { mine.yesLabel = 'SHARE'; mine.yesHeld = false; } }, COPIED_MS);
         });
     };
     showConfirm(lines, share, onClose, { yesLabel: 'SHARE', yesLabels: ['SHARE', 'COPIED'], noLabel: closeLabel, yesKeepsOpen: true, sound: null });
@@ -1656,19 +1657,24 @@ function drawModal() {
     const okY = boxTop + (3 + lines.length) * lh;
     // Held down: brackets hold the pressed state (inward, snapped tight, steady) —
     // same hold-preview as every bracket control.
-    const drawBtn = (label, bx, b, rest) => {
-        const held = b.pressed;
+    // `restBox` is the widest the button can be (what the box and hit rect are sized for); the
+    // brackets themselves hug the label that is showing, so SHARE sits tight and COPIED wider,
+    // with the frame never moving. `forceHeld` shows the pressed look (} LABEL {, snapped tight)
+    // for as long as the caller wants — the COPIED beat.
+    const drawBtn = (label, bx, b, restBox, forceHeld = false) => {
+        const held = b.pressed || forceHeld;
+        const rest = restOf(label);
         const gap = rest - (held ? MODAL_OK_SNAP_STEP : b.snap);
         ctx.fillText(label, bx, okY);
         ctx.fillText(held || b.over ? '}' : '{', bx - gap, okY);
         ctx.fillText(held || b.over ? '{' : '}', bx + gap, okY);
         // Hit rect uses the REST spread (widest extent) so hovering doesn't shrink it
         // and flicker the hover state.
-        const reach = rest + cw;
+        const reach = restBox + cw;
         b.rect = { x: bx - reach, y: okY, w: reach * 2, h: lh };
     };
     if (modalChoice) {
-        drawBtn(yesLabel, cx - (reachYes + cw / 2), modalOk, restYes);
+        drawBtn(yesLabel, cx - (reachYes + cw / 2), modalOk, restYes, !!modalChoice.yesHeld);
         drawBtn(noLabel, cx + (reachNo + cw / 2), modalNo, restNo);
     } else {
         drawBtn('OK', cx, modalOk, restYes);
