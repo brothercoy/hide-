@@ -83,45 +83,54 @@ export function recordDaily({ key, won, time, misses }) {
 }
 
 // The result, as lines — shared by the in-game modal and the pasteable card so the two read the
-// same: the title, the number, the alphabet, one glyph per press (x per miss, ✓ or ✗ for the
-// last press, wrapped MARKS_PER_ROW to a row), then the time.
-const MARKS_PER_ROW = 10;   // "x x x x x x x x x x" is 19 characters
+// same: the number, the alphabet, one glyph per press (x per miss, ✓ or ✗ for the last press,
+// wrapped CARD_W to a row), then the time.
+const CARD_W = 13;          // characters inside the box — fits "DAILY - #9999", every alphabet, TIMES UP
 export function resultLines(r) {
     const shown = Math.min(r.misses, MAX_MARKS);
     const marks = Array.from({ length: shown }, () => 'x');
-    if (r.misses > MAX_MARKS) marks.push('…');
+    if (r.misses > MAX_MARKS) marks.push('+');
     marks.push(r.won ? '✓' : '✗');
     const rows = [];
-    for (let i = 0; i < marks.length; i += MARKS_PER_ROW) rows.push(marks.slice(i, i + MARKS_PER_ROW).join(' '));
-    return ['hide @$©!!', `DAILY - #${r.num}`, r.chapter, ...rows, r.won ? `${r.time.toFixed(2)}s` : 'TIMES UP'];
+    for (let i = 0; i < marks.length; i += CARD_W) rows.push(marks.slice(i, i + CARD_W).join(''));
+    return [`DAILY - #${r.num}`, r.chapter, ...rows, r.won ? `${r.time.toFixed(2)}s` : 'TIMES UP'];
 }
 
-// The pasteable card — the modal itself, character for character: the # box with its blank row
-// inside top and bottom, every line centred, ALWAYS CARD_W characters wide inside whatever the
-// day's alphabet or number; then the link on its own line:
-//   #####################
-//   #                   #
-//   #    hide @$©!!     #
-//   #    DAILY - #12    #
-//   #       JAPAN       #
-//   #       x x ✓       #
-//   #       7.42s       #
-//   #                   #
-//   #####################
+// The pasteable card — the modal itself: the # box with its blank row inside top and bottom,
+// every line centred, ALWAYS CARD_W characters wide inside whatever the day's alphabet or number;
+// then the link on its own line.
+//
+// It is written in FULL-WIDTH characters (the forms used in East Asian text: ＃, Ａ-Ｚ, ０-９,
+// and the ideographic space for padding). Every one of them is exactly one em wide in every
+// font, so the box stays a box in a chat that sets messages in a proportional face — where an
+// ordinary # is wide and an ordinary space is narrow, and a row of hashes and a row of padded
+// text can never be the same width. The link stays ordinary text so it remains a link.
+//   ＃＃＃＃＃＃＃＃＃＃＃＃＃＃＃
+//   ＃　　　　　　　　　　　　　＃
+//   ＃　ＤＡＩＬＹ　－　＃１２　＃
+//   ＃　　　　ＪＡＰＡＮ　　　　＃
+//   ＃　　　　　ｘｘ✓　　　　　＃
+//   ＃　　　　７．４２ｓ　　　　＃
+//   ＃　　　　　　　　　　　　　＃
+//   ＃＃＃＃＃＃＃＃＃＃＃＃＃＃＃
 //   https://hide-ascii.com
-// Every line has the same number of characters, so it is a perfect box anywhere text is
-// monospaced (a code block, a terminal, a monospace font). A chat that sets messages in a
-// proportional face draws ✓, spaces and # at different widths, and no plain-text box can stay
-// straight there.
-const CARD_W = 19;          // inner width — fits the title, every alphabet, and a full marks row
+const FW_SPACE = '　';
+function fullwidth(s) {
+    return [...s].map(c => {
+        if (c === ' ') return FW_SPACE;
+        const code = c.codePointAt(0);
+        return code >= 0x21 && code <= 0x7E ? String.fromCodePoint(code + 0xFEE0) : c;   // ! .. ~ → ！ .. ～
+    }).join('');
+}
 export function shareText(r, origin = '') {
     const centre = (l) => {
         const n = [...l].length, left = Math.floor((CARD_W - n) / 2);
-        return ' '.repeat(Math.max(0, left)) + l + ' '.repeat(Math.max(0, CARD_W - n - left));
+        return FW_SPACE.repeat(Math.max(0, left)) + fullwidth(l) + FW_SPACE.repeat(Math.max(0, CARD_W - n - left));
     };
-    const rule = '#'.repeat(CARD_W + 2);
-    const blank = `#${' '.repeat(CARD_W)}#`;
-    const body = resultLines(r).map(l => `#${centre(l)}#`);
+    const edge = fullwidth('#');
+    const rule = edge.repeat(CARD_W + 2);
+    const blank = `${edge}${FW_SPACE.repeat(CARD_W)}${edge}`;
+    const body = resultLines(r).map(l => `${edge}${centre(l)}${edge}`);
     return [rule, blank, ...body, blank, rule, origin].filter(Boolean).join('\n');
 }
 
