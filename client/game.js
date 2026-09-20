@@ -1369,7 +1369,7 @@ function showDailyResult(r, closeLabel, onClose) {
             setTimeout(() => { if (modalChoice === mine) mine.yesLabel = 'SHARE'; }, COPIED_MS);
         });
     };
-    showConfirm(lines, share, onClose, { yesLabel: 'SHARE', noLabel: closeLabel, yesKeepsOpen: true, sound: null });
+    showConfirm(lines, share, onClose, { yesLabel: 'SHARE', yesLabels: ['SHARE', 'COPIED'], noLabel: closeLabel, yesKeepsOpen: true, sound: null });
 }
 
 function startSolo(level = { mode: 'redacted', settings: { charCount: 45, speedScale: 0.2, roundTime: 20 } }, ident = null) {
@@ -1562,6 +1562,9 @@ function showConfirm(message, onYes, onNo, opts = {}) {
     modalChoice = {
         yes: onYes || (() => {}), no: onNo || (() => {}),
         yesLabel: opts.yesLabel || 'YES', noLabel: opts.noLabel || 'NO',
+        // Every label the first button may show (SHARE / COPIED): the box and the brackets are
+        // sized for the widest, so a label change never moves the frame.
+        yesLabels: opts.yesLabels || [opts.yesLabel || 'YES'],
         keepOpen: !!opts.yesKeepsOpen,
     };
     uiManager.blocked = true;
@@ -1614,12 +1617,18 @@ function drawModal() {
     const lh = MODAL_FONT;
     const cx = canvas.width / 2;
 
-    // Each bracket button's half-width: the rest spread, or wider for a long label (CONTINUE) so
-    // the brackets never sit on the letters.
-    const restOf = (label) => Math.max(MODAL_OK_REST, ctx.measureText(label).width / 2 + cw * 0.75);
+    // Each bracket button's half-width (label centre → bracket at rest). OK's brackets sit
+    // MODAL_OK_REST from its centre, i.e. MODAL_OK_REST − cw from its edge; a longer label keeps
+    // that same EDGE gap, so SHARE and CONTINUE read exactly like OK and YES / NO.
+    const edgeGap = MODAL_OK_REST - cw;
+    const restOf = (label) => Math.max(MODAL_OK_REST, ctx.measureText(label).width / 2 + edgeGap);
     const yesLabel = modalChoice ? modalChoice.yesLabel : 'OK';
     const noLabel = modalChoice ? modalChoice.noLabel : '';
-    const reachYes = restOf(yesLabel) + cw, reachNo = modalChoice ? restOf(noLabel) + cw : 0;
+    // The first button is sized for the widest label it can show, so SHARE → COPIED doesn't move
+    // the brackets or resize the box.
+    const restYes = Math.max(...(modalChoice ? modalChoice.yesLabels : [yesLabel]).map(restOf));
+    const restNo = modalChoice ? restOf(noLabel) : 0;
+    const reachYes = restYes + cw, reachNo = modalChoice ? restNo + cw : 0;
     // A button pair is wider than the message on a short question, so the box has to fit both.
     const btnChars = Math.ceil((modalChoice ? 2 * reachYes + 2 * reachNo + cw : 2 * reachYes) / cw);
     const msgChars = Math.max(...lines.map(l => [...l].length));
@@ -1647,9 +1656,8 @@ function drawModal() {
     const okY = boxTop + (3 + lines.length) * lh;
     // Held down: brackets hold the pressed state (inward, snapped tight, steady) —
     // same hold-preview as every bracket control.
-    const drawBtn = (label, bx, b) => {
+    const drawBtn = (label, bx, b, rest) => {
         const held = b.pressed;
-        const rest = restOf(label);
         const gap = rest - (held ? MODAL_OK_SNAP_STEP : b.snap);
         ctx.fillText(label, bx, okY);
         ctx.fillText(held || b.over ? '}' : '{', bx - gap, okY);
@@ -1660,10 +1668,10 @@ function drawModal() {
         b.rect = { x: bx - reach, y: okY, w: reach * 2, h: lh };
     };
     if (modalChoice) {
-        drawBtn(yesLabel, cx - (reachYes + cw / 2), modalOk);
-        drawBtn(noLabel, cx + (reachNo + cw / 2), modalNo);
+        drawBtn(yesLabel, cx - (reachYes + cw / 2), modalOk, restYes);
+        drawBtn(noLabel, cx + (reachNo + cw / 2), modalNo, restNo);
     } else {
-        drawBtn('OK', cx, modalOk);
+        drawBtn('OK', cx, modalOk, restYes);
         modalNo.rect = null;
     }
     ctx.textAlign = 'left';
