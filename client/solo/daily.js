@@ -17,7 +17,10 @@ import { FLAGS } from './flags.js';
 import { getPref, setPref } from '../prefs.js';
 import { localToday } from './lives.js';
 
-const EPOCH = '2026-09-19';          // DAILY #1
+// DAILY #1 — the LAUNCH day. Only the number reads off this; the puzzle for a date is drawn from
+// the date itself, so moving the epoch relabels the days without changing any of them. Set it to
+// the day the game goes public, and never move it after that (numbers already shared would shift).
+const EPOCH = '2026-09-21';
 const RESULT_KEY = 'daily.result';   // { key, num, chapter, won, time, misses } — the latest attempt
 const MAX_MARKS = 20;                // the share line shows at most this many misses
 
