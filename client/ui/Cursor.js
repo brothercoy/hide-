@@ -18,14 +18,9 @@ const SHAPE = [[0, 0], [0, 16.5], [4.2, 12.8], [7.1, 19], [9.6, 17.9], [6.7, 11.
 const SCALE = 1.25;      // a little larger than life — the shader's bloom softens fine edges
 const OUTLINE = 1.5;     // px of dark border, so it stays legible over a glowing character
 
-// ── Ghost trail — OFF. The sparkles below replaced it. ───────────────────────
-// Kept whole rather than deleted, because the two are being compared: GHOST_ON flips it straight
-// back, and the values below are the ones that were tuned by eye. Turn both on to have both.
-//
-// Ghosts are dropped by DISTANCE, not per frame: per frame they would spread out on a fast sweep
-// and pile into a blob when the pointer crawls, whereas by distance the spacing is the same at any
-// speed and a pointer standing still drops none at all.
-const GHOST_ON = false;
+// The trail. Ghosts are dropped by DISTANCE, not per frame: per frame they would spread out on a
+// fast sweep and pile into a blob when the pointer crawls, whereas by distance the spacing is the
+// same at any speed and a pointer standing still drops none at all.
 const GHOST_STEP = 12;       // px of travel between after-images
 const GHOST_LIFE_MS = 330;  // how long one takes to fade from full to gone
 const GHOST_PEAK = 0.33;     // faint: these are solid shapes, so they need less alpha than a line
@@ -36,64 +31,7 @@ const GHOST_BREAK = 140;     // px — a longer step is a jump, not a stroke; dr
 // never fades while you move and only starts dissolving once you stop. A cap of 40 was doing
 // exactly that at any speed above a crawl. Set high enough that ordinary movement never reaches
 // it, so it only ever catches something pathological.
-const GHOST_MAX = 12;
-
-// ── Sparkle trail — the live one ─────────────────────────────────────────────
-// The cursor sheds the button sparkles as it travels. The difference from the earlier attempt is
-// WHERE they land: scattered across a patch the size of the cursor rather than all stacking on its
-// tip, which is what made that version read as a clump hanging off the point. Otherwise they
-// behave exactly as the button sparkles do — same glyphs, each on its own random point of the
-// colour cycle, same twinkle of faint-and-small → full → gone.
-const SPARK_ON = true;
-const SPARK_GLYPHS = ['*', '+', '.', "'"];
-const SPARK_STEP = 16;        // px of travel between sparkles — independent of the ghosts' spacing
-const SPARK_W = 16, SPARK_H = 24;   // the patch they scatter over: the arrow's own footprint
-const SPARK_LIFE_MS = 620;
-const SPARK_PEAK = 0.85;      // brighter than a ghost — these are thin glyphs, not solid shapes
-// Safety valve only. Same rule as the ghosts: a sparkle must die by AGEING so it twinkles out,
-// never by being pushed off the end of the list, which would kill it mid-twinkle. 60 would have
-// been reached at around 1500 px/s, which is an ordinary flick of the wrist.
-const SPARK_MAX = 220;
-const SPARK_RISE = 0.3;       // fraction of life spent growing in, as the button sparkles do
-const R = (a, b) => a + Math.random() * (b - a);
-let sparks = [];
-let lastSX = null, lastSY = null;
-
-function emitSpark(x, y) {
-    if (lastSX !== null) {
-        const dx = x - lastSX, dy = y - lastSY;
-        if (dx * dx + dy * dy < SPARK_STEP * SPARK_STEP) return;
-        if (dx * dx + dy * dy > GHOST_BREAK * GHOST_BREAK) sparks.length = 0;   // teleported
-    }
-    lastSX = x; lastSY = y;
-    // The arrow hangs DOWN and RIGHT of its tip, so the patch is offset the same way and the
-    // sparkles land on the cursor's body instead of ringing the point it stands on.
-    sparks.push({
-        x: x + R(0, SPARK_W), y: y + R(0, SPARK_H),
-        born: performance.now(),
-        ch: SPARK_GLYPHS[(Math.random() * SPARK_GLYPHS.length) | 0],
-        hue: Math.random(),
-        size: R(11, 18),
-    });
-    if (sparks.length > SPARK_MAX) sparks.splice(0, sparks.length - SPARK_MAX);
-}
-
-function drawSparks(ctx, now) {
-    if (!sparks.length) return;
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    for (const s of sparks) {
-        const k = (now - s.born) / SPARK_LIFE_MS;
-        if (k >= 1) continue;
-        // The twinkle: faint and small, up to full, then away again.
-        const env = k < SPARK_RISE ? k / SPARK_RISE : 1 - (k - SPARK_RISE) / (1 - SPARK_RISE);
-        ctx.globalAlpha = env * SPARK_PEAK;
-        ctx.fillStyle = charColor(s.hue, now);
-        ctx.font = `${Math.round(s.size * (0.45 + 0.55 * env))}px "IBMVGA"`;
-        ctx.fillText(s.ch, s.x, s.y);
-    }
-    sparks = sparks.filter(s => now - s.born < SPARK_LIFE_MS);
-}
+const GHOST_MAX = 260;
 
 let trail = [];
 let lastX = null, lastY = null;
@@ -107,12 +45,7 @@ function tracePath(ctx) {
 
 // Call every frame while the pointer is over the window.
 export function emitCursorTrail(x, y) {
-    if (!isCycling()) {        // cosmic only
-        trail.length = 0; sparks.length = 0; lastX = null; lastSX = null;
-        return;
-    }
-    if (SPARK_ON) emitSpark(x, y);   // its own spacing, so the two trails are independent
-    if (!GHOST_ON) return;
+    if (!isCycling()) { trail.length = 0; lastX = null; return; }   // cosmic only
     if (lastX !== null) {
         const dx = x - lastX, dy = y - lastY;
         if (dx * dx + dy * dy < GHOST_STEP * GHOST_STEP) return;
@@ -159,8 +92,7 @@ export function drawCursor(ctx, x, y, showArrow = true, now = performance.now())
     ctx.save();
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.globalAlpha = 1;
-    if (GHOST_ON) drawTrail(ctx, now);
-    if (SPARK_ON) drawSparks(ctx, now);   // over the ghosts, under the arrow
+    drawTrail(ctx, now);
     if (showArrow) {
         ctx.save();
         ctx.translate(x, y);   // the tip lands exactly on the pointer, as the system arrow's does
