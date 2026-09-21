@@ -18,9 +18,14 @@ const SHAPE = [[0, 0], [0, 16.5], [4.2, 12.8], [7.1, 19], [9.6, 17.9], [6.7, 11.
 const SCALE = 1.25;      // a little larger than life — the shader's bloom softens fine edges
 const OUTLINE = 1.5;     // px of dark border, so it stays legible over a glowing character
 
-// The trail. Ghosts are dropped by DISTANCE, not per frame: per frame they would spread out on a
-// fast sweep and pile into a blob when the pointer crawls, whereas by distance the spacing is the
-// same at any speed and a pointer standing still drops none at all.
+// ── Ghost trail — OFF. The sparkles below replaced it. ───────────────────────
+// Kept whole rather than deleted, because the two are being compared: GHOST_ON flips it straight
+// back, and the values below are the ones that were tuned by eye. Turn both on to have both.
+//
+// Ghosts are dropped by DISTANCE, not per frame: per frame they would spread out on a fast sweep
+// and pile into a blob when the pointer crawls, whereas by distance the spacing is the same at any
+// speed and a pointer standing still drops none at all.
+const GHOST_ON = false;
 const GHOST_STEP = 12;       // px of travel between after-images
 const GHOST_LIFE_MS = 330;  // how long one takes to fade from full to gone
 const GHOST_PEAK = 0.33;     // faint: these are solid shapes, so they need less alpha than a line
@@ -33,15 +38,12 @@ const GHOST_BREAK = 140;     // px — a longer step is a jump, not a stroke; dr
 // it, so it only ever catches something pathological.
 const GHOST_MAX = 12;
 
-// ── Sparkle trail — EXPERIMENTAL, alongside the ghosts ───────────────────────
-// The cursor also sheds the button sparkles as it travels. The difference from the earlier attempt
-// is WHERE they land: scattered across a patch the size of the cursor rather than all stacking on
-// its tip, which is what made that version read as a clump hanging off the point. Otherwise they
+// ── Sparkle trail — the live one ─────────────────────────────────────────────
+// The cursor sheds the button sparkles as it travels. The difference from the earlier attempt is
+// WHERE they land: scattered across a patch the size of the cursor rather than all stacking on its
+// tip, which is what made that version read as a clump hanging off the point. Otherwise they
 // behave exactly as the button sparkles do — same glyphs, each on its own random point of the
 // colour cycle, same twinkle of faint-and-small → full → gone.
-//
-// Self-contained on purpose: flip SPARK_ON to false, or delete this block and the two calls that
-// use it, and nothing else changes.
 const SPARK_ON = true;
 const SPARK_GLYPHS = ['*', '+', '.', "'"];
 const SPARK_STEP = 16;        // px of travel between sparkles — independent of the ghosts' spacing
@@ -110,6 +112,7 @@ export function emitCursorTrail(x, y) {
         return;
     }
     if (SPARK_ON) emitSpark(x, y);   // its own spacing, so the two trails are independent
+    if (!GHOST_ON) return;
     if (lastX !== null) {
         const dx = x - lastX, dy = y - lastY;
         if (dx * dx + dy * dy < GHOST_STEP * GHOST_STEP) return;
@@ -156,7 +159,7 @@ export function drawCursor(ctx, x, y, showArrow = true, now = performance.now())
     ctx.save();
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.globalAlpha = 1;
-    drawTrail(ctx, now);
+    if (GHOST_ON) drawTrail(ctx, now);
     if (SPARK_ON) drawSparks(ctx, now);   // over the ghosts, under the arrow
     if (showArrow) {
         ctx.save();
