@@ -32,7 +32,7 @@ import { drawRotateGate } from './ui/RotateGate.js';
 import { GAME_INTRO_MS } from '../timings.js';   // shared: the server holds the first countdown this long
 import { getPref, setPref, getRaw, setRaw, removeRaw, setSession } from './prefs.js';
 import { unlockAudio, sfx, feedTick, typeTick, tickBurst, duckMusic } from './audio/sfx.js';
-import { spawnSparkles, drawSparkles } from './ui/Sparkles.js';
+import { spawnSparkles, drawSparkles, emitCursorTrail, drawCursorTrail } from './ui/Sparkles.js';
 import { setMusic, syncMusic, setMusicTension } from './audio/music.js';
 
 // Apply the saved theme before anything paints (default green). `theme` is read live everywhere —
@@ -2375,7 +2375,13 @@ if (!isMobile) {
 }
 
 function drawCursor() {
-    if (isMobile || !pointerInside) return;   // a touch screen has no pointer to replace
+    if (isMobile) return;   // a touch screen has no pointer to replace
+    // Under cosmic the pointer drags a faint colour trail. Emitted only while it is over the
+    // window, but drawn unconditionally, so a tail left behind on the way out fades rather than
+    // freezing. Both are no-ops under the fixed themes.
+    if (pointerInside) emitCursorTrail(uiManager.mouseX, uiManager.mouseY);
+    drawCursorTrail(ctx);
+    if (!pointerInside) return;
     ctx.save();
     ctx.globalAlpha = 1;
     // The tip lands exactly on the pointer's own position, as the system arrow's does.
