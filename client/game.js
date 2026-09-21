@@ -2349,14 +2349,22 @@ function updateMusicTension() {
 // The pointer is DRAWN INTO the canvas rather than left to the operating system, so it belongs to
 // the screen it is on: it takes the theme's colour (cosmic included), picks up the bloom and the
 // scanlines, and bends with the CRT curve instead of gliding flat across the glass on top of it.
-// A reticle rather than an arrow, because the whole game is finding one character among many —
-// and it is hollow at the centre so it never covers the thing you are trying to look at.
+// It is the ORDINARY arrow, not an invented shape — drawn from the system pointer's own
+// proportions so it reads as "the cursor" rather than as a game asset. Traced as a polygon rather
+// than loaded as an image, which means it costs no file, never blurs, and takes the theme's colour
+// for free (a PNG could do none of those).
+//
+// A real pointer is a light body inside a dark border, so it stays legible over anything it
+// crosses. Same idea here, in the screen's own two colours: the body is the phosphor, the border
+// is the dark behind it — which matters most exactly when it passes over a glowing character.
 //
 // uiManager.mouseX/Y have already been mapped back THROUGH the curve (coordTransform), so drawing
 // at those coordinates and letting the shader bend the result puts it under the real pointer.
-const CUR_ARM = 9;       // px — length of each of the four strokes
-const CUR_GAP = 5;       // px — clear space between the centre and each stroke
-const CUR_THICK = 2;     // px — stroke weight, matching the box borders
+// Tip at (0,0), tracing the arrow clockwise: down the left edge, into the notch, out along the
+// tail and back up to the point.
+const CUR_SHAPE = [[0, 0], [0, 16.5], [4.2, 12.8], [7.1, 19], [9.6, 17.9], [6.7, 11.8], [12, 11.8]];
+const CUR_SCALE = 1.25;   // a little larger than life — the shader's bloom softens fine edges
+const CUR_OUTLINE = 1.5;  // px of dark border
 let pointerInside = false;
 if (!isMobile) {
     // mouseout with no relatedTarget means the pointer left the window entirely, rather than just
@@ -2368,14 +2376,24 @@ if (!isMobile) {
 
 function drawCursor() {
     if (isMobile || !pointerInside) return;   // a touch screen has no pointer to replace
-    const x = Math.round(uiManager.mouseX), y = Math.round(uiManager.mouseY);
-    const h = CUR_THICK / 2;
+    ctx.save();
     ctx.globalAlpha = 1;
+    // The tip lands exactly on the pointer's own position, as the system arrow's does.
+    ctx.translate(uiManager.mouseX, uiManager.mouseY);
+    ctx.scale(CUR_SCALE, CUR_SCALE);
+    ctx.beginPath();
+    ctx.moveTo(CUR_SHAPE[0][0], CUR_SHAPE[0][1]);
+    for (let i = 1; i < CUR_SHAPE.length; i++) ctx.lineTo(CUR_SHAPE[i][0], CUR_SHAPE[i][1]);
+    ctx.closePath();
+    // Stroke FIRST, then fill over it: a stroke straddles the path, so filling afterwards covers
+    // its inner half and leaves a clean border sitting entirely outside the arrow.
+    ctx.lineWidth = (CUR_OUTLINE * 2) / CUR_SCALE;
+    ctx.lineJoin = 'round';
+    ctx.strokeStyle = theme.bg;
+    ctx.stroke();
     ctx.fillStyle = theme.fg;
-    ctx.fillRect(x - CUR_GAP - CUR_ARM, y - h, CUR_ARM, CUR_THICK);   // left
-    ctx.fillRect(x + CUR_GAP, y - h, CUR_ARM, CUR_THICK);             // right
-    ctx.fillRect(x - h, y - CUR_GAP - CUR_ARM, CUR_THICK, CUR_ARM);   // up
-    ctx.fillRect(x - h, y + CUR_GAP, CUR_THICK, CUR_ARM);             // down
+    ctx.fill();
+    ctx.restore();
 }
 
 let _screenKey = window.screen.width + 'x' + window.screen.height;
