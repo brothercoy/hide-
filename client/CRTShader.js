@@ -35,7 +35,13 @@ export class CRTEffect {
             adaptiveIntensity: 3.0,
             vignetteStrength: 0.99,
             curvature: 0.2,
-            flickerStrength: 0.03
+            flickerStrength: 0.03,
+            // 0 = a normal screen. 1 = make the VERTICAL axis seamless, so the rendered image can
+            // be stacked on itself without a visible join: no vertical curvature, no top/bottom
+            // vignette, and the one screen-tint term whose period didn't divide the height is
+            // nudged so it does. Left and right are untouched and still look like a screen edge.
+            // Only the throwaway cover page sets this, for the itch page's tiling background.
+            tileY: 0.0
         };
 
         this._initShader();
@@ -80,6 +86,7 @@ export class CRTEffect {
             uniform float vignetteStrength;
             uniform float curvature;
             uniform float flickerStrength;
+            uniform float tileY;
             uniform vec3 phosphor;   // theme foreground (normalized) — phosphor tint
 
             varying vec2 vUv;
@@ -95,7 +102,12 @@ export class CRTEffect {
                 vec2 coords = uv * 2.0 - 1.0;
                 float curveAmount = curvature * 0.25;
                 float dist = dot(coords, coords);
-                coords = coords * (1.0 + dist * curveAmount);
+                vec2 warped = coords * (1.0 + dist * curveAmount);
+                // tileY: keep the vertical axis exactly as it came in, so the top and bottom rows
+                // map 1:1 and line up when the image repeats. The horizontal warp survives, and it
+                // is identical at both edges because dist depends on y only through y*y — which is
+                // 1 at the top and at the bottom alike.
+                coords = mix(warped, vec2(warped.x, coords.y), tileY);
                 return coords * 0.5 + 0.5;
             }
 
@@ -203,7 +215,10 @@ export class CRTEffect {
 
                     float adaptiveFactor = 1.0;
                     if (adaptiveIntensity > 0.001) {
-                        float yPattern = sin(uv.y * 30.0) * 0.5 + 0.5;
+                        // 30.0 is 4.77 cycles over the height — a fraction, so it would step at a
+                        // vertical join. tileY rounds it to a whole 5 cycles (2*PI*5), which is a
+                        // change far too small to see and makes the band repeat exactly.
+                        float yPattern = sin(uv.y * mix(30.0, 31.41592653589793, tileY)) * 0.5 + 0.5;
                         adaptiveFactor = 1.0 - yPattern * adaptiveIntensity * 0.2;
                     }
 
@@ -223,9 +238,11 @@ export class CRTEffect {
                 float screenNoise = rand(uv * vec2(1601.0, 901.0) + vec2(fract(time * 17.3), fract(time * 13.7)));
                 pixel.rgb += screenNoise * phosphor * lumField * 0.5;
 
-                // Radial vignette for noise — bright center, fades to edges
+                // Radial vignette for noise — bright center, fades to edges. Under tileY it fades
+                // on the horizontal axis only, or it would darken the top and bottom into a band.
                 vec2 noiseCenter = uv - 0.5;
-                float radialFade = 1.0 - smoothstep(0.0, 0.7, length(noiseCenter));
+                float noiseDist = mix(length(noiseCenter), abs(noiseCenter.x), tileY);
+                float radialFade = 1.0 - smoothstep(0.0, 0.7, noiseDist);
                 pixel.rgb += screenNoise * phosphor * radialFade * 0.3;
 
                 pixel.rgb = applyRasterization(uv, pixel.rgb);
@@ -234,7 +251,10 @@ export class CRTEffect {
                 // Vignette applied last — no color distortion
                 float vigStart = vignetteStrength - 0.2;          // 0.0–1.0, how far in it starts
                 float vigEnd = vignetteStrength + 0.09;     // feather width fixed at 0.08
-                float vigEdge = max(abs(uv * 2.0 - 1.0).x, abs(uv * 2.0 - 1.0).y);
+                // Under tileY the darkening is horizontal only, so the top and bottom edges stay at
+                // full brightness and meet their opposite number cleanly.
+                vec2 vigC = abs(uv * 2.0 - 1.0);
+                float vigEdge = mix(max(vigC.x, vigC.y), vigC.x, tileY);
                 float vignette = 1.0 - smoothstep(vigStart, vigEnd, vigEdge);
                 pixel.rgb *= vignette;
 

@@ -188,6 +188,11 @@ resizeCanvas();
 let _refitTimer = null;
 window.addEventListener('resize', () => {
     if (isPortraitGate()) { layoutGate(); return; }   // portrait mobile shows the rotate gate, not the game
+    // Embedded, the scale is derived from the VIEWPORT, so it has to be recomputed whenever the
+    // viewport changes — and going fullscreen is exactly that. Without this the game stayed locked
+    // at the small embed's scale in fullscreen, sitting in the middle of a black screen. On the
+    // site the scale comes from the monitor and never changes here, so this is a no-op there.
+    if (EMBEDDED) displayScale = computeDisplayScale();
     layoutDisplay();
     clearTimeout(_refitTimer);
     _refitTimer = setTimeout(refitToWindow, 150);
