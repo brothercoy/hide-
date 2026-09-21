@@ -8,9 +8,9 @@
 // the cursor rather than as a game asset. Tracing it beats loading a PNG on every count: no file,
 // no blur at any size, and it takes the theme colour for free.
 //
-// Under COSMIC it also leaves an iridescent trail — after-images of the arrow itself, each one a
-// step further along the colour wheel, like white light fanned through a prism. The order matters:
-// stepping the wheel gives a spectrum, whereas random colours would just be confetti.
+// Under COSMIC it also leaves an iridescent trail — after-images of the arrow itself, each taking
+// its own random point on the colour cycle exactly as the sparkles do, so the tail is a scatter of
+// prism colours rather than an ordered sweep through them.
 import { theme, isCycling, charColor } from './colors.js';
 
 // Tip at (0,0), tracing clockwise: down the left edge, into the notch, out along the tail, back up.
@@ -22,15 +22,16 @@ const OUTLINE = 1.5;     // px of dark border, so it stays legible over a glowin
 // fast sweep and pile into a blob when the pointer crawls, whereas by distance the spacing is the
 // same at any speed and a pointer standing still drops none at all.
 const GHOST_STEP = 13;       // px of travel between after-images
-const GHOSTS = 12;           // how many follow the pointer
-const GHOST_LIFE_MS = 380;   // and how long one lives, so a halted pointer's tail drains away
-const GHOST_SPREAD = 0.5;    // how much of the colour wheel the tail fans across — the prism angle
+// These two work together: a ghost leaves either by ageing out or by being pushed off the end of
+// the list, so a long life only actually SHOWS if the list can hold that many. Raising one without
+// the other changes nothing.
+const GHOST_LIFE_MS = 1400;  // how long one hangs there before it fades
+const GHOSTS = 40;           // how many can hang at once
 const GHOST_PEAK = 0.38;     // faint: these are solid shapes, so they need less alpha than a line
 const GHOST_BREAK = 140;     // px — a longer step is a jump, not a stroke; drop the tail instead
 
 let trail = [];
 let lastX = null, lastY = null;
-let hueWalk = 0;             // walks the wheel, so consecutive ghosts are consecutive colours
 
 function tracePath(ctx) {
     ctx.beginPath();
@@ -48,8 +49,8 @@ export function emitCursorTrail(x, y) {
         if (dx * dx + dy * dy > GHOST_BREAK * GHOST_BREAK) trail.length = 0;   // teleported
     }
     lastX = x; lastY = y;
-    hueWalk += GHOST_SPREAD / GHOSTS;
-    trail.push({ x, y, born: performance.now(), hue: hueWalk });
+    // Its own random point on the cycle, the way each sparkle picks one.
+    trail.push({ x, y, born: performance.now(), hue: Math.random() });
     if (trail.length > GHOSTS) trail.splice(0, trail.length - GHOSTS);
 }
 
@@ -62,14 +63,16 @@ function drawTrail(ctx, now) {
         const gh = trail[i];
         const age = (now - gh.born) / GHOST_LIFE_MS;
         if (age >= 1) continue;
-        const along = (i + 1) / trail.length;    // 0 at the tail, 1 just behind the pointer
         ctx.save();
         ctx.translate(gh.x, gh.y);
         ctx.scale(SCALE, SCALE);
         tracePath(ctx);
-        // Fades along the tail AND with age: brightest nearest the pointer, and the whole tail
-        // drains once you stop moving. No dark border on a ghost — it would only muddy it.
-        ctx.globalAlpha = GHOST_PEAK * along * (1 - age);
+        // Age alone decides the fade, and it holds before it falls (1 - age²) so a ghost hangs at
+        // near full strength for most of its life and only goes at the end — left floating rather
+        // than smeared out behind. Position in the tail is NOT used: ghosts are laid down as you
+        // move, so age already orders them, and fading by both at once buried the far end.
+        // No dark border on a ghost, it would only muddy something this faint.
+        ctx.globalAlpha = GHOST_PEAK * (1 - age * age);
         ctx.fillStyle = charColor(gh.hue, now);
         ctx.fill();
         ctx.restore();
