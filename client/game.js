@@ -32,7 +32,8 @@ import { drawRotateGate } from './ui/RotateGate.js';
 import { GAME_INTRO_MS } from '../timings.js';   // shared: the server holds the first countdown this long
 import { getPref, setPref, getRaw, setRaw, removeRaw, setSession } from './prefs.js';
 import { unlockAudio, sfx, feedTick, typeTick, tickBurst, duckMusic } from './audio/sfx.js';
-import { spawnSparkles, drawSparkles, emitCursorTrail, drawCursorTrail } from './ui/Sparkles.js';
+import { spawnSparkles, drawSparkles } from './ui/Sparkles.js';
+import { emitCursorTrail, drawCursor as paintCursor } from './ui/Cursor.js';
 import { setMusic, syncMusic, setMusicTension } from './audio/music.js';
 
 // Apply the saved theme before anything paints (default green). `theme` is read live everywhere —
@@ -2349,22 +2350,9 @@ function updateMusicTension() {
 // The pointer is DRAWN INTO the canvas rather than left to the operating system, so it belongs to
 // the screen it is on: it takes the theme's colour (cosmic included), picks up the bloom and the
 // scanlines, and bends with the CRT curve instead of gliding flat across the glass on top of it.
-// It is the ORDINARY arrow, not an invented shape — drawn from the system pointer's own
-// proportions so it reads as "the cursor" rather than as a game asset. Traced as a polygon rather
-// than loaded as an image, which means it costs no file, never blurs, and takes the theme's colour
-// for free (a PNG could do none of those).
-//
-// A real pointer is a light body inside a dark border, so it stays legible over anything it
-// crosses. Same idea here, in the screen's own two colours: the body is the phosphor, the border
-// is the dark behind it — which matters most exactly when it passes over a glowing character.
-//
-// uiManager.mouseX/Y have already been mapped back THROUGH the curve (coordTransform), so drawing
-// at those coordinates and letting the shader bend the result puts it under the real pointer.
-// Tip at (0,0), tracing the arrow clockwise: down the left edge, into the notch, out along the
-// tail and back up to the point.
-const CUR_SHAPE = [[0, 0], [0, 16.5], [4.2, 12.8], [7.1, 19], [9.6, 17.9], [6.7, 11.8], [12, 11.8]];
-const CUR_SCALE = 1.25;   // a little larger than life — the shader's bloom softens fine edges
-const CUR_OUTLINE = 1.5;  // px of dark border
+// The shape, the trail and the drawing all live in ui/Cursor.js. What stays here is only what
+// this file knows: whether the pointer is over the window at all, and where uiManager last saw it
+// (already mapped back through the CRT curve, so the shader lands the drawing under the real one).
 let pointerInside = false;
 if (!isMobile) {
     // mouseout with no relatedTarget means the pointer left the window entirely, rather than just
@@ -2376,30 +2364,10 @@ if (!isMobile) {
 
 function drawCursor() {
     if (isMobile) return;   // a touch screen has no pointer to replace
-    // Under cosmic the pointer drags a faint colour trail. Emitted only while it is over the
-    // window, but drawn unconditionally, so a tail left behind on the way out fades rather than
-    // freezing. Both are no-ops under the fixed themes.
+    // Emit only while the pointer is over the window, but always DRAW: a tail left behind on the
+    // way out should drain away rather than freeze mid-air. Both are no-ops on a fixed theme.
     if (pointerInside) emitCursorTrail(uiManager.mouseX, uiManager.mouseY);
-    drawCursorTrail(ctx);
-    if (!pointerInside) return;
-    ctx.save();
-    ctx.globalAlpha = 1;
-    // The tip lands exactly on the pointer's own position, as the system arrow's does.
-    ctx.translate(uiManager.mouseX, uiManager.mouseY);
-    ctx.scale(CUR_SCALE, CUR_SCALE);
-    ctx.beginPath();
-    ctx.moveTo(CUR_SHAPE[0][0], CUR_SHAPE[0][1]);
-    for (let i = 1; i < CUR_SHAPE.length; i++) ctx.lineTo(CUR_SHAPE[i][0], CUR_SHAPE[i][1]);
-    ctx.closePath();
-    // Stroke FIRST, then fill over it: a stroke straddles the path, so filling afterwards covers
-    // its inner half and leaves a clean border sitting entirely outside the arrow.
-    ctx.lineWidth = (CUR_OUTLINE * 2) / CUR_SCALE;
-    ctx.lineJoin = 'round';
-    ctx.strokeStyle = theme.bg;
-    ctx.stroke();
-    ctx.fillStyle = theme.fg;
-    ctx.fill();
-    ctx.restore();
+    paintCursor(ctx, uiManager.mouseX, uiManager.mouseY, pointerInside);
 }
 
 let _screenKey = window.screen.width + 'x' + window.screen.height;
