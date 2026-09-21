@@ -8,6 +8,8 @@
     "dev": "concurrently \"node server/server.js\" \"vite\"",
     "build": "vite build",
     "build:itch": "vite build --mode itch --outDir ../dist-itch",
+    "zip:itch": "tar -a -c -f hide-itch.zip -C dist-itch index.html assets",
+    "pack:itch": "npm run build:itch && npm run zip:itch",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "keywords": [],
