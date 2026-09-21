@@ -21,14 +21,17 @@ const OUTLINE = 1.5;     // px of dark border, so it stays legible over a glowin
 // The trail. Ghosts are dropped by DISTANCE, not per frame: per frame they would spread out on a
 // fast sweep and pile into a blob when the pointer crawls, whereas by distance the spacing is the
 // same at any speed and a pointer standing still drops none at all.
-const GHOST_STEP = 13;       // px of travel between after-images
-// These two work together: a ghost leaves either by ageing out or by being pushed off the end of
-// the list, so a long life only actually SHOWS if the list can hold that many. Raising one without
-// the other changes nothing.
-const GHOST_LIFE_MS = 1400;  // how long one hangs there before it fades
-const GHOSTS = 40;           // how many can hang at once
+const GHOST_STEP = 34;       // px of travel between after-images
+const GHOST_LIFE_MS = 1400;  // how long one takes to fade from full to gone
 const GHOST_PEAK = 0.38;     // faint: these are solid shapes, so they need less alpha than a line
 const GHOST_BREAK = 140;     // px — a longer step is a jump, not a stroke; drop the tail instead
+// A SAFETY VALVE, not a design knob — and the difference matters. Every ghost must die by AGEING,
+// so it fades on its own from the moment it appears. Being dropped off the end of a list instead
+// deletes it instantly at whatever opacity it had, and the tail then reads as a solid band that
+// never fades while you move and only starts dissolving once you stop. A cap of 40 was doing
+// exactly that at any speed above a crawl. Set high enough that ordinary movement never reaches
+// it, so it only ever catches something pathological.
+const GHOST_MAX = 260;
 
 let trail = [];
 let lastX = null, lastY = null;
@@ -51,7 +54,7 @@ export function emitCursorTrail(x, y) {
     lastX = x; lastY = y;
     // Its own random point on the cycle, the way each sparkle picks one.
     trail.push({ x, y, born: performance.now(), hue: Math.random() });
-    if (trail.length > GHOSTS) trail.splice(0, trail.length - GHOSTS);
+    if (trail.length > GHOST_MAX) trail.splice(0, trail.length - GHOST_MAX);
 }
 
 // Drawn every frame whether or not the pointer is over the window, so a tail left behind on the
@@ -67,12 +70,14 @@ function drawTrail(ctx, now) {
         ctx.translate(gh.x, gh.y);
         ctx.scale(SCALE, SCALE);
         tracePath(ctx);
-        // Age alone decides the fade, and it holds before it falls (1 - age²) so a ghost hangs at
-        // near full strength for most of its life and only goes at the end — left floating rather
-        // than smeared out behind. Position in the tail is NOT used: ghosts are laid down as you
-        // move, so age already orders them, and fading by both at once buried the far end.
+        // Age alone, and LINEARLY: a ghost starts dimming the instant it is laid down and keeps
+        // going at the same rate, so the tail is a smooth gradient from the pointer back however
+        // fast you move. A curve that held near full and then dropped (1 - age²) looked constant
+        // for half its life and then vanished, which is the opposite of gradual.
+        // Position in the tail is NOT used — ghosts are laid down as you move, so age already
+        // orders them, and fading by both at once buried the far end.
         // No dark border on a ghost, it would only muddy something this faint.
-        ctx.globalAlpha = GHOST_PEAK * (1 - age * age);
+        ctx.globalAlpha = GHOST_PEAK * (1 - age);
         ctx.fillStyle = charColor(gh.hue, now);
         ctx.fill();
         ctx.restore();
