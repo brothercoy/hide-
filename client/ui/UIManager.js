@@ -55,7 +55,13 @@ export class UIManager {
     }
 
     _bindEvents() {
-        this.canvas.addEventListener('mousemove', e => this._onMouseMove(e));
+        // MOVE is tracked on the WINDOW, not the canvas. The transparent <input> overlays sit on
+        // top of the canvas, so while the pointer crosses one the canvas hears no mousemove at all
+        // and the tracked position freezes — which left the game's drawn cursor stranded at the
+        // edge of every text field until the pointer came out the far side. _getPos works from
+        // viewport coordinates, so it gives the same answer whatever the event landed on. This
+        // also means a slider drag keeps working when the pointer strays off the canvas.
+        window.addEventListener('mousemove', e => this._onMouseMove(e));
         this.canvas.addEventListener('mousedown', e => this._onMouseDown(e));
         this.canvas.addEventListener('mouseup', e => this._onMouseUp(e));
         this.canvas.addEventListener('dblclick', e => this._onDoubleClick(e));
