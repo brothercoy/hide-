@@ -41,7 +41,12 @@ export class CRTEffect {
             // vignette, and the one screen-tint term whose period didn't divide the height is
             // nudged so it does. Left and right are untouched and still look like a screen edge.
             // Only the throwaway cover page sets this, for the itch page's tiling background.
-            tileY: 0.0
+            tileY: 0.0,
+            // Scales everything the phosphor ADDS to the picture: the screen-wide haze that lifts
+            // the black, the grain over bright areas, and the bloom's own glow. 1 = the game.
+            // Lower pushes the whole image back without touching its colour — what a page
+            // background needs, since it sits behind text that has to stay readable.
+            glowScale: 1.0
         };
 
         this._initShader();
@@ -87,6 +92,7 @@ export class CRTEffect {
             uniform float curvature;
             uniform float flickerStrength;
             uniform float tileY;
+            uniform float glowScale;
             uniform vec3 phosphor;   // theme foreground (normalized) — phosphor tint
 
             varying vec2 vUv;
@@ -189,7 +195,7 @@ export class CRTEffect {
 
                 // Phosphor noise glow: grainy in bright areas, fades to dark in dark areas
                 float noiseGlow = noiseVal * nearBright;
-                pixel.rgb += noiseGlow * phosphor * bloomIntensity * 0.8;
+                pixel.rgb += noiseGlow * phosphor * bloomIntensity * 0.8 * glowScale;
 
                 if (rgbShift > 0.005) {
                     float shift = rgbShift * RGB_SHIFT_SCALE;
@@ -236,17 +242,19 @@ export class CRTEffect {
                 // One animated-noise sample, reused for both the bright-area grain and
                 // the radial screen grain (the two rand() calls were identical).
                 float screenNoise = rand(uv * vec2(1601.0, 901.0) + vec2(fract(time * 17.3), fract(time * 13.7)));
-                pixel.rgb += screenNoise * phosphor * lumField * 0.5;
+                pixel.rgb += screenNoise * phosphor * lumField * 0.5 * glowScale;
 
                 // Radial vignette for noise — bright center, fades to edges. Under tileY it fades
                 // on the horizontal axis only, or it would darken the top and bottom into a band.
                 vec2 noiseCenter = uv - 0.5;
                 float noiseDist = mix(length(noiseCenter), abs(noiseCenter.x), tileY);
                 float radialFade = 1.0 - smoothstep(0.0, 0.7, noiseDist);
-                pixel.rgb += screenNoise * phosphor * radialFade * 0.3;
+                pixel.rgb += screenNoise * phosphor * radialFade * 0.3 * glowScale;
 
                 pixel.rgb = applyRasterization(uv, pixel.rgb);
-                pixel.rgb += 0.09 * phosphor;
+                // The screen-wide haze that lifts the black off pure black. This is the term that
+                // decides how much a dark image still glows, so it scales with the rest.
+                pixel.rgb += 0.09 * phosphor * glowScale;
 
                 // Vignette applied last — no color distortion
                 float vigStart = vignetteStrength - 0.2;          // 0.0–1.0, how far in it starts
