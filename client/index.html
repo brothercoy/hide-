@@ -34,6 +34,9 @@
             background: black;
             overflow: hidden;
             -webkit-font-smoothing: none;
+            /* The pointer is drawn INTO the canvas instead (see drawCursor in game.js), so it goes
+               through the CRT shader like everything else rather than sliding over the glass. */
+            cursor: none;
         }
         #game {
             display: block;

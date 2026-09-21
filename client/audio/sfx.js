@@ -27,14 +27,15 @@ export function unlockAudio() {
     startAmbience();   // the monitor hum runs under everything from the moment audio lives
 }
 
-// The CRT's transformer-hum bed — continuous, quiet, on the SFX bus (it's part of
-// the machine, not the soundtrack — the SFX slider governs it). Toggleable in
-// settings via the ambience.hum pref.
+// The CRT's transformer-hum bed — continuous, quiet, on its OWN bus so only the master volume
+// touches it. It is neither a game sound nor the soundtrack, and it already has its own switch in
+// Settings: turning the SFX down to concentrate should not also drain the room tone. Toggleable
+// via the ambience.hum pref.
 let ambience = null;
 export function startAmbience() {
     if (ambience || !audioReady()) return;
     if (!getPref('ambience.hum', true)) return;
-    ambience = startSustain(PATCHES.HUM, 0.5);
+    ambience = startSustain(PATCHES.HUM, 0.5, 'ambience');
 }
 export function stopAmbience() {
     if (ambience) { ambience.stop(); ambience = null; }

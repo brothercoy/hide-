@@ -666,6 +666,7 @@ window.addEventListener('load', () => {
         // permanently black screen with the reason only in the console — no use at all to someone
         // who just opened the game. Say so on the canvas, in a font that needs nothing loaded.
         console.error('Font load failed:', err);
+        document.body.style.cursor = 'default';   // the game draws its own, but it never started
         ctx.setTransform(1, 0, 0, 1, 0, 0);
         ctx.fillStyle = '#000';
         ctx.fillRect(0, 0, canvas.width, canvas.height);
@@ -1707,7 +1708,16 @@ function drawModal() {
 // are fixed (independent of the hover animation) so hovering doesn't toggle.
 // The *action* fires from the click handler (keeps fullscreen's user-gesture and
 // avoids the settings-panel double-toggle); the press/glow here is visual only.
+// EMBEDDED: the game is inside a host that supplies its own chrome — itch.io wraps it in a frame
+// with a fullscreen button of its own, and ours can't escape that frame, so showing a second one
+// that does nothing is worse than showing none. With it gone the gear would sit off to one side of
+// an empty space, so it takes the pair's place: centred on where the two of them sat, and larger.
+// Set by client/.env.itch, so the site build is unaffected.
+const EMBEDDED = import.meta.env.VITE_EMBEDDED === '1';
+const HUD_SOLO_SCALE = 1.6;    // how much the gear grows when it is the only HUD button
+
 const HUD_FONT = isMobile ? 58 : 36;
+const HUD_FONT_SETTINGS = EMBEDDED ? Math.round(HUD_FONT * HUD_SOLO_SCALE) : HUD_FONT;
 // On mobile the whole 1920-wide canvas is shrunk to fit the phone, so the desktop-size HUD buttons
 // become tiny and hard to tap individually. Use bigger, further-apart hit targets there. Anchored by
 // their BOTTOM a fixed gap above the band so the taller rect never spills past the visible area.
@@ -1778,8 +1788,15 @@ const hudItems = [
         // means not drawn, not typed in during the transition, not hoverable, and not clickable.
         hidden: () => currentScreen === 'settings',
         getRect() {
-            return isMobile ? hudMobileRect(HUD_M.gearX)
-                            : { x: canvas.width - 200, y: canvas.height - bandTop(canvas) - hudBtnGap(), w: 60, h: 40 };
+            const base = isMobile ? hudMobileRect(HUD_M.gearX)
+                : { x: canvas.width - 200, y: canvas.height - bandTop(canvas) - hudBtnGap(), w: 60, h: 40 };
+            if (!EMBEDDED) return base;
+            // Alone: grow, and sit on the centre the gear and the fullscreen button shared, so the
+            // HUD stays balanced in the corner instead of leaving a gap where the brackets were.
+            const cx = canvas.width - (isMobile ? 225 : 125);
+            const cy = base.y + base.h / 2;
+            const w = base.w * HUD_SOLO_SCALE, h = base.h * HUD_SOLO_SCALE;
+            return { x: cx - w / 2, y: cy - h / 2, w, h };
         },
         // Rests on '%'; on hover it immediately swaps - -> \ -> ; then pauses back
         // on '%' (swap first so the animation starts at once, like the brackets).
@@ -1806,7 +1823,7 @@ const hudItems = [
             ctx.globalAlpha = alpha;
             // Cycle chars flash their fixed theme colour; the resting '%' follows the current theme.
             ctx.fillStyle = this._charColor || color;
-            ctx.font = `${HUD_FONT}px "IBMVGA"`;
+            ctx.font = `${HUD_FONT_SETTINGS}px "IBMVGA"`;
             ctx.textAlign = 'center';
             ctx.textBaseline = 'middle';
             ctx.fillText(this._char, r.x + r.w / 2, r.y + r.h / 2);
@@ -1816,7 +1833,7 @@ const hudItems = [
         drawTyped(ctx, r, n) {
             ctx.globalAlpha = 1;
             ctx.fillStyle = theme.fg;
-            ctx.font = `${HUD_FONT}px "IBMVGA"`;
+            ctx.font = `${HUD_FONT_SETTINGS}px "IBMVGA"`;
             ctx.textAlign = 'center';
             ctx.textBaseline = 'middle';
             if (n >= 1) ctx.fillText(SETTINGS_REST_CHAR, r.x + r.w / 2, r.y + r.h / 2);
@@ -1828,6 +1845,9 @@ const hudItems = [
         hover: 0, z: HUD_Z_REST, releasePhase: null, glowT: 0, _rect: null,
         _animT: 0, _spread: 0,
         typeChars: '[]',
+        // Gone entirely when embedded: the host's own fullscreen wraps the whole frame, and ours
+        // cannot break out of it. Hidden means not drawn, not typed in, not hoverable, not clickable.
+        hidden: () => EMBEDDED,
         getRect() {
             return isMobile ? hudMobileRect(HUD_M.fullX)
                             : { x: canvas.width - 120, y: canvas.height - bandTop(canvas) - hudBtnGap(), w: 70, h: 40 };
@@ -2325,6 +2345,39 @@ function updateMusicTension() {
     setMusicTension(tense);
 }
 
+// --- Cursor ------------------------------------------------------------------------------------
+// The pointer is DRAWN INTO the canvas rather than left to the operating system, so it belongs to
+// the screen it is on: it takes the theme's colour (cosmic included), picks up the bloom and the
+// scanlines, and bends with the CRT curve instead of gliding flat across the glass on top of it.
+// A reticle rather than an arrow, because the whole game is finding one character among many —
+// and it is hollow at the centre so it never covers the thing you are trying to look at.
+//
+// uiManager.mouseX/Y have already been mapped back THROUGH the curve (coordTransform), so drawing
+// at those coordinates and letting the shader bend the result puts it under the real pointer.
+const CUR_ARM = 9;       // px — length of each of the four strokes
+const CUR_GAP = 5;       // px — clear space between the centre and each stroke
+const CUR_THICK = 2;     // px — stroke weight, matching the box borders
+let pointerInside = false;
+if (!isMobile) {
+    // mouseout with no relatedTarget means the pointer left the window entirely, rather than just
+    // crossing between elements inside it.
+    window.addEventListener('mouseover', () => { pointerInside = true; });
+    window.addEventListener('mouseout', (e) => { if (!e.relatedTarget) pointerInside = false; });
+    window.addEventListener('blur', () => { pointerInside = false; });
+}
+
+function drawCursor() {
+    if (isMobile || !pointerInside) return;   // a touch screen has no pointer to replace
+    const x = Math.round(uiManager.mouseX), y = Math.round(uiManager.mouseY);
+    const h = CUR_THICK / 2;
+    ctx.globalAlpha = 1;
+    ctx.fillStyle = theme.fg;
+    ctx.fillRect(x - CUR_GAP - CUR_ARM, y - h, CUR_ARM, CUR_THICK);   // left
+    ctx.fillRect(x + CUR_GAP, y - h, CUR_ARM, CUR_THICK);             // right
+    ctx.fillRect(x - h, y - CUR_GAP - CUR_ARM, CUR_THICK, CUR_ARM);   // up
+    ctx.fillRect(x - h, y + CUR_GAP, CUR_THICK, CUR_ARM);             // down
+}
+
 let _screenKey = window.screen.width + 'x' + window.screen.height;
 function loop() {
     // Moving the window to a different-resolution monitor (or window.screen reporting the wrong
@@ -2343,6 +2396,7 @@ function loop() {
         if (gateActive) exitGate();
         if (bootGateActive) drawBootGate();
         else draw();
+        drawCursor();   // last, so it sits over every screen, overlay and modal — then gets curved
     }
     crt.render(performance.now() / 1000);
     requestAnimationFrame(loop);

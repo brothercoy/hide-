@@ -28,7 +28,12 @@
 let ctx = null;
 let master = null;
 let sfxBus = null;      // one-shot game sounds — volume.sfx
-let musicBus = null;    // tracker songs / ambience — volume.music
+let musicBus = null;    // tracker songs — volume.music
+// The monitor hum sits on its OWN bus, under master only. It isn't a game sound and it isn't the
+// soundtrack: it's the machine being switched on, a bed you either want or don't. Having the SFX
+// slider drag it down with the button clicks meant quieting the game also thinned out the room,
+// which is not what that slider is for — and it already has its own on/off switch in Settings.
+let ambienceBus = null;
 let analyser = null;
 let noiseBuf = null;
 
@@ -48,6 +53,8 @@ export function initAudio() {
         sfxBus.connect(master);
         musicBus = ctx.createGain();
         musicBus.connect(master);
+        ambienceBus = ctx.createGain();
+        ambienceBus.connect(master);
 
         // 2s of white noise, looped by noise voices
         const len = ctx.sampleRate * 2;
@@ -152,7 +159,7 @@ function buildVoice(voice, t0, hold, mods = { freqMul: 1, gainMul: 1 }) {
     } else {
         src.connect(env);
     }
-    out.connect(mods.bus === 'music' ? musicBus : sfxBus);
+    out.connect(mods.bus === 'music' ? musicBus : mods.bus === 'ambience' ? ambienceBus : sfxBus);
 
     if (voice.wave === 'noise') {
         // Random read offset — no two noise hits share the same grains
