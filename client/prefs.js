@@ -29,3 +29,25 @@ export function setPref(key, value) {
         /* private mode / quota exceeded — the preference just won't persist. Non-fatal. */
     }
 }
+
+// Raw, UN-prefixed localStorage, guarded the same way — for the reconnection token, which is
+// deliberately stored under its own plain key. Reaching for `localStorage` directly is not safe:
+// besides private mode and a full quota, an iframe sandboxed WITHOUT same-origin (which is how
+// some hosts embed a game) makes the property itself throw on access. One such read sat at module
+// scope in game.js, so it took the whole module down and left a permanently black screen.
+export function getRaw(key, fallback = null) {
+    try { return localStorage.getItem(key) ?? fallback; } catch (_) { return fallback; }
+}
+export function setRaw(key, value) {
+    try { localStorage.setItem(key, value); } catch (_) { /* non-fatal */ }
+}
+export function removeRaw(key) {
+    try { localStorage.removeItem(key); } catch (_) { /* non-fatal */ }
+}
+// sessionStorage is just as unsafe to touch, and for the same reasons.
+export function getSession(key, fallback = null) {
+    try { return sessionStorage.getItem(key) ?? fallback; } catch (_) { return fallback; }
+}
+export function setSession(key, value) {
+    try { sessionStorage.setItem(key, value); } catch (_) { /* non-fatal */ }
+}

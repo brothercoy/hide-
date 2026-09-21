@@ -30,7 +30,7 @@ import { DELMode } from './modes/DELmode.js';
 import { FrequencyMode } from './modes/FrequencyMode.js';
 import { drawRotateGate } from './ui/RotateGate.js';
 import { GAME_INTRO_MS } from '../timings.js';   // shared: the server holds the first countdown this long
-import { getPref, setPref } from './prefs.js';
+import { getPref, setPref, getRaw, setRaw, removeRaw, setSession } from './prefs.js';
 import { unlockAudio, sfx, feedTick, typeTick, tickBurst, duckMusic } from './audio/sfx.js';
 import { spawnSparkles, drawSparkles } from './ui/Sparkles.js';
 import { setMusic, syncMusic, setMusicTension } from './audio/music.js';
@@ -289,7 +289,7 @@ transition.onDone = () => sfx('BEL');
 // don't slow someone hurrying back into a live session. Everything else gates,
 // including a refresh from the menu, so the intro always types with sound.
 const BOOT_GATE_AFTER_MS = 60_000;
-let bootGateActive = !(localStorage.getItem('reconnectionToken')
+let bootGateActive = !(getRaw('reconnectionToken')
     && (Date.now() - getPref('boot.lastSeen', 0)) < BOOT_GATE_AFTER_MS);
 // Keep lastSeen fresh while the tab is open so a quick rejoin can skip the gate.
 setInterval(() => setPref('boot.lastSeen', Date.now()), 10_000);
@@ -564,7 +564,7 @@ function typeGameIn() {
 function handleCreateRoom(name) {
     if (!name) { showModal('?INVALID NAME'); return; }
     playerName = name;
-    sessionStorage.setItem('playerName', name); // remember for this browser instance
+    setSession('playerName', name); // remember for this browser instance
 
     // Keep the Play screen intact during the async join — on success showScreen
     // ('lobby') scrolls it off; on failure the modal sits over the live screen.
@@ -577,7 +577,7 @@ function handleCreateRoom(name) {
 function handleQuickJoin(name) {
     if (!name) { showModal('?INVALID NAME'); return; }
     playerName = name;
-    sessionStorage.setItem('playerName', name);
+    setSession('playerName', name);
     quickJoinSearching = true;
     quickJoinStart = performance.now();
     quickJoinOverlay.reset();
@@ -610,13 +610,13 @@ function handleJoinRoom(name, code) {
     if (!name) { showModal('?INVALID NAME'); return; }
     if (!code) { showModal('?INVALID CODE'); return; }
     playerName = name;
-    sessionStorage.setItem('playerName', name); // remember for this browser instance
+    setSession('playerName', name); // remember for this browser instance
 
     joinGame('join', code);
 }
 
 async function tryReconnect() {
-    const token = localStorage.getItem('reconnectionToken');
+    const token = getRaw('reconnectionToken');
     if (!token) {
         showScreen('main');
         return;
@@ -625,9 +625,9 @@ async function tryReconnect() {
         uiManager.blocked = true;
         room = await colyseusClient.reconnect(token);
         leavingRoom = false;   // resumed session — listen again
-        localStorage.setItem('reconnectionToken', room.reconnectionToken);
+        setRaw('reconnectionToken', room.reconnectionToken);
         room.onLeave(() => {
-            localStorage.removeItem('reconnectionToken');
+            removeRaw('reconnectionToken');
             showScreen('main');
             if (currentMode) currentMode.reset();
             currentMode = null;
@@ -638,7 +638,7 @@ async function tryReconnect() {
         pendingLobbyEntry = true;
         setupRoomMessages(true);
     } catch (e) {
-        localStorage.removeItem('reconnectionToken');
+        removeRaw('reconnectionToken');
         uiManager.blocked = false;
         uiManager.lastTime = performance.now();
         showScreen('main');
@@ -662,7 +662,21 @@ window.addEventListener('load', () => {
         refreshLayout();   // correct any early screen-metric misread now that everything's settled
         tryReconnect();
     }).catch(err => {
+        // The boot gate paints pure black until the fonts land, so a failure here used to leave a
+        // permanently black screen with the reason only in the console — no use at all to someone
+        // who just opened the game. Say so on the canvas, in a font that needs nothing loaded.
         console.error('Font load failed:', err);
+        ctx.setTransform(1, 0, 0, 1, 0, 0);
+        ctx.fillStyle = '#000';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        ctx.fillStyle = '#00ff41';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.font = '32px monospace';
+        ctx.fillText('COULD NOT LOAD FONTS', canvas.width / 2, canvas.height / 2 - 24);
+        ctx.font = '20px monospace';
+        ctx.fillText('Check the connection and reload.', canvas.width / 2, canvas.height / 2 + 24);
+        crt.render(0);
     });
 });
 
@@ -688,9 +702,9 @@ function joinGame(type, code) {
 function onRoomJoined(r) {
     room = r;
     leavingRoom = false;   // fresh room — listen again
-    localStorage.setItem('reconnectionToken', room.reconnectionToken);
+    setRaw('reconnectionToken', room.reconnectionToken);
     room.onLeave(() => {
-        localStorage.removeItem('reconnectionToken');
+        removeRaw('reconnectionToken');
         // Leaving from the game-over screen: repaint the game-over frame NOW (winnerId still set)
         // and clear the overlay, so showScreen snapshots the game-over screen for the scroll —
         // not a bright, torn-down game. This mirrors the vote-to-return-to-lobby flow. The overlay

@@ -4,6 +4,7 @@ import { charWidth } from '../ui/Font.js';
 import { textRow } from '../ui/Transition.js';
 import { theme } from '../ui/colors.js';
 import { bandTop } from '../ui/viewport.js';
+import { getSession } from '../prefs.js';
 
 const NAME_FONT_SIZE = 80;  // font size for the name input — bigger than rest
 const FONT_SIZE = 54;       // font size for everything else
@@ -68,7 +69,7 @@ export class PlayScreen {
         // instance (sessionStorage), so returning here keeps it filled.
         this.nameInput = makeInput('ENTER NAME', cx, nameY, 12);
         this.nameInput.fontSize = NAME_FONT_SIZE;
-        const savedName = sessionStorage.getItem('playerName');
+        const savedName = getSession('playerName');
         if (savedName) {
             this.nameInput.value = savedName.slice(0, this.nameInput.maxLength);
             this.nameInput.cursorPos = this.nameInput.value.length;

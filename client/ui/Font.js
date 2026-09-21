@@ -8,6 +8,15 @@
 //   fusion-pixel-zh — hanzi candidate subset of the zh_hans variant (CHINA chapter)
 // The companions are tiny (~16 KB each) subsets built with fontTools from the OFL-licensed
 // Fusion Pixel Font (github.com/TakWolf/fusion-pixel-font) — see FUSION-PIXEL-OFL.txt.
+// opentype is BUNDLED, not pulled from a CDN at runtime. It used to be a <script> tag pointing at
+// cdnjs, which made the whole game depend on a third party being reachable: the boot gate waits on
+// the fonts, so if that script didn't run the screen stayed black forever with nothing to explain
+// it. That is fatal for a build handed out as a zip (itch.io) and for a game whose solo half is
+// otherwise entirely offline. Pinned to 1.3.4 — the exact version the CDN served, so glyph
+// rendering is unchanged.
+import * as opentypeNS from 'opentype.js';
+const opentype = opentypeNS.default?.parse ? opentypeNS.default : opentypeNS;
+
 import fontUrl from '../PxPlus_IBM_VGA_8x16.ttf?url';
 import kanaUrl from '../fusion-pixel-ja.ttf?url';
 import hanziUrl from '../fusion-pixel-zh.ttf?url';
@@ -35,9 +44,11 @@ export function fontForChar(char) {
     return otFont;
 }
 
-const loadOne = (url) => new Promise((resolve, reject) => {
-    opentype.load(url, (err, font) => err ? reject(err) : resolve(font));
-});
+// fetch + parse rather than opentype.load(): load() goes through XMLHttpRequest and carries a
+// Node/browser branch, while this is the plain modern path and gives a real error to catch.
+const loadOne = (url) => fetch(url)
+    .then(r => r.ok ? r.arrayBuffer() : Promise.reject(new Error(`${r.status} fetching ${url}`)))
+    .then(buf => opentype.parse(buf));
 
 export function initFont(fontSize) {
     // The CSS @font-face fonts must ALSO be force-loaded: canvas fillText doesn't trigger a
