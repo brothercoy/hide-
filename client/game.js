@@ -114,11 +114,24 @@ const LOGICAL_W = 1920;
 // surrounded by black; a phone shrinks the whole scene to fit). A smaller window then just crops.
 // Based on screen.width/height (stable — chrome/address-bar changes only crop, never rescale) and
 // orientation-independent: fit the long side to 1920 and the short side to 1080, take the tighter.
+// EMBEDDED: the game is inside a host's frame (itch.io). Declared up here because the display
+// scale below needs it — see there, and the HUD further down.
+const EMBEDDED = import.meta.env.VITE_EMBEDDED === '1';
+
 function computeDisplayScale() {
     // Guard against browsers that report screen metrics as 0 before the page fully settles.
     const sw = window.screen.width || window.innerWidth || 1920;
     const sh = window.screen.height || window.innerHeight || 1080;
-    return Math.min(Math.max(sw, sh) / LOGICAL_W, Math.min(sw, sh) / 1080) || 1;
+    const byScreen = Math.min(Math.max(sw, sh) / LOGICAL_W, Math.min(sw, sh) / 1080) || 1;
+    if (!EMBEDDED) return byScreen;
+    // Embedded, the box is whatever the host page hands us, and it is normally far smaller than
+    // the design size — an itch embed is typically 1280×720 against a 1920×1080 design. Scaling to
+    // the SCREEN there overflows that box and crops the game off its own edges, which is why the
+    // whole screen could not be seen without going fullscreen. Fit the VIEWPORT instead: the
+    // entire scene shows, just smaller. Capped by the screen figure so a frame taller than the
+    // design can never blow the game up past its native size.
+    const vw = window.innerWidth || LOGICAL_W, vh = window.innerHeight || 1080;
+    return Math.min(byScreen, vw / LOGICAL_W, vh / 1080) || 1;
 }
 let displayScale = computeDisplayScale();
 // FIXED design height. The canvas — and therefore the CRT shader — is ALWAYS 1920×1080, so the
@@ -1712,12 +1725,11 @@ function drawModal() {
 // are fixed (independent of the hover animation) so hovering doesn't toggle.
 // The *action* fires from the click handler (keeps fullscreen's user-gesture and
 // avoids the settings-panel double-toggle); the press/glow here is visual only.
-// EMBEDDED: the game is inside a host that supplies its own chrome — itch.io wraps it in a frame
-// with a fullscreen button of its own, and ours can't escape that frame, so showing a second one
-// that does nothing is worse than showing none. With it gone the gear would sit off to one side of
-// an empty space, so it takes the pair's place: centred on where the two of them sat, and larger.
-// Set by client/.env.itch, so the site build is unaffected.
-const EMBEDDED = import.meta.env.VITE_EMBEDDED === '1';
+// EMBEDDED (declared near the top, with the display scale): the host supplies its own chrome —
+// itch.io wraps the game in a frame with a fullscreen button of its own, and ours can't escape
+// that frame, so a second one that does nothing is worse than none. With it gone the gear would
+// sit off to one side of an empty space, so it takes the pair's place instead: centred on where
+// the two of them sat, and larger.
 const HUD_SOLO_SCALE = 1.6;    // how much the gear grows when it is the only HUD button
 
 const HUD_FONT = isMobile ? 58 : 36;
