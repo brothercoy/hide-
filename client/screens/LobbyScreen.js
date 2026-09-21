@@ -7,6 +7,7 @@ import { theme, disabledColor, DISCONNECTED_ALPHA, disconnectGlyph } from '../ui
 import { bandTop } from '../ui/viewport.js';
 import { RowReveal, drawRevealSegments } from '../ui/RowReveal.js';
 import { ModePreview } from './ModePreview.js';
+import { copyText } from '../clipboard.js';
 
 const FONT_SIZE = 28;
 const TITLE_FONT = 96;   // big room code
@@ -187,16 +188,18 @@ export class LobbyScreen {
     }
 
     _copyCode() {
-        if (!navigator.clipboard || !this.roomCode) return;
-        navigator.clipboard.writeText(this.roomCode).then(() => {
+        if (!this.roomCode) return;
+        // Only say COPIED! if it really was — see client/clipboard.js for why this isn't a bare
+        // navigator.clipboard call (that one is refused inside itch.io's iframe).
+        copyText(this.roomCode).then(ok => {
             const btn = this.copyBtn;
-            if (!btn) return;
+            if (!ok || !btn) return;
             btn.label = 'COPIED!';
             btn.active = true; // hold the brackets inner while showing COPIED!
             setTimeout(() => {
                 if (btn.label === 'COPIED!') { btn.label = 'COPY CODE'; btn.active = false; }
             }, 1500);
-        }).catch(() => {});
+        });
     }
 
     _wrap(text, maxWidth, font) {

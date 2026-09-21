@@ -15,6 +15,7 @@ import { GAME_MODES } from '../../gameModes.js';
 import { seededRng } from '../../gameSim.js';
 import { FLAGS } from './flags.js';
 import { getPref, setPref } from '../prefs.js';
+import { copyText } from '../clipboard.js';
 import { localToday } from './lives.js';
 
 // DAILY #1 — the LAUNCH day. Only the number reads off this; the puzzle for a date is drawn from
@@ -137,23 +138,10 @@ export function shareText(r, origin = '') {
     return [rule, blank, ...body, blank, rule, origin].filter(Boolean).join('\n');
 }
 
-// Copy the card to the clipboard. The async clipboard API needs a secure page (https or
-// localhost); a hidden textarea + execCommand is the fallback for anything older. Resolves true
-// when the text made it to the clipboard.
+// Copy the card to the clipboard. Resolves true when the text actually got there — see
+// client/clipboard.js for why that takes more than one API.
 export function copyShare(r, origin) {
-    const text = shareText(r, origin);
-    const fallback = () => {
-        try {
-            const ta = document.createElement('textarea');
-            ta.value = text; ta.style.position = 'fixed'; ta.style.opacity = '0';
-            document.body.appendChild(ta); ta.select();
-            const ok = document.execCommand('copy');
-            ta.remove();
-            return ok;
-        } catch { return false; }
-    };
-    if (navigator.clipboard?.writeText) return navigator.clipboard.writeText(text).then(() => true, fallback);
-    return Promise.resolve(fallback());
+    return copyText(shareText(r, origin));
 }
 
 // Dev only: forget today's attempt.

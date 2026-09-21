@@ -31,6 +31,7 @@ import { FrequencyMode } from './modes/FrequencyMode.js';
 import { drawRotateGate } from './ui/RotateGate.js';
 import { GAME_INTRO_MS } from '../timings.js';   // shared: the server holds the first countdown this long
 import { getPref, setPref, getRaw, setRaw, removeRaw, setSession } from './prefs.js';
+import { copyText } from './clipboard.js';
 import { unlockAudio, sfx, feedTick, typeTick, tickBurst, duckMusic } from './audio/sfx.js';
 import { spawnSparkles, drawSparkles } from './ui/Sparkles.js';
 import { emitCursorTrail, drawCursor as paintCursor } from './ui/Cursor.js';
@@ -1017,14 +1018,16 @@ function setupGameHud() {
 }
 
 function copyGameCode() {
-    if (!navigator.clipboard || !gameScreen.roomCode) return;
-    navigator.clipboard.writeText(gameScreen.roomCode).then(() => {
+    if (!gameScreen.roomCode) return;
+    // Only say COPIED! if it really was — see client/clipboard.js for why this isn't a bare
+    // navigator.clipboard call (that one is refused inside itch.io's iframe).
+    copyText(gameScreen.roomCode).then(ok => {
         const b = gameCopyBtn;
-        if (!b) return;
+        if (!ok || !b) return;
         b.label = 'COPIED!';
         b.active = true; // hold the brackets inner while showing COPIED!
         setTimeout(() => { if (b.label === 'COPIED!') { b.label = 'COPY CODE'; b.active = false; } }, 1500);
-    }).catch(() => {});
+    });
 }
 
 // Position the game-over buttons for the full-screen end-of-game modal: centered on the whole

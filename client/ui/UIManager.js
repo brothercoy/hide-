@@ -200,7 +200,13 @@ export class UIManager {
             background: 'transparent', color: 'transparent', caretColor: 'transparent',
             opacity: '1', zIndex: '2147483000', fontSize: '16px', borderRadius: '0',
             WebkitAppearance: 'none', textAlign: 'center', fontFamily: 'IBMVGA', letterSpacing: '0',
-            userSelect: 'text', WebkitUserSelect: 'text', WebkitTouchCallout: 'default'
+            userSelect: 'text', WebkitUserSelect: 'text', WebkitTouchCallout: 'default',
+            // This overlay sits ON TOP of the whole canvas, and a text field's default I-beam
+            // beat the `cursor: none` set on the body — so the real system caret appeared over
+            // every input while the game's own drawn pointer stopped at the field's edge.
+            // Hiding it here lets the drawn cursor carry straight across. Selection, the native
+            // right-click menu and the mobile keyboard are unaffected.
+            cursor: 'none'
         });
 
         el.addEventListener('focus', () => {
