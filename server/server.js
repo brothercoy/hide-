@@ -41,6 +41,49 @@ app.get('/time', (_req, res) => {
 });
 app.use('/colyseus', express.static(join(__dirname, '../node_modules/@colyseus/sdk/dist')));
 
+// DISCORD IDENTITY. The Activity asks Discord who is playing so nobody has to type their name
+// into a lobby they were put in automatically. Discord answers that with OAuth, and the middle
+// step of OAuth needs the app's client SECRET — which must never be shipped to a browser. So the
+// browser sends us the short-lived code it got from Discord, and we do the exchange here.
+//
+// Nothing else happens with the token: it goes straight back to the page, which hands it to the
+// Discord SDK to learn its own name. We store nothing and ask for one scope, `identify`.
+//
+// INERT BY DEFAULT: with DISCORD_CLIENT_SECRET unset the route is never registered at all, so
+// every existing deployment is unchanged.
+const DISCORD_CLIENT_ID = (process.env.DISCORD_CLIENT_ID || '').trim();
+const DISCORD_CLIENT_SECRET = (process.env.DISCORD_CLIENT_SECRET || '').trim();
+if (DISCORD_CLIENT_ID && DISCORD_CLIENT_SECRET) {
+    app.post('/discord/token', async (req, res) => {
+        const code = req.body && req.body.code;
+        if (typeof code !== 'string' || !code) return res.status(400).json({ error: 'no code' });
+        try {
+            const r = await fetch('https://discord.com/api/oauth2/token', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                body: new URLSearchParams({
+                    client_id: DISCORD_CLIENT_ID,
+                    client_secret: DISCORD_CLIENT_SECRET,
+                    grant_type: 'authorization_code',
+                    code,
+                }),
+            });
+            const data = await r.json();
+            // Hand back ONLY the access token. Discord's reply also carries a refresh token, and
+            // the page has no use for one — the activity is over when the player closes it.
+            if (!r.ok || !data.access_token) {
+                console.warn('Discord token exchange failed:', r.status);
+                return res.status(502).json({ error: 'exchange failed' });
+            }
+            res.json({ access_token: data.access_token });
+        } catch (err) {
+            console.warn('Discord token exchange error:', err.message);
+            res.status(502).json({ error: 'exchange failed' });
+        }
+    });
+    console.log('Discord identity endpoint enabled');
+}
+
 // DISCORD ACTIVITY. Discord serves the game from a domain of its own and proxies one prefix back
 // to a host we name. That prefix has to be '/', because Discord only accepts a bare hostname as a
 // proxy target — no sub-path — so the host's ROOT must hand back the Discord build rather than the
@@ -71,7 +114,13 @@ const gameServer = new Server({
 
 const roomCodes = {};
 
-gameServer.define('game_room', GameRoom).on('create', (room) => {
+// `filterBy` makes matchmaking compare the room's discordInstance against the joining client's.
+// That is what lets everyone who opens the Activity in one voice channel land in one room without
+// typing anything: they all send the same instance id, so joinOrCreate finds the room the first of
+// them made. It also keeps the two worlds apart, which is what we want — web players calling
+// QUICK JOIN send no instance id, so they match only rooms created without one and can never be
+// dropped into a Discord call's private game.
+gameServer.define('game_room', GameRoom).filterBy(['discordInstance']).on('create', (room) => {
     roomCodes[room.roomCode] = room.roomId;
 }).on('dispose', (room) => {
     delete roomCodes[room.roomCode];

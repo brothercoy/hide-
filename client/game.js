@@ -1,6 +1,6 @@
 import { GAME_MODES } from '../gameModes.js';
 import { Client } from '@colyseus/sdk';
-import { initDiscord, identityUrlBuilder } from './discord.js';
+import { initDiscord, discordReady, discordUser, instanceId, identityUrlBuilder } from './discord.js';
 import { UIManager } from './ui/UIManager.js';
 import { MainMenu } from './screens/MainMenu.js';
 import { PlayScreen } from './screens/PlayScreen.js';
@@ -364,7 +364,7 @@ const screens = {};
 
 const mainMenu = new MainMenu(canvas, ctx, uiManager,
     () => showScreen('solo'),   // SOLO — type in the campaign home screen
-    () => showScreen('play'),   // MULTIPLAYER — unchanged behavior
+    () => DISCORD ? startDiscordMultiplayer() : showScreen('play'),   // MULTIPLAYER
     () => startDaily(),         // DAILY — today's one-attempt level (settings lives on the HUD gear)
     // The @ $ © ! ! secret solved: lives go infinite, and the line types out over the menu.
     () => { grantInfinite(); beginRewardLine('INFINITE LIVES UNLOCKED'); }
@@ -715,6 +715,36 @@ window.addEventListener('load', () => {
         crt.render(0);
     });
 });
+
+// MULTIPLAYER INSIDE DISCORD. The voice channel already answers the question the PLAY screen
+// exists to ask, so there is nothing to fill in: everyone who opened the Activity in this call
+// shares one instance id, and matchmaking hands them all the same room (server.js filters on it).
+// The name comes from Discord, so the lobby fills with real display names and nobody types.
+//
+// Everything degrades rather than dead-ends. If Discord would not identify the player, or there is
+// no instance to key on, this falls through to the ordinary name-and-code screen, which works here
+// exactly as it does on the website.
+let discordJoining = false;
+function startDiscordMultiplayer() {
+    if (discordJoining) return;   // a second press while the first is in flight would join twice
+    discordJoining = true;
+    discordReady()
+        .then(() => {
+            const who = discordUser();
+            const instance = instanceId();
+            if (!who || !instance) { showScreen('play'); return; }
+            playerName = who.name;
+            lobbyScreen.resetToDefault();
+            return colyseusClient
+                .joinOrCreate('game_room', { playerName, discordInstance: instance })
+                .then(onRoomJoined);
+        })
+        .catch((err) => {
+            console.warn('Discord: could not join the channel lobby.', err);
+            showScreen('play');   // the code path still works, so offer it rather than an error
+        })
+        .finally(() => { discordJoining = false; });
+}
 
 function joinGame(type, code) {
     const options = { playerName };

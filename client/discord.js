@@ -42,34 +42,92 @@ export function isDiscord() {
 export const identityUrlBuilder = (url) => url.toString();
 
 let sdk = null;
+let user = null;
+let booting = null;
 
-// Boot the SDK. Discord holds its own loading screen over the iframe until the game completes the
-// handshake, so this must run — but it must not gate the game: if it fails, the player still gets
-// a playable screen rather than a black one. Failure is therefore logged and swallowed.
+// Boot the SDK, then ask Discord who is playing. Discord holds its own loading screen over the
+// iframe until the handshake completes, so this must run — but it must not gate the game: if any
+// of it fails, the player still gets a playable screen rather than a black one, and multiplayer
+// falls back to the ordinary name-and-code path. Failures are therefore logged and swallowed.
 //
 // The SDK is imported DYNAMICALLY so it lands in its own chunk instead of the main bundle, and so
-// the normal build never pulls it in at all. No OAuth here: `ready()` needs no scopes, and the
-// game asks Discord for nothing about the player.
-export async function initDiscord() {
+// the normal build never pulls it in at all.
+//
+// Called once at boot and awaited again later by whoever needs the answer, so the promise is kept
+// rather than the work repeated.
+export function initDiscord() {
+    if (!booting) booting = boot();
+    return booting;
+}
+
+// Resolves once the handshake has finished, successfully or not. Anything that needs to know who
+// the player is awaits this rather than assuming boot has got there yet: Discord dismisses its
+// loading screen when `ready()` resolves, which is BEFORE the identify round-trip is done, so a
+// fast player can reach the menu first.
+export function discordReady() {
+    return booting || Promise.resolve(null);
+}
+
+async function boot() {
     if (!isDiscord()) return null;
+    const clientId = import.meta.env.VITE_DISCORD_CLIENT_ID;
+    if (!clientId) { console.warn('Discord: no VITE_DISCORD_CLIENT_ID in this build'); return null; }
     try {
         const { DiscordSDK } = await import('@discord/embedded-app-sdk');
-        const clientId = import.meta.env.VITE_DISCORD_CLIENT_ID;
-        if (!clientId) { console.warn('Discord: no VITE_DISCORD_CLIENT_ID in this build'); return null; }
         sdk = new DiscordSDK(clientId);
         await sdk.ready();
-        return sdk;
     } catch (err) {
         console.warn('Discord: the SDK did not start; the game runs anyway.', err);
         sdk = null;
         return null;
     }
+    await identify(clientId);
+    return sdk;
 }
 
-// The key for "this launch of the activity, in this voice channel". Everyone who joins the same
-// activity gets the same value, and it is available without the handshake. Unused for now — the
-// multiplayer rooms still work by typed code, exactly as they do everywhere else — but this is
-// what a future "everyone in the call lands in one room" would be built on.
+// WHO IS PLAYING. Discord will hand over the list of everyone connected to the activity without
+// any permission at all, but it will not say which of them is THIS player — and that is the one
+// thing needed to put a name on a lobby row. Only the OAuth handshake answers it, so the game does
+// the smallest possible version: the `identify` scope, nothing else.
+//
+// The exchange in the middle has to happen on our server, because it needs the app's client
+// SECRET, which must never reach a browser. See the /discord/token route in server/server.js.
+//
+// `prompt: 'none'` means a player who has already approved the app sees nothing at all; only the
+// very first launch shows Discord's one-time permission dialog.
+async function identify(clientId) {
+    try {
+        const { code } = await sdk.commands.authorize({
+            client_id: clientId,
+            response_type: 'code',
+            state: '',
+            prompt: 'none',
+            scope: ['identify'],
+        });
+        const res = await fetch('/discord/token', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ code }),
+        });
+        if (!res.ok) throw new Error(`token exchange returned ${res.status}`);
+        const { access_token } = await res.json();
+        const auth = await sdk.commands.authenticate({ access_token });
+        // `global_name` is the display name people actually set; `username` is the @handle it
+        // falls back to for accounts that have not set one.
+        const u = auth && auth.user;
+        user = u ? { id: u.id, name: u.global_name || u.username } : null;
+    } catch (err) {
+        console.warn('Discord: could not identify the player; multiplayer will ask for a name.', err);
+        user = null;
+    }
+}
+
+// The player, or null if Discord would not say. `{ id, name }`.
+export function discordUser() { return user; }
+
+// The key for "this launch of the activity, in this voice channel". Everyone who opens the same
+// activity gets the same value, which is what lets the game put them in one room without anyone
+// typing a code.
 export function instanceId() {
     return sdk ? sdk.instanceId : null;
 }

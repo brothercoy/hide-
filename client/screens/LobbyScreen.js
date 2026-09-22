@@ -42,6 +42,8 @@ const PLAYER_ROW_H = 32;
 const PRIVACY_GAP = 25;      // header underline → privacy buttons (center)
 const PRIVACY_TO_LIST = 44;  // privacy buttons → first player row
 const PRIVACY_SPACING = 200; // between PUBLIC and PRIVATE
+// The Discord Activity drops the Public/Private control entirely; see where it is drawn below.
+const HIDE_PRIVACY = import.meta.env.VITE_DISCORD === '1';
 const PRIVACY_OPTIONS = [
     { id: 'public', label: 'PUBLIC' },
     { id: 'private', label: 'PRIVATE' },
@@ -337,16 +339,22 @@ export class LobbyScreen {
         this._title('PLAYER LIST', rightX, COL_TOP);
         // Public / Private lobby visibility — bracket buttons under the header, one always selected
         // (like the theme/speed options). Host-controlled (dim for non-host) like every lobby setting.
+        // HIDE_PRIVACY is true only in the Discord build, where the room belongs to a voice channel
+        // and its visibility is not the host's to choose — see the note in game.js. The player list
+        // then takes the row back rather than leaving a gap where the buttons were. It is a
+        // build-time constant, so every other build compiles this back down to what it always was.
         const privacyY = COL_TOP + TITLE_GAP + PRIVACY_GAP;
         const pStartX = rightX - PRIVACY_SPACING * (PRIVACY_OPTIONS.length - 1) / 2;
-        PRIVACY_OPTIONS.forEach((opt, i) => {
-            const b = makeBracketButton(opt.label, pStartX + i * PRIVACY_SPACING, privacyY,
-                () => this._selectPrivacy(opt.id),
-                { active: this.privacy === opt.id, disabled: !this.isHost });
-            b.fontSize = HEADER_FONT;   // smaller — matches the column header
-            this.ui.buttons.push(b);
-        });
-        const listTop = privacyY + PRIVACY_TO_LIST;
+        if (!HIDE_PRIVACY) {
+            PRIVACY_OPTIONS.forEach((opt, i) => {
+                const b = makeBracketButton(opt.label, pStartX + i * PRIVACY_SPACING, privacyY,
+                    () => this._selectPrivacy(opt.id),
+                    { active: this.privacy === opt.id, disabled: !this.isHost });
+                b.fontSize = HEADER_FONT;   // smaller — matches the column header
+                this.ui.buttons.push(b);
+            });
+        }
+        const listTop = privacyY + (HIDE_PRIVACY ? 0 : PRIVACY_TO_LIST);
         this.playerLayout = { listX: rightX - 180, startY: listTop, rowH: PLAYER_ROW_H, rowW: 360 };
         this.players.forEach((p, i) => {
             const rowY = listTop + i * PLAYER_ROW_H;

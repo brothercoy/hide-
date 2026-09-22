@@ -20,7 +20,11 @@ const ROUND_OVER_HOLD_MS = 1300; // cursor blinks on the last player for this lo
 const MATCH_OVER_DISPLAY_MS = MATCH_OVER_MS;
 
 class GameRoom extends Room {
-    onCreate() {
+    onCreate(options = {}) {
+        // Set when this room belongs to a Discord voice channel rather than the open web. It is
+        // the key matchmaking filters on (see gameServer.define in server.js), so every player who
+        // opens the Activity in that channel joins this same room.
+        this.discordInstance = options.discordInstance || null;
         this.autoDispose = false;
         this.maxClients = 10;      // cap total connections (players + mid-game spectators) per lobby
         this.isPrivate = false;    // Public by default: discoverable by QUICK JOIN matchmaking. Private
@@ -117,6 +121,11 @@ class GameRoom extends Room {
 
         this.onMessage('setPrivacy', (client, data) => {
             if (client.sessionId !== Object.keys(this.players)[0]) return;   // host only
+            // A Discord room's privacy is already the voice channel's: only people in that call
+            // can open the Activity. Going private would drop it out of matchmaking, and the next
+            // person to press MULTIPLAYER would silently create a SECOND room for the same
+            // channel. The client hides the control there; this makes sure of it either way.
+            if (this.discordInstance) return;
             const priv = data.private === true;
             this.isPrivate = priv;
             this.setPrivate(priv);   // Colyseus: private rooms drop out of matchmaking (QUICK JOIN),
