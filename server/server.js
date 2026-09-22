@@ -40,6 +40,29 @@ app.get('/time', (_req, res) => {
     res.json({ now: Date.now() });
 });
 app.use('/colyseus', express.static(join(__dirname, '../node_modules/@colyseus/sdk/dist')));
+
+// DISCORD ACTIVITY. Discord serves the game from a domain of its own and proxies one prefix back
+// to a host we name. That prefix has to be '/', because Discord only accepts a bare hostname as a
+// proxy target — no sub-path — so the host's ROOT must hand back the Discord build rather than the
+// website's. Both builds are the same game; they differ only in a few compile-time flags.
+//
+// Rather than split the deployment, this serves whichever build matches the hostname the request
+// arrived on. Point Discord at a second domain on this same service and everything else — the
+// game socket, /join and /time — keeps working over that one mapping, because it is all one
+// server either way.
+//
+// INERT BY DEFAULT: with DISCORD_HOST unset, or the build missing, this adds nothing to the
+// request path at all and the site behaves exactly as it always has.
+const discordDir = join(__dirname, '../dist-discord');
+const DISCORD_HOST = (process.env.DISCORD_HOST || '').trim().toLowerCase();
+if (DISCORD_HOST && existsSync(join(discordDir, 'index.html'))) {
+    const serveDiscord = express.static(discordDir);
+    app.use((req, res, next) => (req.hostname || '').toLowerCase() === DISCORD_HOST
+        ? serveDiscord(req, res, next)
+        : next());
+    console.log(`Discord Activity build served on ${DISCORD_HOST}`);
+}
+
 app.use(express.static(clientDir));
 
 const gameServer = new Server({

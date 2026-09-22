@@ -18,9 +18,16 @@ export default defineConfig({
         }
     },
     server: {
+        // Testing a Discord Activity locally means exposing this dev server through a tunnel
+        // (cloudflared / ngrok) and pointing Discord's URL mapping at the tunnel's hostname. Vite
+        // refuses requests carrying a Host it doesn't recognise, so the tunnel domains have to be
+        // named here or every request comes back as "Blocked request".
+        // DEV SERVER ONLY — this key has no effect on any build.
+        allowedHosts: ['localhost', '.trycloudflare.com', '.ngrok-free.app', '.ngrok.io'],
         proxy: {
             '/join': 'http://localhost:3000',
-            '/colyseus': 'http://localhost:3000'
+            '/colyseus': 'http://localhost:3000',
+            '/time': 'http://localhost:3000'
         }
     }
 });

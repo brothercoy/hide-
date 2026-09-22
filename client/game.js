@@ -1,5 +1,6 @@
 import { GAME_MODES } from '../gameModes.js';
 import { Client } from '@colyseus/sdk';
+import { initDiscord, identityUrlBuilder } from './discord.js';
 import { UIManager } from './ui/UIManager.js';
 import { MainMenu } from './screens/MainMenu.js';
 import { PlayScreen } from './screens/PlayScreen.js';
@@ -54,11 +55,25 @@ const SERVER_WS = SERVER_HTTP
     ? SERVER_HTTP.replace(/^http/, 'ws')                      // https://… → wss://…
     : (window.location.hostname === 'localhost' ? 'ws://localhost:3000' : 'wss://' + window.location.hostname);
 setServerBase(SERVER_HTTP);
+// Inside Discord none of that applies and none of it is set: the page is served from Discord's own
+// domain and Discord's proxy maps '/' onto hide-ascii.com, so the RELATIVE default above is already
+// the right answer for /time, /join and the socket. See client/discord.js.
+//
+// VITE_DISCORD is replaced by Vite with a literal at build time, so in the normal and itch builds
+// this reads `undefined === '1'` and every branch below it is deleted by the bundler along with
+// the import of discord.js. Those builds come out byte-identical to one made without any of this.
+const DISCORD = import.meta.env.VITE_DISCORD === '1';
+if (DISCORD) initDiscord();
 // Ask the server what time it is, and refill the solo lives if the player's local day has turned.
 // Their own device clock is never consulted — setting the date forward buys nothing.
 syncClock();
 
-const colyseusClient = new Client(SERVER_WS);
+// The url builder is Discord-only, and it exists to STOP Colyseus rewriting our addresses — see
+// the note on identityUrlBuilder. Outside Discord this is `undefined`, which is what the
+// constructor gets today.
+const colyseusClient = DISCORD
+    ? new Client(SERVER_WS, { urlBuilder: identityUrlBuilder })
+    : new Client(SERVER_WS);
 
 // Larger font + tap tolerance on SMALL screens, purely for readability — decided by SCREEN
 // SIZE, not touch. (Touch is unreliable: touchpads/drivers make non-touch desktops report

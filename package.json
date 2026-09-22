@@ -8,6 +8,8 @@
     "dev": "concurrently \"node server/server.js\" \"vite\"",
     "build": "vite build",
     "build:itch": "vite build --mode itch --outDir ../dist-itch",
+    "build:discord": "vite build --mode discord --outDir ../dist-discord",
+    "postbuild": "vite build --mode discord --outDir ../dist-discord || echo \"discord build skipped\"",
     "zip:itch": "tar -a -c -f hide-itch.zip -C dist-itch index.html assets",
     "pack:itch": "npm run build:itch && npm run zip:itch",
     "test": "echo \"Error: no test specified\" && exit 1"
@@ -18,6 +20,7 @@
   "type": "module",
   "dependencies": {
     "@colyseus/sdk": "^0.17.42",
+    "@discord/embedded-app-sdk": "^2.5.0",
     "colyseus": "^0.17.10",
     "express": "^5.2.1",
     "opentype.js": "1.3.4",
