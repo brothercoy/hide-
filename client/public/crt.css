@@ -1,0 +1,107 @@
+/* The look of the game, for the pages that are not the game.
+ *
+ * The game's CRT is a WebGL shader over a canvas, which cannot be pointed at a page of text: it
+ * would have to rasterise the document first, and the words would stop being selectable, findable
+ * or readable by a screen reader. So this rebuilds the same effect out of the parts that can sit
+ * over live text - scanlines, a vignette, phosphor bleed and a slow flicker - tuned much gentler
+ * than the game, because these are pages somebody has to actually read. */
+
+:root {
+    --bg: #04120a;
+    --fg: #5dff9f;
+    --dim: #2f7d54;
+    --bright: #c9ffe0;
+    --rule: #123d26;
+    --glow: rgba(93, 255, 159, .35);
+}
+
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+html { background: #000; }
+
+body {
+    background:
+        radial-gradient(ellipse 120% 100% at 50% 50%, #06301c 0%, var(--bg) 55%, #010704 100%);
+    color: var(--fg);
+    font-family: "Cascadia Mono", Consolas, "DejaVu Sans Mono", "Courier New", monospace;
+    font-size: 19px;
+    line-height: 1.75;
+    padding: 64px 28px 120px;
+    min-height: 100vh;
+    text-shadow: 0 0 6px var(--glow);   /* phosphor bleed */
+    -webkit-font-smoothing: antialiased;
+}
+
+main { max-width: 80ch; margin: 0 auto; }
+
+/* SCANLINES. A fixed overlay so they stay put while the page scrolls, exactly as they would on a
+ * real tube - lines belong to the screen, not to the document. */
+body::before {
+    content: "";
+    position: fixed; inset: 0; z-index: 9998; pointer-events: none;
+    background: repeating-linear-gradient(
+        to bottom,
+        rgba(0, 0, 0, 0) 0px,
+        rgba(0, 0, 0, 0) 2px,
+        rgba(0, 0, 0, .16) 3px,
+        rgba(0, 0, 0, .16) 4px);
+}
+
+/* VIGNETTE plus the faintest flicker. The game's tube darkens at the corners and its brightness
+ * wanders; both are here, the flicker slowed and shallowed until it reads as life rather than
+ * distraction. */
+body::after {
+    content: "";
+    position: fixed; inset: 0; z-index: 9999; pointer-events: none;
+    background: radial-gradient(ellipse 100% 100% at 50% 50%,
+        rgba(0, 0, 0, 0) 55%, rgba(0, 0, 0, .55) 100%);
+    animation: flicker 5.5s steps(1, end) infinite;
+}
+@keyframes flicker {
+    0%, 96%  { opacity: 1; }
+    97%      { opacity: .93; }
+    98%      { opacity: 1; }
+    99%      { opacity: .96; }
+}
+@media (prefers-reduced-motion: reduce) {
+    body::after { animation: none; }
+}
+
+h1 {
+    font-size: 34px;
+    letter-spacing: .08em;
+    margin-bottom: 6px;
+    color: var(--bright);
+    text-shadow: 0 0 12px var(--glow);
+}
+.sub { color: var(--dim); margin-bottom: 48px; font-size: 16px; }
+
+h2 {
+    font-size: 20px;
+    letter-spacing: .09em;
+    margin: 48px 0 14px;
+    color: var(--bright);
+}
+h2::before { content: "> "; color: var(--dim); }
+
+p, li { margin-bottom: 14px; }
+ul { padding-left: 1.5em; }
+li::marker { color: var(--dim); }
+
+hr { border: 0; border-top: 1px solid var(--rule); margin: 48px 0; }
+
+a { color: var(--bright); text-underline-offset: 3px; }
+a:hover { background: var(--rule); }
+a:focus-visible { outline: 2px solid var(--fg); outline-offset: 3px; }
+
+strong { color: var(--bright); font-weight: normal; border-bottom: 1px solid var(--rule); }
+em { color: var(--bright); font-style: normal; }
+.note { color: var(--dim); }
+
+footer { margin-top: 64px; color: var(--dim); font-size: 16px; }
+
+@media (max-width: 640px) {
+    body { font-size: 17px; padding: 40px 18px 80px; }
+    h1 { font-size: 27px; }
+    h2 { font-size: 18px; }
+}
