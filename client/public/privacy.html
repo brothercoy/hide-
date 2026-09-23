@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>hide — Privacy Policy</title>
+<style>
+    :root { --bg:#04120a; --fg:#5dff9f; --dim:#2f7d54; --rule:#123d26; }
+    * { margin:0; padding:0; box-sizing:border-box; }
+    body {
+        background: var(--bg); color: var(--fg);
+        font-family: "Cascadia Mono", Consolas, "DejaVu Sans Mono", "Courier New", monospace;
+        font-size: 16px; line-height: 1.7;
+        padding: 48px 20px 96px;
+    }
+    main { max-width: 68ch; margin: 0 auto; }
+    h1 { font-size: 28px; letter-spacing: .06em; margin-bottom: 4px; }
+    .sub { color: var(--dim); margin-bottom: 40px; }
+    h2 { font-size: 17px; letter-spacing: .08em; margin: 40px 0 12px; }
+    h2::before { content: "> "; color: var(--dim); }
+    p, li { margin-bottom: 12px; }
+    ul { padding-left: 1.4em; }
+    li::marker { color: var(--dim); }
+    hr { border: 0; border-top: 1px solid var(--rule); margin: 40px 0; }
+    a { color: var(--fg); }
+    strong { color: #b6ffd4; font-weight: normal; border-bottom: 1px solid var(--rule); }
+    .note { color: var(--dim); }
+    footer { margin-top: 56px; color: var(--dim); font-size: 14px; }
+</style>
+</head>
+<body>
+<main>
+    <h1>PRIVACY POLICY</h1>
+    <p class="sub">hide &nbsp;·&nbsp; hide-ascii.com &nbsp;·&nbsp; last updated 22 September 2026</p>
+
+    <p>hide is a free browser game. It has no accounts, no advertising, and no analytics. This page
+    describes everything it does with information, which is very little.</p>
+
+    <h2>WHAT IS KEPT ON YOUR DEVICE</h2>
+    <p>Your progress and settings are saved in your own browser, using its local storage. They stay
+    on your device. They are never uploaded, and nobody else can read them.</p>
+    <ul>
+        <li>Your chosen colour theme and your volume settings.</li>
+        <li>Your campaign progress: which levels you have completed, how many lives you have, and
+            which secrets you have found.</li>
+        <li>Your result for the current daily level.</li>
+        <li>A short-lived token that lets you rejoin a multiplayer game if your connection drops.</li>
+        <li>The name you last typed, remembered for the current browser session only.</li>
+    </ul>
+    <p>Clearing your browser's site data erases all of it, including your campaign progress. There
+    is no copy anywhere else, so there is nothing to restore it from.</p>
+    <p class="note">Each place you play keeps its own separate save. Progress on this website, on
+    itch.io, and inside Discord are three different save files and do not sync.</p>
+
+    <h2>WHAT THE SERVER SEES</h2>
+    <p>The server exists to run multiplayer games. It holds a game only while it is being played.</p>
+    <ul>
+        <li><strong>The name you choose</strong>, so other players in your lobby can see who is who.
+            It exists for the life of that game and is discarded when the game ends.</li>
+        <li><strong>What you do during a round</strong>, such as which character you tapped, so the
+            game can be scored. This is not kept after the game.</li>
+        <li><strong>Ordinary connection records.</strong> Like any web server, it is reached over the
+            internet and the hosting provider logs requests, which include IP addresses. These are
+            operational logs, not a profile of you.</li>
+    </ul>
+    <p>Nothing is written to a database or a file. When a game ends, it is gone.</p>
+
+    <h2>PLAYING INSIDE DISCORD</h2>
+    <p>hide can be launched as a Discord Activity. When you do that, Discord asks your permission to
+    share your account details with the game. If you agree, the game receives your Discord display
+    name and account ID.</p>
+    <ul>
+        <li>Your <strong>display name</strong> is used for one thing: showing who is in the lobby,
+            so nobody has to type a name. It is treated exactly like a typed name above.</li>
+        <li>The <strong>access token</strong> Discord issues is passed straight through and is never
+            stored. It exists only long enough to ask Discord for your name.</li>
+        <li>The game does not read your messages, your servers, your friends, or anything else. It
+            requests a single permission, <em>identify</em>, and nothing more.</li>
+    </ul>
+    <p>You can withdraw this at any time in Discord, under User Settings, Authorized Apps.</p>
+    <p>What happens on Discord's side is covered by
+    <a href="https://discord.com/privacy">Discord's own privacy policy</a>, not this one.</p>
+
+    <h2>WHAT IS NOT DONE</h2>
+    <ul>
+        <li>No cookies are set.</li>
+        <li>No analytics, tracking pixels, or third-party scripts.</li>
+        <li>No advertising.</li>
+        <li>Nothing is sold, shared, or handed to anyone.</li>
+        <li>No email address or password is ever asked for, because there are no accounts.</li>
+    </ul>
+
+    <h2>CHILDREN</h2>
+    <p>hide is suitable for all ages and collects nothing that could identify a child. Discord
+    requires its own users to be at least 13, or older where local law says so.</p>
+
+    <h2>CHANGES</h2>
+    <p>If this policy changes, the date at the top changes with it. Since the game holds nothing
+    about you, there is no back catalogue of data for a change to apply to.</p>
+
+    <h2>CONTACT</h2>
+    <p>Questions about this policy can go to <strong>CONTACT_EMAIL_HERE</strong>.</p>
+
+    <hr>
+    <footer>
+        <a href="/">← back to the game</a> &nbsp;·&nbsp; <a href="/terms.html">Terms of Service</a>
+    </footer>
+</main>
+</body>
+</html>
