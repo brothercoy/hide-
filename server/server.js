@@ -114,17 +114,26 @@ const gameServer = new Server({
 
 const roomCodes = {};
 
-// `filterBy` makes matchmaking compare the room's discordInstance against the joining client's.
-// That is what lets everyone who opens the Activity in one voice channel land in one room without
-// typing anything: they all send the same instance id, so joinOrCreate finds the room the first of
-// them made. It also keeps the two worlds apart, which is what we want — web players calling
-// QUICK JOIN send no instance id, so they match only rooms created without one and can never be
-// dropped into a Discord call's private game.
-gameServer.define('game_room', GameRoom).filterBy(['discordInstance']).on('create', (room) => {
-    roomCodes[room.roomCode] = room.roomId;
-}).on('dispose', (room) => {
-    delete roomCodes[room.roomCode];
-});
+// Both room types are the same GameRoom and share one code book, so a room can always be reached
+// by its code whatever made it — a friend on the website can still join a Discord lobby that way.
+const trackCodes = (definition) => definition
+    .on('create', (room) => { roomCodes[room.roomCode] = room.roomId; })
+    .on('dispose', (room) => { delete roomCodes[room.roomCode]; });
+
+// The website's rooms. Untouched: QUICK JOIN matchmakes across exactly these and nothing else.
+trackCodes(gameServer.define('game_room', GameRoom));
+
+// Discord's rooms are a SEPARATE ROOM TYPE, which is what keeps the two worlds apart. It has to be
+// the type rather than a filter on one shared type: a filter compares the joining client's value
+// against the room's, and a web player sends no value at all, which matchmaking reads as "any" —
+// so with only a voice channel's room open, QUICK JOIN dropped a stranger straight into it. A
+// different name cannot be matched into by accident, by any client, ever.
+//
+// `filterBy` then separates one voice channel from another WITHIN that type, where it is safe:
+// every client of this type sends a real instance id, so the empty case never arises. Everyone who
+// opens the Activity in a call sends the same id, so joinOrCreate hands them all the room the
+// first of them made.
+trackCodes(gameServer.define('discord_room', GameRoom).filterBy(['discordInstance']));
 
 app.get('/join/:code', (req, res) => {
     const roomId = roomCodes[req.params.code.toUpperCase()];

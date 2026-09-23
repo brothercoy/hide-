@@ -736,7 +736,7 @@ function startDiscordMultiplayer() {
             playerName = who.name;
             lobbyScreen.resetToDefault();
             return colyseusClient
-                .joinOrCreate('game_room', { playerName, discordInstance: instance })
+                .joinOrCreate('discord_room', { playerName, discordInstance: instance })
                 .then(onRoomJoined);
         })
         .catch((err) => {
